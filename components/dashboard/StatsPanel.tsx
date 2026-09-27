@@ -1,0 +1,254 @@
+'use client';
+
+import { useMemo, type ReactNode } from 'react';
+import { cx } from '@/components/ui';
+import { summarize, vatStatus, type ShiftFigures, type Totals } from '@/lib/accounting';
+import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
+import { periodLabel, type MonthFilter } from '@/lib/period';
+import type { DriverRow, ShiftRow } from '@/lib/types';
+import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
+
+const STATUS_TEXT = {
+  debit: 'Χρεωστικό — προς πληρωμή',
+  credit: 'Πιστωτικό υπόλοιπο',
+  zero: 'Μηδενικό υπόλοιπο',
+} as const;
+
+export function StatsPanel({
+  totals,
+  loading,
+  isAdmin,
+  year,
+  month,
+  selectedDriver,
+  items,
+  driversById,
+  showPerDriver,
+  onSelectDriver,
+}: {
+  totals: Totals;
+  loading: boolean;
+  isAdmin: boolean;
+  year: number;
+  month: MonthFilter;
+  selectedDriver: DriverRow | null;
+  items: { row: ShiftRow; figures: ShiftFigures }[];
+  driversById: Map<string, DriverRow>;
+  showPerDriver: boolean;
+  onSelectDriver: (driverId: string) => void;
+}) {
+  const status = vatStatus(totals.vatBalanceCents);
+
+  return (
+    <section aria-busy={loading} className={cx('min-w-0 space-y-4 transition-opacity', loading && 'opacity-50')}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-lg font-semibold">Στατιστικά · {periodLabel(year, month)}</h2>
+        <span className="text-sm text-muted">
+          {loading ? 'Φόρτωση…' : selectedDriver ? selectedDriver.name : isAdmin ? 'Όλος ο στόλος' : ''}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
+        <Stat label="Καθαρά Έσοδα" value={formatEuro(totals.netRevenueCents)} />
+        <Stat label="ΦΠΑ Εσόδων 13%" value={formatEuro(totals.vatCents)} />
+        <Stat label="Φιλοδωρήματα / Άλλα" value={formatEuro(totals.tipsCents)} sub="Χωρίς ΦΠΑ" />
+        <Stat label="Μικτή Είσπραξη (Τζίρος)" value={formatEuro(totals.grossReceiptsCents)} />
+        <Stat
+          label="Συνολικά Έξοδα"
+          value={formatEuro(totals.totalExpensesCents)}
+          sub={`Καύσιμα ${formatEuro(totals.fuelCents)} · Δαπάνες ${formatEuro(totals.otherExpensesCents)} · Επισκευές ${formatEuro(totals.repairsCents)}`}
+        />
+        <Stat label="Καθαρό Ταμείο (Τσέπη)" value={formatEuro(totals.netCashCents)} emphasis />
+      </div>
+
+      <div
+        className={cx(
+          'rounded-2xl border p-4 shadow-sm',
+          status === 'debit' && 'border-bad/40 bg-bad-soft',
+          status === 'credit' && 'border-good/40 bg-good-soft',
+          status === 'zero' && 'border-line bg-card',
+        )}
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-medium">Προς Απόδοση ΦΠΑ</p>
+            <p
+              className={cx(
+                'text-3xl font-bold tabular-nums',
+                status === 'debit' && 'text-bad',
+                status === 'credit' && 'text-good',
+              )}
+            >
+              {formatEuro(Math.abs(totals.vatBalanceCents))}
+            </p>
+            <p className="text-sm font-semibold">{STATUS_TEXT[status]}</p>
+          </div>
+          {isAdmin && (
+            <WhatsAppShare driver={selectedDriver} year={year} month={month} totals={totals} loading={loading} />
+          )}
+        </div>
+        <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm tabular-nums">
+          <dt>ΦΠΑ εσόδων 13%</dt>
+          <dd className="text-right">+ {formatEuro(totals.vatCents)}</dd>
+          <dt>ΦΠΑ εξόδων 24% (εμπεριεχόμενος)</dt>
+          <dd className="text-right">− {formatEuro(totals.expensesVatCents)}</dd>
+        </dl>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Stat
+          label="Συνολικά Χλμ"
+          value={formatKm(totals.totalKm)}
+          sub={`Μισθ. ${formatKm(totals.paidKm)} · Ελεύθ. ${formatKm(totals.emptyKm)}`}
+        />
+        <Stat label="Αξιοποίηση" value={formatPercent(totals.utilizationPct)} sub="Μισθωμένα / Συνολικά χλμ" />
+        <Stat label="Έσοδο ανά χλμ" value={formatEuroPerKm(totals.revenuePerKm)} sub="Καθαρά / Συνολικά χλμ" />
+        <Stat label="Διαδρομές" value={formatInteger(totals.trips)} sub={`${totals.shifts} βάρδιες`} />
+      </div>
+
+      {showPerDriver && <PerDriver items={items} driversById={driversById} onSelectDriver={onSelectDriver} />}
+    </section>
+  );
+}
+
+function Stat({ label, value, sub, emphasis }: { label: string; value: ReactNode; sub?: string; emphasis?: boolean }) {
+  return (
+    <div
+      className={cx(
+        'rounded-2xl border p-3 shadow-sm',
+        emphasis ? 'border-accent-strong bg-accent text-on-accent' : 'border-line bg-card',
+      )}
+    >
+      <p className={cx('text-xs font-medium', emphasis ? 'text-on-accent/80' : 'text-muted')}>{label}</p>
+      <p className="mt-1 text-xl font-bold tabular-nums sm:text-2xl">{value}</p>
+      {sub && <p className={cx('mt-1 text-xs', emphasis ? 'text-on-accent/80' : 'text-muted')}>{sub}</p>}
+    </div>
+  );
+}
+
+function WhatsAppShare({
+  driver,
+  year,
+  month,
+  totals,
+  loading,
+}: {
+  driver: DriverRow | null;
+  year: number;
+  month: MonthFilter;
+  totals: Totals;
+  loading: boolean;
+}) {
+  // Όσο φορτώνουν τα δεδομένα του νέου φίλτρου τα σύνολα είναι του προηγούμενου: όχι αποστολή.
+  const link =
+    driver && !loading
+      ? whatsappLink(driver.phone, buildVatMessage({ driverName: driver.name, plate: driver.plate, year, month, totals }))
+      : null;
+  const hint = !driver
+    ? 'Επιλέξτε οδηγό στο φίλτρο για αποστολή.'
+    : loading
+      ? 'Φόρτωση δεδομένων…'
+      : !link
+        ? 'Ο οδηγός δεν έχει έγκυρο κινητό (69XXXXXXXX).'
+        : `Προς ${driver.name}`;
+
+  return (
+    <div className="flex flex-col items-end gap-1">
+      {link ? (
+        <a
+          href={link}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-[#0b3d20] hover:bg-[#1fbd5a]"
+        >
+          <WhatsAppIcon />
+          Αποστολή WhatsApp
+        </a>
+      ) : (
+        <span
+          aria-disabled="true"
+          className="inline-flex min-h-11 cursor-not-allowed items-center gap-2 rounded-xl bg-[#25D366]/40 px-4 py-2 text-sm font-semibold text-[#0b3d20]/70"
+        >
+          <WhatsAppIcon />
+          Αποστολή WhatsApp
+        </span>
+      )}
+      <span className="max-w-56 text-right text-xs text-muted">{hint}</span>
+    </div>
+  );
+}
+
+function WhatsAppIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="currentColor" aria-hidden="true">
+      <path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm0 18.2a8.2 8.2 0 0 1-4.2-1.2l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.3-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.2 5.2 0 0 0 1.1 2.7 11.8 11.8 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.3 2.2 2.2 0 0 0 .2-1.3c-.1-.1-.3-.2-.5-.3z" />
+    </svg>
+  );
+}
+
+/** Σύνοψη ανά οδηγό (admin, όταν βλέπει όλο τον στόλο). */
+function PerDriver({
+  items,
+  driversById,
+  onSelectDriver,
+}: {
+  items: { row: ShiftRow; figures: ShiftFigures }[];
+  driversById: Map<string, DriverRow>;
+  onSelectDriver: (driverId: string) => void;
+}) {
+  const rows = useMemo(() => {
+    const groups = new Map<string, ShiftFigures[]>();
+    for (const { row, figures } of items) {
+      const list = groups.get(row.driver_id) ?? [];
+      list.push(figures);
+      groups.set(row.driver_id, list);
+    }
+    return [...groups.entries()]
+      .map(([driverId, list]) => ({ driverId, totals: summarize(list) }))
+      .sort((a, b) => b.totals.netRevenueCents - a.totals.netRevenueCents);
+  }, [items]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-line bg-card p-4 shadow-sm">
+      <h3 className="mb-3 font-semibold">Ανά οδηγό</h3>
+      <div className="-mx-4 overflow-x-auto px-4">
+        <table className="w-full min-w-[34rem] text-sm tabular-nums">
+          <thead className="text-left text-xs text-muted">
+            <tr>
+              <th className="py-1 pr-2 font-medium">Οδηγός</th>
+              <th className="py-1 pr-2 text-right font-medium">Βάρδιες</th>
+              <th className="py-1 pr-2 text-right font-medium">Καθαρά</th>
+              <th className="py-1 pr-2 text-right font-medium">Υπόλοιπο ΦΠΑ</th>
+              <th className="py-1 text-right font-medium">Καθαρό Ταμείο</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ driverId, totals }) => {
+              const driver = driversById.get(driverId);
+              const status = vatStatus(totals.vatBalanceCents);
+              return (
+                <tr key={driverId} className="border-t border-line">
+                  <td className="py-2 pr-2">
+                    <button type="button" className="text-left font-medium underline" onClick={() => onSelectDriver(driverId)}>
+                      {driver?.name ?? '—'}
+                    </button>
+                    {driver?.plate && <span className="block text-xs text-muted">{driver.plate}</span>}
+                  </td>
+                  <td className="py-2 pr-2 text-right">{totals.shifts}</td>
+                  <td className="py-2 pr-2 text-right">{formatEuro(totals.netRevenueCents)}</td>
+                  <td className={cx('py-2 pr-2 text-right', status === 'debit' && 'text-bad', status === 'credit' && 'text-good')}>
+                    {formatEuro(Math.abs(totals.vatBalanceCents))} {status === 'debit' ? 'Χ' : status === 'credit' ? 'Π' : ''}
+                  </td>
+                  <td className="py-2 text-right font-semibold">{formatEuro(totals.netCashCents)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-muted">Χ = Χρεωστικό, Π = Πιστωτικό. Πατήστε ένα όνομα για φιλτράρισμα.</p>
+    </div>
+  );
+}
