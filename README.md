@@ -188,13 +188,19 @@ browser και στην ίδια διεύθυνση** (π.χ. `http://localhost:
 ### Παλιό Supabase project
 
 Το SQL σταματά με μήνυμα αν βρει ήδη πίνακες `profiles`, `drivers` ή `shifts`. Αν θέλετε να κρατήσετε
-το παλιό project **χωρίς να χαθεί τίποτα**, μετονομάστε πρώτα τους παλιούς πίνακες και μετά τρέξτε το SQL:
+το παλιό project **χωρίς να χαθεί τίποτα**, μετακινήστε πρώτα τους παλιούς πίνακες σε ξεχωριστό schema
+(μαζί με τα ευρετήριά τους, εκτός API) και μετά τρέξτε το SQL:
 
 ```sql
-alter table if exists public.profiles rename to profiles_old;
-alter table if exists public.drivers  rename to drivers_old;
-alter table if exists public.shifts   rename to shifts_old;
+create schema if not exists old_backup;
+revoke all on schema old_backup from public, anon, authenticated;
+alter table if exists public.profiles set schema old_backup;
+alter table if exists public.drivers  set schema old_backup;
+alter table if exists public.shifts   set schema old_backup;
 ```
+
+Μια απλή μετονομασία (`rename`) δεν αρκεί: τα ευρετήρια κρατούν τα παλιά ονόματα (π.χ. `profiles_pkey`)
+και συγκρούονται με τα νέα.
 
 Ελέγξτε επίσης για παλιά triggers στους λογαριασμούς (που μπορεί να γράφουν στους παλιούς πίνακες):
 
