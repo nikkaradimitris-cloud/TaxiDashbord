@@ -101,19 +101,24 @@
 > Μην απενεργοποιήσετε το **Confirm email**: η επιβεβαίωση αποδεικνύει ότι το email ανήκει
 > πράγματι στον οδηγό πριν δει τα στοιχεία του.
 
-### 4. Μεταβλητές περιβάλλοντος
+### 4. Σύνδεση της εφαρμογής με το Supabase
 
-Supabase → **Project Settings → API Keys** (και **Data API** για το URL). Αντιγράψτε το `.env.example`
-σε `.env.local`:
+Το URL και το publishable key του project βρίσκονται ήδη μέσα στον κώδικα
+([`lib/supabase/config.ts`](lib/supabase/config.ts)): είναι δημόσιες τιμές (τις λαμβάνει ο browser
+κάθε επισκέπτη) και την ασφάλεια την κάνουν οι κανόνες RLS της βάσης. Άρα **δεν χρειάζονται
+μεταβλητές περιβάλλοντος** ούτε `.env.local`.
+
+Για **άλλο** Supabase project (ή τοπικό Supabase), αλλάξτε τις δύο τιμές στο αρχείο αυτό ή ορίστε
+**και τις δύο** μεταβλητές (έχουν προτεραιότητα· δείτε το `.env.example`):
 
 ```bash
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxxxxxxxxxxxxxxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 ```
 
-Σε παλαιότερα projects, αντί για publishable key μπορείτε να βάλετε το **anon** key στη μεταβλητή
-`NEXT_PUBLIC_SUPABASE_ANON_KEY`. **Ποτέ** το `secret` / `service_role` key — η εφαρμογή το
-αναγνωρίζει και αρνείται να ξεκινήσει.
+Τιμές-παράδειγμα με `xxxx…` αγνοούνται. Σε παλαιότερα projects, αντί για publishable key μπορείτε να
+βάλετε το **anon** key στη μεταβλητή `NEXT_PUBLIC_SUPABASE_ANON_KEY`. **Ποτέ** το `secret` /
+`service_role` key — η εφαρμογή το αναγνωρίζει και αρνείται να ξεκινήσει.
 
 ### 5. Εκτέλεση στον υπολογιστή
 
@@ -158,9 +163,11 @@ npm run dev
 ### 8. Δημοσίευση στο Vercel
 
 1. Συνδέστε το GitHub repository στο [vercel.com](https://vercel.com) → **Add New… → Project**.
-2. **Environment Variables**: τα ίδια με το `.env.local` (βήμα 4).
-3. **Deploy**. Βάλτε τη διεύθυνση του Vercel στο Site URL / Redirect URLs (βήμα 3).
-4. Αν αλλάξετε μεταβλητές αργότερα, χρειάζεται **Redeploy** (οι `NEXT_PUBLIC_…` ενσωματώνονται στο build).
+2. **Deploy** — δεν χρειάζονται Environment Variables (βήμα 4). Κάθε νέο push στο GitHub κάνει
+   αυτόματα νέο deploy.
+3. Βάλτε τη διεύθυνση του Vercel στο Site URL / Redirect URLs (βήμα 3).
+4. Αν ορίσετε μεταβλητές `NEXT_PUBLIC_…`, διαλέξτε τύπο **Config** (όχι Secret) και κάντε **Redeploy**:
+   ενσωματώνονται στο build.
 
 ### 9. Δεδομένα από την παλιά τοπική (offline) έκδοση
 
@@ -176,7 +183,7 @@ browser και στην ίδια διεύθυνση** (π.χ. `http://localhost:
 
 | Μήνυμα / πρόβλημα | Λύση |
 |---|---|
-| «Χρειάζεται σύνδεση με το Supabase» | Λείπουν ή είναι λάθος οι μεταβλητές του βήματος 4. Μετά την αλλαγή: restart (`npm run dev`) ή Redeploy. |
+| «Χρειάζεται σύνδεση με το Supabase» | Λάθος τιμή στις μεταβλητές ή στο `lib/supabase/config.ts` (βήμα 4). Μετά την αλλαγή: restart (`npm run dev`) ή Redeploy. |
 | «Η βάση δεδομένων δεν έχει ρυθμιστεί» | Δεν έχει εκτελεστεί το SQL του βήματος 2. |
 | «Δεν υπάρχει επικοινωνία με το Supabase» | Internet, λάθος URL ή **παύση project**: τα δωρεάν projects παγώνουν μετά από μέρες αδράνειας → supabase.com → **Restore project**. |
 | Δεν έρχεται email επιβεβαίωσης | Ελέγξτε τα ανεπιθύμητα· χωρίς δικό σας SMTP το Supabase στέλνει μόνο σε μέλη της ομάδας (βήμα 3) — ή χρησιμοποιήστε την Επιλογή Β. |

@@ -1,5 +1,43 @@
 import { describe, expect, it } from 'vitest';
-import { checkSupabaseConfig } from './config';
+import {
+  checkSupabaseConfig,
+  PROJECT_SUPABASE_PUBLISHABLE_KEY,
+  PROJECT_SUPABASE_URL,
+  resolveSupabaseConfig,
+} from './config';
+
+const PROJECT = { url: PROJECT_SUPABASE_URL, key: PROJECT_SUPABASE_PUBLISHABLE_KEY };
+
+describe('resolveSupabaseConfig', () => {
+  it('χωρίς μεταβλητές → οι τιμές του project', () => {
+    expect(resolveSupabaseConfig({})).toEqual(PROJECT);
+    expect(checkSupabaseConfig(resolveSupabaseConfig({}))).toBeNull();
+  });
+
+  it('αγνοεί τις τιμές-παράδειγμα του .env.example', () => {
+    expect(
+      resolveSupabaseConfig({
+        url: 'https://xxxxxxxxxxxxxxxxxxxx.supabase.co',
+        publishableKey: 'sb_publishable_xxxxxxxxxxxxxxxxxxxxxxxx',
+      }),
+    ).toEqual(PROJECT);
+  });
+
+  it('δεν ανακατεύει τιμές: αν λείπει η μία μεταβλητή, πάει στο project', () => {
+    expect(resolveSupabaseConfig({ url: 'http://127.0.0.1:54321' })).toEqual(PROJECT);
+  });
+
+  it('με σωστές μεταβλητές (π.χ. τοπικό Supabase) χρησιμοποιεί αυτές', () => {
+    expect(resolveSupabaseConfig({ url: ' http://127.0.0.1:54321 ', publishableKey: 'sb_publishable_local' })).toEqual({
+      url: 'http://127.0.0.1:54321',
+      key: 'sb_publishable_local',
+    });
+    expect(resolveSupabaseConfig({ url: 'https://other.supabase.co', anonKey: 'anon-jwt' })).toEqual({
+      url: 'https://other.supabase.co',
+      key: 'anon-jwt',
+    });
+  });
+});
 
 const url = 'https://abcdefghijklmnop.supabase.co';
 const jwt = (role: string) => `x.${btoa(JSON.stringify({ role })).replace(/=+$/, '')}.y`;

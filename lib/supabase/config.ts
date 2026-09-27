@@ -1,20 +1,39 @@
 /**
- * Ρυθμίσεις σύνδεσης με το Supabase (από .env.local ή τις μεταβλητές του Vercel).
+ * Ρυθμίσεις σύνδεσης με το Supabase.
  *
- * Δεκτά ονόματα κλειδιού: NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (νέο, sb_publishable_…)
- * ή NEXT_PUBLIC_SUPABASE_ANON_KEY (παλιό anon JWT). Ποτέ το secret / service_role.
+ * Το URL και το publishable key του project είναι σχεδιασμένα να είναι δημόσια
+ * (τα λαμβάνει ο browser κάθε επισκέπτη· την ασφάλεια την κάνει το RLS της βάσης),
+ * γι' αυτό υπάρχουν εδώ και η εφαρμογή δουλεύει χωρίς μεταβλητές περιβάλλοντος.
+ * Για άλλο project ή τοπικό Supabase, ορίστε ΚΑΙ ΤΙΣ ΔΥΟ μεταβλητές
+ * NEXT_PUBLIC_SUPABASE_URL και NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY (ή το παλιό
+ * NEXT_PUBLIC_SUPABASE_ANON_KEY). Ποτέ το secret / service_role key.
  */
-const url = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim();
-const key = (
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-  ''
-).trim();
+export const PROJECT_SUPABASE_URL = 'https://gayduuruaklfagdtzhyf.supabase.co';
+export const PROJECT_SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_k9FJbua_xa0RB5Fx5nymfA_1LkcsWUi';
 
 export interface SupabaseConfig {
   url: string;
   key: string;
 }
+
+/** Κενή τιμή ή τιμή-παράδειγμα («xxxx…», π.χ. από το .env.example) = δεν έχει οριστεί. */
+function envValue(value: string | undefined): string {
+  const trimmed = (value ?? '').trim();
+  return /x{6,}/i.test(trimmed) ? '' : trimmed;
+}
+
+/** Οι μεταβλητές περιβάλλοντος αν έχουν οριστεί και οι δύο, αλλιώς οι τιμές του project. */
+export function resolveSupabaseConfig(env: { url?: string; publishableKey?: string; anonKey?: string }): SupabaseConfig {
+  const url = envValue(env.url);
+  const key = envValue(env.publishableKey) || envValue(env.anonKey);
+  return url && key ? { url, key } : { url: PROJECT_SUPABASE_URL, key: PROJECT_SUPABASE_PUBLISHABLE_KEY };
+}
+
+const { url, key } = resolveSupabaseConfig({
+  url: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  publishableKey: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+  anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+});
 
 /** Ρόλος που αναγράφεται μέσα σε παλιού τύπου κλειδί JWT (anon / service_role). */
 function jwtRole(token: string): string | null {
