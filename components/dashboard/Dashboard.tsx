@@ -52,6 +52,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   );
 
   const [message, setMessage] = useState<Message | null>(null);
+  const [editing, setEditing] = useState<ShiftRow | null>(null);
 
   // ------------------------------------------------------------------
   // Οδηγοί (admin: όλος ο στόλος — οδηγός: μόνο ο εαυτός του)
@@ -136,6 +137,27 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     );
   }
 
+  function startEdit(row: ShiftRow) {
+    setEditing(row);
+    setMessage(null);
+    document.getElementById('shift-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function handleUpdated(row: ShiftRow) {
+    setShiftsState((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows: matchesView(row)
+              ? prev.rows.map((r) => (r.id === row.id ? row : r))
+              : prev.rows.filter((r) => r.id !== row.id),
+          }
+        : prev,
+    );
+    setEditing(null);
+    setMessage({ tone: 'success', text: `✓ Αποθηκεύτηκαν οι διορθώσεις στη βάρδια Ζ ${row.z_number}.` });
+  }
+
   function handleQueued(item: PendingShift) {
     setOutbox(userId, [...getOutbox(userId), item]);
   }
@@ -148,11 +170,12 @@ export function Dashboard({ session }: { session: SessionInfo }) {
       if (!deleted) {
         setMessage({
           tone: 'error',
-          text: 'Η διαγραφή δεν επιτρέπεται. Οι οδηγοί διορθώνουν μόνο δικές τους καταχωρήσεις μέσα σε 24 ώρες — επικοινωνήστε με τον ιδιοκτήτη.',
+          text: 'Η διαγραφή δεν επιτρέπεται. Οι οδηγοί διορθώνουν/διαγράφουν μόνο δικές τους καταχωρήσεις μέσα σε 24 ώρες — επικοινωνήστε με τον ιδιοκτήτη.',
         });
         return;
       }
       setShiftsState((prev) => (prev ? { ...prev, rows: prev.rows.filter((r) => r.id !== row.id) } : prev));
+      if (editing?.id === row.id) setEditing(null);
       setMessage({ tone: 'success', text: `Η βάρδια Ζ ${row.z_number} διαγράφηκε.` });
     } catch (error) {
       setMessage({ tone: 'error', text: dataErrorMessage(error) });
@@ -304,6 +327,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
               <ShiftForm
+                key={editing?.id ?? 'new'}
                 supabase={supabase}
                 isAdmin={isAdmin}
                 drivers={drivers}
@@ -313,6 +337,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 onPrefsChange={setPrefs}
                 onSaved={handleSaved}
                 onQueued={handleQueued}
+                editing={editing}
+                onUpdated={handleUpdated}
+                onCancelEdit={() => setEditing(null)}
               />
               <StatsPanel
                 totals={totals}
@@ -336,6 +363,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               userId={userId}
               fetchedAt={shiftsState?.fetchedAt ?? 0}
               periodText={periodLabel(prefs.year, prefs.month)}
+              editingId={editing?.id ?? null}
+              onEdit={startEdit}
               onDelete={handleDelete}
             />
 

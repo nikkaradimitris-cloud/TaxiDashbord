@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { EMPTY_SHIFT_FORM, parseShiftForm, toShiftInsert } from './shift-form';
+import { EMPTY_SHIFT_FORM, parseShiftForm, shiftToFormValues, toShiftInsert } from './shift-form';
 
 describe('parseShiftForm', () => {
   it('ο αριθμός Ζ είναι υποχρεωτικός', () => {
@@ -48,5 +48,47 @@ describe('toShiftInsert', () => {
     const row = toShiftInsert(input!, { id: 'x', driverId: 'd', year: 2026, month: 9, zNumber: ' Z1 ' });
     expect(row).toMatchObject({ net_revenue: 1.01, paid_km: 10.13, z_number: 'Z1', year: 2026, month: 9 });
     expect(row).not.toHaveProperty('vat');
+  });
+});
+
+describe('shiftToFormValues', () => {
+  const stored = {
+    z_number: '902',
+    trips: 15,
+    paid_km: 169.9,
+    empty_km: 93,
+    net_revenue: 223.87,
+    tips: 10,
+    fuel: 0,
+    other_expenses: 0,
+    repairs: 0,
+  };
+
+  it('γεμίζει τη φόρμα με ελληνική υποδιαστολή και κενά για τα μηδενικά', () => {
+    expect(shiftToFormValues(stored)).toEqual({
+      zNumber: '902',
+      trips: '15',
+      paidKm: '169,9',
+      emptyKm: '93',
+      netRevenue: '223,87',
+      tips: '10',
+      fuel: '',
+      otherExpenses: '',
+      repairs: '',
+    });
+  });
+
+  it('η φόρμα διαβάζει ξανά ακριβώς τις ίδιες τιμές', () => {
+    const { input } = parseShiftForm(shiftToFormValues(stored));
+    expect(input).toEqual({
+      trips: 15,
+      paidKm: 169.9,
+      emptyKm: 93,
+      netRevenue: 223.87,
+      tips: 10,
+      fuel: 0,
+      otherExpenses: 0,
+      repairs: 0,
+    });
   });
 });

@@ -54,18 +54,30 @@ export async function insertShift(supabase: BrowserSupabase, payload: ShiftInser
   return data[0] ?? null;
 }
 
-/** Υπάρχει ήδη βάρδια με τον ίδιο αριθμό Ζ για τον οδηγό; */
+/** Υπάρχει ήδη (άλλη) βάρδια με τον ίδιο αριθμό Ζ για τον οδηγό; */
 export async function findShiftByZ(
   supabase: BrowserSupabase,
   driverId: string,
   zNumber: string,
+  excludeId?: string,
 ): Promise<ShiftRow | null> {
-  const { data, error } = await supabase
-    .from('shifts')
-    .select('*')
-    .eq('driver_id', driverId)
-    .eq('z_number', zNumber.trim())
-    .limit(1);
+  let request = supabase.from('shifts').select('*').eq('driver_id', driverId).eq('z_number', zNumber.trim());
+  if (excludeId) request = request.neq('id', excludeId);
+  const { data, error } = await request.limit(1);
+  if (error) throw error;
+  return data[0] ?? null;
+}
+
+/**
+ * Διόρθωση βάρδιας. Επιστρέφει null αν δεν επιτρέπεται
+ * (οδηγός: μόνο δικές του καταχωρήσεις μέσα σε 24 ώρες).
+ */
+export async function updateShift(
+  supabase: BrowserSupabase,
+  id: string,
+  changes: TablesUpdate<'shifts'>,
+): Promise<ShiftRow | null> {
+  const { data, error } = await supabase.from('shifts').update(changes).eq('id', id).select('*');
   if (error) throw error;
   return data[0] ?? null;
 }

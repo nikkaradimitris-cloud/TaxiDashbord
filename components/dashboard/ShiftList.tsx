@@ -18,6 +18,8 @@ export function ShiftList({
   userId,
   fetchedAt,
   periodText,
+  editingId,
+  onEdit,
   onDelete,
 }: {
   items: { row: ShiftRow; figures: ShiftFigures }[];
@@ -27,13 +29,15 @@ export function ShiftList({
   userId: string;
   fetchedAt: number;
   periodText: string;
+  editingId: string | null;
+  onEdit: (row: ShiftRow) => void;
   onDelete: (row: ShiftRow) => void;
 }) {
   const [limit, setLimit] = useState(PAGE);
   const visible = items.slice(0, limit);
 
-  // Ο οδηγός διορθώνει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
-  const canDelete = (row: ShiftRow) =>
+  // Ο οδηγός διορθώνει/διαγράφει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
+  const canModify = (row: ShiftRow) =>
     isAdmin || (row.created_by === userId && Date.parse(row.created_at) > fetchedAt - DAY_MS);
 
   return (
@@ -53,7 +57,10 @@ export function ShiftList({
             {visible.map(({ row, figures }) => {
               const driver = driversById.get(row.driver_id);
               return (
-                <li key={row.id} className="rounded-xl border border-line p-3">
+                <li
+                  key={row.id}
+                  className={cx('rounded-xl border p-3', row.id === editingId ? 'border-accent-strong bg-warn-soft' : 'border-line')}
+                >
                   <div className="flex items-start justify-between gap-2">
                     <div>
                       <p className="font-semibold">
@@ -82,8 +89,11 @@ export function ShiftList({
                     <dt className="text-muted">Διαδρομές</dt>
                     <dd className="text-right">{figures.trips}</dd>
                   </dl>
-                  {canDelete(row) && (
-                    <div className="mt-2 text-right">
+                  {canModify(row) && (
+                    <div className="mt-2 flex justify-end gap-2">
+                      <Button className="min-h-9 px-3 py-1" onClick={() => onEdit(row)}>
+                        Επεξεργασία
+                      </Button>
                       <Button variant="danger" className="min-h-9 px-3 py-1" onClick={() => onDelete(row)}>
                         Διαγραφή
                       </Button>
@@ -117,7 +127,7 @@ export function ShiftList({
                 {visible.map(({ row, figures }) => {
                   const driver = driversById.get(row.driver_id);
                   return (
-                    <tr key={row.id} className="border-t border-line">
+                    <tr key={row.id} className={cx('border-t border-line', row.id === editingId && 'bg-warn-soft')}>
                       <td className="py-2 pr-3 whitespace-nowrap">
                         {monthName(row.month)} {row.year}
                       </td>
@@ -138,16 +148,26 @@ export function ShiftList({
                         {formatEuro(figures.netCashCents)}
                       </td>
                       <td className="py-2 pr-3 text-xs whitespace-nowrap text-muted">{formatDateTime(row.created_at)}</td>
-                      <td className="py-2 text-right">
-                        {canDelete(row) && (
-                          <Button
-                            variant="ghost"
-                            className="min-h-8 px-2 py-1 text-bad"
-                            onClick={() => onDelete(row)}
-                            aria-label={`Διαγραφή βάρδιας Ζ ${row.z_number}`}
-                          >
-                            ✕
-                          </Button>
+                      <td className="py-2 text-right whitespace-nowrap">
+                        {canModify(row) && (
+                          <>
+                            <Button
+                              variant="ghost"
+                              className="min-h-8 px-2 py-1"
+                              onClick={() => onEdit(row)}
+                              aria-label={`Επεξεργασία βάρδιας Ζ ${row.z_number}`}
+                            >
+                              Επεξεργασία
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="min-h-8 px-2 py-1 text-bad"
+                              onClick={() => onDelete(row)}
+                              aria-label={`Διαγραφή βάρδιας Ζ ${row.z_number}`}
+                            >
+                              ✕
+                            </Button>
+                          </>
                         )}
                       </td>
                     </tr>

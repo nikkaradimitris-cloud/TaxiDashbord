@@ -1,6 +1,6 @@
 import { computeShift, round2, type ShiftFigures, type ShiftInput } from './accounting';
 import { parseOptionalDecimal, parseOptionalInteger } from './numbers';
-import type { ShiftInsert } from './types';
+import type { ShiftInsert, ShiftRow } from './types';
 
 /** Οι τιμές της φόρμας όπως τις πληκτρολογεί ο χρήστης (κείμενο). */
 export interface ShiftFormValues {
@@ -86,13 +86,12 @@ export function parseShiftForm(values: ShiftFormValues): ParsedShiftForm {
   };
 }
 
-/** Γραμμή για τη βάση. Τα ποσά στρογγυλοποιούνται σε 2 δεκαδικά όπως θα αποθηκευτούν. */
-export function toShiftInsert(
+/** Οι στήλες της βάρδιας για τη βάση. Τα ποσά στρογγυλοποιούνται σε 2 δεκαδικά όπως θα αποθηκευτούν. */
+export function toShiftValues(
   input: ShiftInput,
-  meta: { id: string; driverId: string; year: number; month: number; zNumber: string },
-): ShiftInsert & { id: string } {
+  meta: { driverId: string; year: number; month: number; zNumber: string },
+): Omit<ShiftInsert, 'id'> {
   return {
-    id: meta.id,
     driver_id: meta.driverId,
     year: meta.year,
     month: meta.month,
@@ -105,5 +104,39 @@ export function toShiftInsert(
     fuel: round2(input.fuel),
     other_expenses: round2(input.otherExpenses),
     repairs: round2(input.repairs),
+  };
+}
+
+/** Νέα γραμμή για τη βάση, με id από τη συσκευή (ασφαλής επανάληψη χωρίς διπλοεγγραφές). */
+export function toShiftInsert(
+  input: ShiftInput,
+  meta: { id: string; driverId: string; year: number; month: number; zNumber: string },
+): ShiftInsert & { id: string } {
+  return { id: meta.id, ...toShiftValues(input, meta) };
+}
+
+/** Αριθμός της βάσης → κείμενο για τη φόρμα, με ελληνική υποδιαστολή (0 → κενό). */
+function toInput(value: number | null | undefined): string {
+  const n = round2(Number(value ?? 0));
+  return n ? String(n).replace('.', ',') : '';
+}
+
+/** Αποθηκευμένη βάρδια → τιμές φόρμας, για διόρθωση. */
+export function shiftToFormValues(
+  row: Pick<
+    ShiftRow,
+    'z_number' | 'trips' | 'paid_km' | 'empty_km' | 'net_revenue' | 'tips' | 'fuel' | 'other_expenses' | 'repairs'
+  >,
+): ShiftFormValues {
+  return {
+    zNumber: row.z_number,
+    trips: row.trips ? String(row.trips) : '',
+    paidKm: toInput(row.paid_km),
+    emptyKm: toInput(row.empty_km),
+    netRevenue: toInput(row.net_revenue),
+    tips: toInput(row.tips),
+    fuel: toInput(row.fuel),
+    otherExpenses: toInput(row.other_expenses),
+    repairs: toInput(row.repairs),
   };
 }

@@ -2,7 +2,7 @@
 -- Εκτέλεση: npx supabase test db   (χρειάζεται τοπικό Supabase: npx supabase start)
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(50);
+select plan(54);
 
 -- ------------------------------------------------------------------
 -- Σχήμα
@@ -170,6 +170,20 @@ select throws_ok(
   '42501', null, 'δεν μπορεί να κάνει τον εαυτό του admin'
 );
 
+-- Διόρθωση δικής του πρόσφατης καταχώρησης (π.χ. ξέχασε τα έξοδα).
+select results_eq(
+  $$ with u as (update public.shifts set fuel = 12.40 where id = 'c0000000-0000-0000-0000-000000000003'
+                returning expenses_vat, created_by)
+     select expenses_vat, created_by from u $$,
+  $$ values (2.40::numeric, '22222222-2222-2222-2222-222222222222'::uuid) $$,
+  'διορθώνει δική του πρόσφατη βάρδια· ο ΦΠΑ ξαναϋπολογίζεται'
+);
+select throws_ok(
+  $$ update public.shifts set driver_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+     where id = 'c0000000-0000-0000-0000-000000000003' $$,
+  '42501', null, 'δεν μεταφέρει βάρδια σε άλλον οδηγό'
+);
+
 -- Αλλαγές/διαγραφές που δεν επιτρέπονται απλώς δεν επηρεάζουν γραμμές.
 update public.shifts set net_revenue = 1 where id = 'c0000000-0000-0000-0000-000000000001';
 update public.drivers set name = 'Hacked' where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa';
@@ -193,6 +207,11 @@ update public.shifts set created_at = now() - interval '48 hours'
 where id = 'c0000000-0000-0000-0000-000000000004';
 alter table public.shifts enable trigger shifts_before_write;
 set local role authenticated;
+select results_eq(
+  $$ with u as (update public.shifts set fuel = 1 where id = 'c0000000-0000-0000-0000-000000000004' returning 1)
+     select count(*)::int from u $$,
+  $$ values (0) $$, 'μετά από 24 ώρες ο οδηγός δεν διορθώνει'
+);
 select results_eq(
   $$ with d as (delete from public.shifts where id = 'c0000000-0000-0000-0000-000000000004' returning 1)
      select count(*)::int from d $$,
@@ -232,6 +251,13 @@ select is(
 select is(
   (select name from public.drivers where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
   'Γιώργος', 'ο οδηγός δεν άλλαξε τα στοιχεία του στόλου'
+);
+select results_eq(
+  $$ with u as (update public.shifts set repairs = 124 where id = 'c0000000-0000-0000-0000-000000000001'
+                returning vat_balance, created_by)
+     select vat_balance, created_by from u $$,
+  $$ values (-12.84::numeric, '11111111-1111-1111-1111-111111111111'::uuid) $$,
+  'ο admin διορθώνει οποιαδήποτε βάρδια· ο καταχωρητής δεν αλλάζει'
 );
 update public.drivers set email = null where id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb';
 select is(

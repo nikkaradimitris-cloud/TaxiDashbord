@@ -1,13 +1,20 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, Card, Field, Input, Notice, Select } from '@/components/ui';
+import { Button, Card, cx, Field, Input, Notice, Select } from '@/components/ui';
 import { VAT_STATUS_LABEL, vatStatus } from '@/lib/accounting';
-import { findShiftByZ, insertShift } from '@/lib/data';
+import { findShiftByZ, insertShift, updateShift } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
 import { formatEuro, formatKm } from '@/lib/format';
 import { GREEK_MONTHS, periodLabel, yearOptions } from '@/lib/period';
-import { EMPTY_SHIFT_FORM, parseShiftForm, toShiftInsert, type ShiftFormValues } from '@/lib/shift-form';
+import {
+  EMPTY_SHIFT_FORM,
+  parseShiftForm,
+  shiftToFormValues,
+  toShiftInsert,
+  toShiftValues,
+  type ShiftFormValues,
+} from '@/lib/shift-form';
 import type { PendingShift, Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow, ShiftRow } from '@/lib/types';
@@ -30,6 +37,9 @@ export function ShiftForm({
   onPrefsChange,
   onSaved,
   onQueued,
+  editing,
+  onUpdated,
+  onCancelEdit,
 }: {
   supabase: BrowserSupabase;
   isAdmin: boolean;
@@ -40,22 +50,32 @@ export function ShiftForm({
   onPrefsChange: (changes: Partial<Omit<Preferences, 'today'>>) => void;
   onSaved: (row: ShiftRow) => void;
   onQueued: (item: PendingShift) => void;
+  /** Βάρδια προς διόρθωση (null = νέα καταχώρηση). Όταν αλλάζει, το component ξαναστήνεται (key). */
+  editing: ShiftRow | null;
+  onUpdated: (row: ShiftRow) => void;
+  onCancelEdit: () => void;
 }) {
-  const [values, setValues] = useState<ShiftFormValues>(EMPTY_SHIFT_FORM);
-  const [localDriverId, setLocalDriverId] = useState('');
-  const [localMonth, setLocalMonth] = useState(prefs.today.month);
+  const [values, setValues] = useState<ShiftFormValues>(() => (editing ? shiftToFormValues(editing) : EMPTY_SHIFT_FORM));
+  const [localDriverId, setLocalDriverId] = useState(editing?.driver_id ?? '');
+  const [localMonth, setLocalMonth] = useState(editing?.month ?? prefs.today.month);
+  const [localYear, setLocalYear] = useState(editing?.year ?? prefs.today.year);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const zInput = useRef<HTMLInputElement>(null);
 
-  // Η φόρμα ακολουθεί την επιλεγμένη περίοδο/οδηγό της προβολής.
-  const year = prefs.year;
-  const month = prefs.month === 'all' ? localMonth : prefs.month;
-  const selectable = isAdmin ? drivers.filter((d) => d.active || d.id === driverFilter) : drivers;
+  // Νέα καταχώρηση: η φόρμα ακολουθεί την περίοδο/οδηγό της προβολής.
+  // Διόρθωση: κρατά τα στοιχεία της βάρδιας, χωρίς να αλλάζει την προβολή.
+  const isEditing = editing !== null;
+  const year = isEditing ? localYear : prefs.year;
+  const month = isEditing || prefs.month === 'all' ? localMonth : prefs.month;
+  const followsFilter = !isEditing && driverFilter !== 'all';
+  const selectable = isAdmin
+    ? drivers.filter((d) => d.active || d.id === (followsFilter ? driverFilter : localDriverId))
+    : drivers;
   const driverId = !isAdmin
     ? (drivers[0]?.id ?? '')
-    : driverFilter !== 'all'
+    : followsFilter
       ? driverFilter
       : selectable.some((d) => d.id === localDriverId)
         ? localDriverId
@@ -67,7 +87,7 @@ export function ShiftForm({
   const errors = showErrors ? parsed.errors : {};
   const preview = parsed.preview;
   const status = vatStatus(preview.vatBalanceCents);
-  const isCurrentPeriod = year === prefs.today.year && month === prefs.today.month;
+  const isCurrentPeriod = isEditing || (year === prefs.today.year && month === prefs.today.month);
 
   const set = (key: keyof ShiftFormValues, numeric = true) => ({
     value: values[key],
@@ -79,12 +99,17 @@ export function ShiftForm({
   });
 
   function setMonth(value: number) {
-    if (prefs.month === 'all') setLocalMonth(value);
+    if (isEditing || prefs.month === 'all') setLocalMonth(value);
     else onPrefsChange({ month: value });
   }
 
+  function setYear(value: number) {
+    if (isEditing) setLocalYear(value);
+    else onPrefsChange({ year: value });
+  }
+
   function setDriver(id: string) {
-    if (driverFilter !== 'all') onPrefsChange({ driverFilter: id });
+    if (followsFilter) onPrefsChange({ driverFilter: id });
     else setLocalDriverId(id);
   }
 
@@ -95,27 +120,42 @@ export function ShiftForm({
     if (!parsed.input || !driver) return;
 
     const zNumber = values.zNumber.trim();
-    const payload = toShiftInsert(parsed.input, { id: newId(), driverId: driver.id, year, month, zNumber });
+    const meta = { driverId: driver.id, year, month, zNumber };
+    const payload = editing ? null : toShiftInsert(parsed.input, { id: newId(), ...meta });
     const label = `Ζ ${zNumber} · ${driver.name} · ${periodLabel(year, month)}`;
     setBusy(true);
     try {
-      const duplicate = await findShiftByZ(supabase, driver.id, zNumber);
-      if (
-        duplicate &&
-        !confirm(
-          `Υπάρχει ήδη βάρδια με Ζ ${zNumber} για τον/την ${driver.name} (${periodLabel(duplicate.year, duplicate.month)}). Να καταχωρηθεί ξανά;`,
-        )
-      ) {
+      if (!editing || zNumber !== editing.z_number || driver.id !== editing.driver_id) {
+        const duplicate = await findShiftByZ(supabase, driver.id, zNumber, editing?.id);
+        if (
+          duplicate &&
+          !confirm(
+            `Υπάρχει ήδη βάρδια με Ζ ${zNumber} για τον/την ${driver.name} (${periodLabel(duplicate.year, duplicate.month)}). Να αποθηκευτεί παρ' όλα αυτά;`,
+          )
+        ) {
+          return;
+        }
+      }
+      if (editing) {
+        const row = await updateShift(supabase, editing.id, toShiftValues(parsed.input, meta));
+        if (!row) {
+          setMessage({
+            tone: 'error',
+            text: 'Η διόρθωση δεν επιτρέπεται. Οι οδηγοί διορθώνουν μόνο δικές τους καταχωρήσεις μέσα σε 24 ώρες.',
+          });
+          return;
+        }
+        onUpdated(row);
         return;
       }
-      const row = await insertShift(supabase, payload);
+      const row = await insertShift(supabase, payload!);
       if (row) onSaved(row);
       setValues(EMPTY_SHIFT_FORM);
       setShowErrors(false);
       setMessage({ tone: 'success', text: `✓ Καταχωρήθηκε: ${label}` });
       zInput.current?.focus();
     } catch (error) {
-      if (isNetworkError(error)) {
+      if (payload && isNetworkError(error)) {
         onQueued({ payload, driverName: driver.name, savedAt: new Date().toISOString() });
         setValues(EMPTY_SHIFT_FORM);
         setShowErrors(false);
@@ -132,7 +172,11 @@ export function ShiftForm({
   }
 
   return (
-    <Card title="Καταχώρηση Βάρδιας" id="shift-form">
+    <Card
+      title={isEditing ? `Επεξεργασία Βάρδιας · Ζ ${editing.z_number}` : 'Καταχώρηση Βάρδιας'}
+      id="shift-form"
+      className={cx('scroll-mt-20', isEditing && 'ring-2 ring-accent-strong')}
+    >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
           <Field label="Μήνας">
@@ -145,7 +189,7 @@ export function ShiftForm({
             </Select>
           </Field>
           <Field label="Έτος">
-            <Select value={year} onChange={(e) => onPrefsChange({ year: Number(e.target.value) })}>
+            <Select value={year} onChange={(e) => setYear(Number(e.target.value))}>
               {yearOptions(prefs.today.year, [year]).map((y) => (
                 <option key={y} value={y}>
                   {y}
@@ -267,8 +311,13 @@ export function ShiftForm({
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
 
         <Button type="submit" variant="primary" className="w-full text-base" disabled={busy || !driver || inactiveSelf}>
-          {busy ? 'Αποθήκευση…' : `Καταχώρηση · ${periodLabel(year, month)}`}
+          {busy ? 'Αποθήκευση…' : isEditing ? 'Αποθήκευση διορθώσεων' : `Καταχώρηση · ${periodLabel(year, month)}`}
         </Button>
+        {isEditing && (
+          <Button className="w-full" onClick={onCancelEdit} disabled={busy}>
+            Ακύρωση
+          </Button>
+        )}
       </form>
     </Card>
   );
