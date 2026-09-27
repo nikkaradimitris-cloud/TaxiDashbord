@@ -21,6 +21,7 @@ import {
 } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/client';
 import type { DriverRow, SessionInfo, ShiftRow } from '@/lib/types';
+import { EditShiftDialog } from './EditShiftDialog';
 import { FleetPanel } from './FleetPanel';
 import { LegacyImport } from './LegacyImport';
 import { OutboxPanel } from './OutboxPanel';
@@ -53,6 +54,14 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
   const [message, setMessage] = useState<Message | null>(null);
   const [editing, setEditing] = useState<ShiftRow | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+  const closeEdit = useCallback(() => setEditing(null), []);
+
+  /** Σύντομο μήνυμα κάτω στην οθόνη, ορατό όπου κι αν βρίσκεται ο χρήστης. */
+  function showToast(text: string) {
+    setToast(text);
+    window.setTimeout(() => setToast((current) => (current === text ? null : current)), 4000);
+  }
 
   // ------------------------------------------------------------------
   // Οδηγοί (admin: όλος ο στόλος — οδηγός: μόνο ο εαυτός του)
@@ -140,7 +149,6 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   function startEdit(row: ShiftRow) {
     setEditing(row);
     setMessage(null);
-    document.getElementById('shift-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   function handleUpdated(row: ShiftRow) {
@@ -155,7 +163,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
         : prev,
     );
     setEditing(null);
-    setMessage({ tone: 'success', text: `✓ Αποθηκεύτηκαν οι διορθώσεις στη βάρδια Ζ ${row.z_number}.` });
+    showToast(`✓ Αποθηκεύτηκαν οι διορθώσεις στη βάρδια Ζ ${row.z_number}.`);
   }
 
   function handleQueued(item: PendingShift) {
@@ -327,7 +335,6 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
               <ShiftForm
-                key={editing?.id ?? 'new'}
                 supabase={supabase}
                 isAdmin={isAdmin}
                 drivers={drivers}
@@ -337,9 +344,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 onPrefsChange={setPrefs}
                 onSaved={handleSaved}
                 onQueued={handleQueued}
-                editing={editing}
+                editing={null}
                 onUpdated={handleUpdated}
-                onCancelEdit={() => setEditing(null)}
+                onCancelEdit={closeEdit}
               />
               <StatsPanel
                 totals={totals}
@@ -368,6 +375,26 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               onDelete={handleDelete}
             />
 
+            {editing && (
+              <EditShiftDialog onClose={closeEdit}>
+                <ShiftForm
+                  key={editing.id}
+                  supabase={supabase}
+                  isAdmin={isAdmin}
+                  drivers={drivers}
+                  driversLoaded={!isAdmin || driversState !== null}
+                  prefs={prefs}
+                  driverFilter={driverFilter}
+                  onPrefsChange={setPrefs}
+                  onSaved={handleSaved}
+                  onQueued={handleQueued}
+                  editing={editing}
+                  onUpdated={handleUpdated}
+                  onCancelEdit={closeEdit}
+                />
+              </EditShiftDialog>
+            )}
+
             {isAdmin && (
               <FleetPanel
                 supabase={supabase}
@@ -379,6 +406,14 @@ export function Dashboard({ session }: { session: SessionInfo }) {
           </>
         )}
       </main>
+
+      {toast && (
+        <div className="pointer-events-none fixed inset-x-3 bottom-4 z-40 mx-auto max-w-md">
+          <Notice tone="success" className="pointer-events-auto shadow-lg">
+            {toast}
+          </Notice>
+        </div>
+      )}
     </div>
   );
 }

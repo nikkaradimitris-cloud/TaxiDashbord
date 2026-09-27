@@ -174,8 +174,8 @@ export function ShiftForm({
   return (
     <Card
       title={isEditing ? `Επεξεργασία Βάρδιας · Ζ ${editing.z_number}` : 'Καταχώρηση Βάρδιας'}
-      id="shift-form"
-      className={cx('scroll-mt-20', isEditing && 'ring-2 ring-accent-strong')}
+      id={isEditing ? 'shift-edit-form' : 'shift-form'}
+      className={cx(isEditing && 'ring-2 ring-accent-strong')}
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
