@@ -169,6 +169,56 @@ export type Database = {
           },
         ];
       };
+      vehicle_expenses: {
+        Row: {
+          amount: number;
+          category: string;
+          created_at: string;
+          created_by: string | null;
+          description: string;
+          driver_id: string;
+          id: string;
+          month: number;
+          updated_at: string;
+          vat: number | null;
+          year: number;
+        };
+        Insert: {
+          amount: number;
+          category?: string;
+          created_at?: string;
+          created_by?: string | null;
+          description?: string;
+          driver_id: string;
+          id?: string;
+          month: number;
+          updated_at?: string;
+          vat?: never;
+          year: number;
+        };
+        Update: {
+          amount?: number;
+          category?: string;
+          created_at?: string;
+          created_by?: string | null;
+          description?: string;
+          driver_id?: string;
+          id?: string;
+          month?: number;
+          updated_at?: string;
+          vat?: never;
+          year?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vehicle_expenses_driver_id_fkey";
+            columns: ["driver_id"];
+            isOneToOne: false;
+            referencedRelation: "drivers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Views: {
       monthly_summary: {
@@ -196,17 +246,10 @@ export type Database = {
           vat: number | null;
           vat_balance: number | null;
           vat_status: string | null;
+          vehicle_expenses: number | null;
           year: number | null;
         };
-        Relationships: [
-          {
-            foreignKeyName: "shifts_driver_id_fkey";
-            columns: ["driver_id"];
-            isOneToOne: false;
-            referencedRelation: "drivers";
-            referencedColumns: ["id"];
-          },
-        ];
+        Relationships: [];
       };
     };
     Functions: {

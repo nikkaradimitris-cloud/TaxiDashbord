@@ -2,7 +2,7 @@
 -- Εκτέλεση: npx supabase test db   (χρειάζεται τοπικό Supabase: npx supabase start)
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(54);
+select plan(75);
 
 -- ------------------------------------------------------------------
 -- Σχήμα
@@ -10,10 +10,11 @@ select plan(54);
 select has_table('public', 'profiles', 'πίνακας profiles');
 select has_table('public', 'drivers', 'πίνακας drivers');
 select has_table('public', 'shifts', 'πίνακας shifts');
+select has_table('public', 'vehicle_expenses', 'πίνακας vehicle_expenses');
 select has_view('public', 'monthly_summary', 'αναφορά monthly_summary');
 select ok(
   (select bool_and(rowsecurity) from pg_tables
-   where schemaname = 'public' and tablename in ('profiles', 'drivers', 'shifts')),
+   where schemaname = 'public' and tablename in ('profiles', 'drivers', 'shifts', 'vehicle_expenses')),
   'RLS ενεργό σε όλους τους πίνακες'
 );
 
@@ -128,6 +129,38 @@ select throws_ok(
 );
 
 -- ------------------------------------------------------------------
+-- Έξοδα οχήματος (εκτός βάρδιας): ανά αυτοκίνητο και μήνα, ΦΠΑ 24% μέσα
+-- ------------------------------------------------------------------
+insert into public.vehicle_expenses (id, driver_id, year, month, category, description, amount) values
+  ('e0000000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 2026, 9, 'repairs', '  Φρένα – συνεργείο  ', 800),
+  ('e0000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'wash', '', 10);
+
+select is((select vat from public.vehicle_expenses where id = 'e0000000-0000-0000-0000-000000000001'), 154.84,
+  'ΦΠΑ 24% εξόδου: 800 / 1.24 × 0.24 = 154,84');
+select is((select description from public.vehicle_expenses where id = 'e0000000-0000-0000-0000-000000000001'),
+  'Φρένα – συνεργείο', 'η περιγραφή καθαρίζεται από κενά');
+select is((select created_by from public.vehicle_expenses where id = 'e0000000-0000-0000-0000-000000000001'),
+  '11111111-1111-1111-1111-111111111111'::uuid, 'καταγράφεται ποιος καταχώρησε το έξοδο');
+select throws_ok(
+  $$ insert into public.vehicle_expenses (driver_id, year, month, amount) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 0) $$,
+  '23514', null, 'το ποσό εξόδου πρέπει να είναι θετικό'
+);
+select throws_ok(
+  $$ insert into public.vehicle_expenses (driver_id, year, month, category, amount) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'casino', 5) $$,
+  '23514', null, 'μόνο γνωστές κατηγορίες εξόδων'
+);
+select throws_ok(
+  $$ insert into public.vehicle_expenses (driver_id, year, month, amount, vat) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 5, 1) $$,
+  '428C9', null, 'ο ΦΠΑ εξόδου δεν γράφεται χειροκίνητα'
+);
+select results_eq(
+  $$ select total_expenses, expenses_vat, vat_balance, net_cash, vehicle_expenses
+     from public.monthly_summary where driver_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb' and month = 9 $$,
+  $$ values (924.00::numeric, 178.84::numeric, -165.85::numeric, -811.01::numeric, 800.00::numeric) $$,
+  'η μηνιαία αναφορά περιλαμβάνει τα έξοδα οχήματος (ΦΠΑ και ταμείο)'
+);
+
+-- ------------------------------------------------------------------
 -- Οδηγός: βλέπει και καταχωρεί ΜΟΝΟ τα δικά του
 -- ------------------------------------------------------------------
 set local request.jwt.claims = '{"sub": "22222222-2222-2222-2222-222222222222"}';
@@ -155,6 +188,43 @@ select throws_ok(
   $$ insert into public.shifts (driver_id, year, month, z_number)
      values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 2026, 9, '1') $$,
   '42501', null, 'δεν καταχωρεί βάρδια για άλλον οδηγό'
+);
+select results_eq(
+  $$ select id from public.vehicle_expenses $$,
+  $$ values ('e0000000-0000-0000-0000-000000000002'::uuid) $$,
+  'ο οδηγός βλέπει μόνο τα έξοδα του δικού του αυτοκινήτου'
+);
+select throws_ok(
+  $$ insert into public.vehicle_expenses (driver_id, year, month, amount) values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 2026, 9, 50) $$,
+  '42501', null, 'δεν καταχωρεί έξοδο για άλλο αυτοκίνητο'
+);
+select lives_ok(
+  $$ insert into public.vehicle_expenses (id, driver_id, year, month, category, amount)
+     values ('e0000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'tolls', 12.40) $$,
+  'καταχωρεί έξοδο για το δικό του αυτοκίνητο'
+);
+select results_eq(
+  $$ with u as (update public.vehicle_expenses set amount = 24.80
+                where id = 'e0000000-0000-0000-0000-000000000003' returning vat, created_by)
+     select vat, created_by from u $$,
+  $$ values (4.80::numeric, '22222222-2222-2222-2222-222222222222'::uuid) $$,
+  'διορθώνει δικό του πρόσφατο έξοδο· ο ΦΠΑ ξαναϋπολογίζεται'
+);
+select throws_ok(
+  $$ update public.vehicle_expenses set driver_id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
+     where id = 'e0000000-0000-0000-0000-000000000003' $$,
+  '42501', null, 'δεν μεταφέρει έξοδο σε άλλο αυτοκίνητο'
+);
+select results_eq(
+  $$ with u as (update public.vehicle_expenses set amount = 1
+                where id = 'e0000000-0000-0000-0000-000000000002' returning 1)
+     select count(*)::int from u $$,
+  $$ values (0) $$, 'δεν αλλάζει έξοδο που καταχώρησε ο admin'
+);
+select results_eq(
+  $$ with d as (delete from public.vehicle_expenses where id = 'e0000000-0000-0000-0000-000000000003' returning 1)
+     select count(*)::int from d $$,
+  $$ values (1) $$, 'διαγράφει δικό του πρόσφατο έξοδο'
 );
 select lives_ok(
   $$ insert into public.shifts (id, driver_id, year, month, z_number, net_revenue)
@@ -218,6 +288,26 @@ select results_eq(
   $$ values (0) $$, 'μετά από 24 ώρες ο οδηγός δεν διαγράφει'
 );
 
+reset role;
+insert into public.vehicle_expenses (id, driver_id, year, month, amount)
+values ('e0000000-0000-0000-0000-000000000004', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 30);
+alter table public.vehicle_expenses disable trigger vehicle_expenses_before_write;
+update public.vehicle_expenses set created_at = now() - interval '48 hours'
+where id = 'e0000000-0000-0000-0000-000000000004';
+alter table public.vehicle_expenses enable trigger vehicle_expenses_before_write;
+set local role authenticated;
+select results_eq(
+  $$ with u as (update public.vehicle_expenses set amount = 1
+                where id = 'e0000000-0000-0000-0000-000000000004' returning 1)
+     select count(*)::int from u $$,
+  $$ values (0) $$, 'μετά από 24 ώρες ο οδηγός δεν διορθώνει έξοδο'
+);
+select results_eq(
+  $$ with d as (delete from public.vehicle_expenses where id = 'e0000000-0000-0000-0000-000000000004' returning 1)
+     select count(*)::int from d $$,
+  $$ values (0) $$, 'μετά από 24 ώρες ο οδηγός δεν διαγράφει έξοδο'
+);
+
 -- ------------------------------------------------------------------
 -- Ανενεργός οδηγός, χρήστης χωρίς αντιστοίχιση, ανώνυμος
 -- ------------------------------------------------------------------
@@ -230,13 +320,19 @@ select throws_ok(
   '42501', null, 'ανενεργός οδηγός δεν καταχωρεί νέες βάρδιες'
 );
 select isnt_empty($$ select id from public.shifts $$, 'ανενεργός οδηγός βλέπει το ιστορικό του');
+select throws_ok(
+  $$ insert into public.vehicle_expenses (driver_id, year, month, amount) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 5) $$,
+  '42501', null, 'ανενεργός οδηγός δεν καταχωρεί νέα έξοδα'
+);
 
 set local request.jwt.claims = '{"sub": "44444444-4444-4444-4444-444444444444"}';
 select is_empty($$ select id from public.shifts $$, 'λογαριασμός χωρίς οδηγό δεν βλέπει βάρδιες');
 select is_empty($$ select id from public.drivers $$, 'λογαριασμός χωρίς οδηγό δεν βλέπει τον στόλο');
+select is_empty($$ select id from public.vehicle_expenses $$, 'λογαριασμός χωρίς οδηγό δεν βλέπει έξοδα');
 
 set local role anon;
 select throws_ok($$ select id from public.shifts $$, '42501', null, 'ανώνυμος: καμία πρόσβαση');
+select throws_ok($$ select id from public.vehicle_expenses $$, '42501', null, 'ανώνυμος: καμία πρόσβαση στα έξοδα');
 
 -- ------------------------------------------------------------------
 -- Admin: τα βλέπει όλα, τίποτα δεν αλλοιώθηκε από τον οδηγό
@@ -244,6 +340,7 @@ select throws_ok($$ select id from public.shifts $$, '42501', null, 'ανώνυ�
 set local role authenticated;
 set local request.jwt.claims = '{"sub": "11111111-1111-1111-1111-111111111111"}';
 select is((select count(*)::int from public.shifts), 3, 'ο admin βλέπει όλες τις βάρδιες');
+select is((select count(*)::int from public.vehicle_expenses), 3, 'ο admin βλέπει όλα τα έξοδα');
 select is(
   (select net_revenue from public.shifts where id = 'c0000000-0000-0000-0000-000000000001'),
   160.39, 'ο οδηγός δεν άλλαξε ποσά'
