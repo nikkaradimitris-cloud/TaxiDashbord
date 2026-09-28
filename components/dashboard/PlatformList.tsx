@@ -7,10 +7,10 @@ import { monthName, type MonthFilter } from '@/lib/period';
 import {
   findRate,
   formatWeek,
-  isAutoCommission,
   PLATFORMS,
   platformLabel,
   rateLabel,
+  statementPayoutCents,
   toVatRate,
   weekCycles,
   weekState,
@@ -42,11 +42,10 @@ function entryTitle(row: StatementRow) {
 
 const percent = new Intl.NumberFormat('el-GR', { maximumFractionDigits: 2 });
 
-/** Πώς βγήκε η κράτηση της εβδομάδας: «κράτηση 15%» (αυτόματα) ή «ποσό της κίνησης». */
+/** Με ποιο ποσοστό βγήκε η κράτηση της εβδομάδας: «κράτηση 15%». */
 function rateNote(row: StatementRow): string {
-  if (row.kind !== 'week') return '';
-  if (row.rate_pct != null && isAutoCommission(row)) return `κράτηση ${percent.format(Number(row.rate_pct))}%`;
-  return 'ποσό της κίνησης';
+  if (row.kind !== 'week' || row.rate_pct == null) return '';
+  return `κράτηση ${percent.format(Number(row.rate_pct))}%`;
 }
 
 function vatText(row: StatementRow): string {
@@ -191,7 +190,10 @@ export function PlatformList({
                       {row.kind === 'week' && (
                         <p className="text-sm">
                           <span className="whitespace-nowrap">{formatInteger(row.trips)} διαδρομές</span> ·{' '}
-                          <span className="whitespace-nowrap">τζίρος {formatEuro(toCents(Number(row.turnover)))}</span>
+                          <span className="whitespace-nowrap">
+                            μετά την κράτηση {formatEuro(statementPayoutCents(row))}
+                          </span>{' '}
+                          · <span className="whitespace-nowrap">τζίρος {formatEuro(toCents(Number(row.turnover)))}</span>
                           {tipsCents > 0 && (
                             <>
                               {' · '}
@@ -230,7 +232,7 @@ export function PlatformList({
 
           {/* Υπολογιστής/tablet: πίνακας */}
           <div className="-mx-5 hidden overflow-x-auto px-5 md:block">
-            <table className="w-full min-w-[52rem] text-sm tabular-nums">
+            <table className="w-full min-w-[58rem] text-sm tabular-nums">
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Περίοδος</th>
@@ -238,10 +240,11 @@ export function PlatformList({
                   <th className="py-2 pr-3 font-medium">Εφαρμογή</th>
                   <th className="py-2 pr-3 font-medium">Καταχώρηση</th>
                   <th className="py-2 pr-3 text-right font-medium">Διαδρομές</th>
-                  <th className="py-2 pr-3 text-right font-medium">Τζίρος</th>
+                  <th className="py-2 pr-3 text-right font-medium">Μετά την κράτηση</th>
                   <th className="py-2 pr-3 text-right font-medium">Φιλοδ.</th>
                   <th className="py-2 pr-3 text-right font-medium">Κράτηση</th>
                   <th className="py-2 pr-3 text-right font-medium">ΦΠΑ 24%</th>
+                  <th className="py-2 pr-3 text-right font-medium">Τζίρος</th>
                   <th className="py-2" />
                 </tr>
               </thead>
@@ -263,7 +266,7 @@ export function PlatformList({
                       <td className="py-2 pr-3 whitespace-nowrap">{entryTitle(row)}</td>
                       <td className="py-2 pr-3 text-right">{isWeek ? formatInteger(row.trips) : '—'}</td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
-                        {isWeek ? formatEuro(toCents(Number(row.turnover))) : '—'}
+                        {isWeek ? formatEuro(statementPayoutCents(row)) : '—'}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
                         {isWeek ? formatEuro(toCents(Number(row.tips))) : '—'}
@@ -273,6 +276,9 @@ export function PlatformList({
                         {rateNote(row) && <span className="block text-xs text-muted">{rateNote(row)}</span>}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{vatText(row)}</td>
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">
+                        {isWeek ? formatEuro(toCents(Number(row.turnover))) : '—'}
+                      </td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {canModify(row) && (
                           <>
