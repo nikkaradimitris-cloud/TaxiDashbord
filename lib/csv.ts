@@ -37,7 +37,7 @@ export interface CsvExpense {
   figures: ExpenseFigures;
 }
 
-/** Καταχώρηση εφαρμογής: εβδομάδα (διαδρομές, τζίρος, κράτηση) ή τιμολόγιο μήνα. */
+/** Καταχώρηση εφαρμογής: εβδομάδα (όπως το έγγραφο της εφαρμογής) ή τιμολόγιο μήνα. */
 export interface CsvStatement {
   year: number;
   month: number;
@@ -48,11 +48,10 @@ export interface CsvStatement {
   entry: string;
   isWeek: boolean;
   trips: number;
-  /** Τζίρος μαζί με τα φιλοδωρήματα. */
-  turnoverCents: number;
+  /** Τα «Συνολικά Έσοδα» του εγγράφου. */
+  revenueCents: number;
+  /** Φιλοδωρήματα / quest: χωρίς προμήθεια, έξω από τα έσοδα. */
   tipsCents: number;
-  /** Πώς βγήκε η κράτηση: «15% + ΦΠΑ 24%», «ποσό κίνησης» ή κενό (τιμολόγιο). */
-  rate: string;
   commissionCents: number;
   vatCents: number;
   /** false: τιμολόγιο χωρίς ΦΠΑ (ενδοκοινοτικό, π.χ. Uber). */
@@ -106,10 +105,9 @@ const STATEMENT_HEADERS = [
   'Εφαρμογή',
   'Καταχώρηση',
   'Διαδρομές',
-  'Τζίρος με Φιλοδωρήματα (€)',
-  'Φιλοδωρήματα (€)',
-  'Ποσοστό Κράτησης',
-  'Κράτηση (€)',
+  'Συνολικά Έσοδα (€)',
+  'Φιλοδωρήματα / Quest (€)',
+  'Κράτηση / Προμήθεια (€)',
   'ΦΠΑ Κράτησης 24% (€)',
   'Καταχωρήθηκε',
 ];
@@ -192,7 +190,9 @@ export function buildShiftsCsv(
   if (statements.length > 0) {
     lines.push([textCell('ΕΦΑΡΜΟΓΕΣ (Uber / FreeNow / Bolt)')]);
     lines.push(STATEMENT_HEADERS.map(textCell));
+    let tipsCents = 0;
     for (const statement of statements) {
+      if (statement.isWeek) tipsCents += statement.tipsCents;
       lines.push([
         String(statement.year),
         textCell(monthName(statement.month)),
@@ -201,9 +201,8 @@ export function buildShiftsCsv(
         textCell(statement.platform),
         textCell(statement.entry),
         statement.isWeek ? String(statement.trips) : '',
-        statement.isWeek ? formatCentsPlain(statement.turnoverCents) : '',
+        statement.isWeek ? formatCentsPlain(statement.revenueCents) : '',
         statement.isWeek ? formatCentsPlain(statement.tipsCents) : '',
-        textCell(statement.rate),
         formatCentsPlain(statement.commissionCents),
         statement.hasVat ? formatCentsPlain(statement.vatCents) : textCell('χωρίς ΦΠΑ'),
         textCell(formatDateTime(statement.createdAt)),
@@ -219,8 +218,7 @@ export function buildShiftsCsv(
       textCell('κράτηση: τιμολόγιο ή εβδομάδες'),
       String(totals.appTrips),
       formatCentsPlain(totals.appTurnoverCents),
-      '',
-      '',
+      formatCentsPlain(tipsCents),
       formatCentsPlain(totals.appCommissionCents),
       formatCentsPlain(totals.appCommissionVatCents),
       '',
@@ -237,7 +235,7 @@ export function buildShiftsCsv(
   lines.push([textCell('Διαδρομές Εφαρμογών'), String(totals.appTrips)]);
   lines.push([textCell('Διαδρομές Δρόμου'), String(totals.streetTrips)]);
   lines.push([textCell('Μικτή Είσπραξη (€)'), formatCentsPlain(totals.grossReceiptsCents)]);
-  lines.push([textCell('Τζίρος Εφαρμογών (€)'), formatCentsPlain(totals.appTurnoverCents)]);
+  lines.push([textCell('Έσοδα Εφαρμογών (€)'), formatCentsPlain(totals.appTurnoverCents)]);
   lines.push([textCell('Καύσιμα (€)'), formatCentsPlain(totals.fuelCents)]);
   lines.push([textCell('Έξοδα Οχήματος (€)'), formatCentsPlain(totals.vehicleExpensesCents)]);
   lines.push([textCell('Κρατήσεις Εφαρμογών (€)'), formatCentsPlain(totals.appCommissionCents)]);

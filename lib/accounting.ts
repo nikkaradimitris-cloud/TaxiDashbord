@@ -214,12 +214,13 @@ export function expenseFromStored(row: StoredVehicleExpense): ExpenseFigures {
 }
 
 /**
- * Μία εφαρμογή (Uber / FreeNow) για ένα αυτοκίνητο και έναν μήνα: διαδρομές
- * και τζίρος από τις εβδομάδες· κράτηση από το τιμολόγιο του μήνα, αλλιώς
- * το άθροισμα των εβδομάδων (βλ. lib/platforms.ts).
+ * Μία εφαρμογή (Uber / FreeNow / Bolt) για ένα αυτοκίνητο και έναν μήνα:
+ * διαδρομές και έσοδα από τις εβδομάδες· κράτηση από το τιμολόγιο του μήνα,
+ * αλλιώς το άθροισμα των εβδομάδων (βλ. lib/platforms.ts).
  */
 export interface PlatformFigures {
   trips: number;
+  /** Έσοδα διαδρομών («Συνολικά Έσοδα» των εγγράφων), μέσα στα Ζ· χωρίς τα quest. */
   turnoverCents: number;
   /** Η κράτηση που μετράει στα έξοδα (με ΦΠΑ όπου υπάρχει). */
   commissionCents: number;
@@ -242,7 +243,7 @@ export interface Totals extends ShiftFigures {
   appTrips: number;
   /** Διαδρομές από τον δρόμο = διαδρομές Ζ − διαδρομές εφαρμογών. */
   streetTrips: number;
-  /** Τζίρος των εφαρμογών (από τις εβδομάδες). */
+  /** Έσοδα διαδρομών των εφαρμογών (από τις εβδομάδες, χωρίς τα quest). */
   appTurnoverCents: number;
   /** Κρατήσεις των εφαρμογών που μετράνε στα έξοδα. */
   appCommissionCents: number;

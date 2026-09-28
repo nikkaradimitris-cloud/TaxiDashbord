@@ -97,9 +97,8 @@ describe('buildShiftsCsv', () => {
       entry: 'Εβδομάδα 7–13 Σεπ',
       isWeek: true,
       trips: 5,
-      turnoverCents: 6000,
-      tipsCents: 0,
-      rate: '15% χωρίς ΦΠΑ',
+      revenueCents: 6000,
+      tipsCents: 4500,
       commissionCents: 900,
       vatCents: 0,
       hasVat: false,
@@ -111,8 +110,8 @@ describe('buildShiftsCsv', () => {
       entry: 'Τιμολόγιο FN-1',
       isWeek: false,
       trips: 0,
-      turnoverCents: 0,
-      rate: '',
+      revenueCents: 0,
+      tipsCents: 0,
       commissionCents: 3720,
       vatCents: 720,
       hasVat: true,
@@ -126,9 +125,13 @@ describe('buildShiftsCsv', () => {
     );
     expect(withApps).toContain('ΕΦΑΡΜΟΓΕΣ (Uber / FreeNow / Bolt)');
     expect(withApps).toContain(
-      '2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Uber;Εβδομάδα 7–13 Σεπ;5;60,00;0,00;15% χωρίς ΦΠΑ;9,00;χωρίς ΦΠΑ;',
+      '2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Uber;Εβδομάδα 7–13 Σεπ;5;60,00;45,00;9,00;χωρίς ΦΠΑ;',
     );
-    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;FreeNow;Τιμολόγιο FN-1;;;;;37,20;7,20;');
+    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;FreeNow;Τιμολόγιο FN-1;;;;37,20;7,20;');
+    expect(withApps).toContain('Διαδρομές;Συνολικά Έσοδα (€);Φιλοδωρήματα / Quest (€);Κράτηση / Προμήθεια (€)');
+    // Σύνολο: έσοδα και κράτηση από τα σύνολα της περιόδου, φιλοδωρήματα/quest από τις εβδομάδες.
+    expect(withApps).toContain(';;ΣΥΝΟΛΟ ΕΦΑΡΜΟΓΩΝ;;;κράτηση: τιμολόγιο ή εβδομάδες;5;60,00;45,00;9,00;0,00;');
+    expect(withApps).toContain('Έσοδα Εφαρμογών (€);60,00');
     expect(withApps).toContain('Διαδρομές (Ζ);14');
     expect(withApps).toContain('Διαδρομές Εφαρμογών;5');
     expect(withApps).toContain('Διαδρομές Δρόμου;9');

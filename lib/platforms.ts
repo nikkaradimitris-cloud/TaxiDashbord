@@ -5,9 +5,13 @@
  * - Ποσοστό ανά αυτοκίνητο και εφαρμογή: ο οδηγός το ορίζει μία φορά, μαζί
  *   με το αν το τιμολόγιο της εφαρμογής έχει ΦΠΑ 24%, και το αλλάζει όταν
  *   χρειαστεί. Η Uber τιμολογεί πάντα χωρίς ΦΠΑ (ενδοκοινοτικό)· δεν αλλάζει.
- * - Κράτηση εβδομάδας = ποσοστό × (τζίρος − φιλοδωρήματα), + ΦΠΑ 24% όπου
- *   υπάρχει. Ο οδηγός τη διορθώνει («Άλλο ποσό») αν η κίνηση γράφει άλλο
- *   ποσό. Κάθε καταχώρηση κρατά το ποσοστό και τον ΦΠΑ με τα οποία έγινε.
+ * - Εβδομάδα: ο οδηγός αντιγράφει το έγγραφο που στέλνει η εφαρμογή —
+ *   διαδρομές, συνολικά έσοδα, προμήθεια (ο ΦΠΑ της βγαίνει μόνος του) και
+ *   φιλοδωρήματα / quest (ό,τι δίνει η εφαρμογή χωρίς προμήθεια, έξω από τα
+ *   έσοδα). Στη βάση: τζίρος = έσοδα + φιλοδωρήματα/quest (στήλη `tips`).
+ *   Το ποσοστό × έσοδα δείχνει μόνο αν η προμήθεια είναι λογική: αν απέχει
+ *   πολύ, προειδοποίηση (π.χ. γράφτηκε άλλη γραμμή του εγγράφου).
+ *   Κάθε καταχώρηση κρατά το ποσοστό και τον ΦΠΑ με τα οποία έγινε.
  * - Εβδομάδα = Δευτέρα–Κυριακή, κομμένη στην αλλαγή του μήνα (ίδιος κανόνας
  *   με τη βάση): ο Οκτώβριος 2026 ξεκινά Πέμπτη → 1–4, 5–11, …, 26–31 Οκτ.
  * - Οι κούρσες των εφαρμογών είναι μέσα στο Ζ: διαδρομές από τον δρόμο =
@@ -249,13 +253,11 @@ export interface StatementFormValues {
   /** Η αρχή της εβδομάδας ('YYYY-MM-DD'), μόνο για εβδομάδα. */
   weekStart: string;
   trips: string;
-  /** Ο τζίρος της κίνησης, μαζί με τα φιλοδωρήματα. */
-  turnover: string;
-  /** Τα φιλοδωρήματα μέσα στον τζίρο (κενό = 0). */
+  /** Εβδομάδα: τα «Συνολικά Έσοδα» του εγγράφου. */
+  revenue: string;
+  /** Εβδομάδα: φιλοδωρήματα / quest — ό,τι δίνει η εφαρμογή χωρίς προμήθεια, έξω από τα έσοδα (κενό = 0). */
   tips: string;
-  /** Εβδομάδα: «Άλλο ποσό» — η κράτηση όπως τη γράφει η κίνηση, αντί για τον αυτόματο υπολογισμό. */
-  manualCommission: boolean;
-  /** Εβδομάδα με «Άλλο ποσό»: η κράτηση · Τιμολόγιο: το ποσό του τιμολογίου. */
+  /** Εβδομάδα: η προμήθεια του εγγράφου · Τιμολόγιο: το ποσό του τιμολογίου. */
   commission: string;
   /** Αριθμός τιμολογίου (προαιρετικά). */
   reference: string;
@@ -266,9 +268,8 @@ export const EMPTY_STATEMENT_FORM: StatementFormValues = {
   kind: 'week',
   weekStart: '',
   trips: '',
-  turnover: '',
+  revenue: '',
   tips: '',
-  manualCommission: false,
   commission: '',
   reference: '',
 };
@@ -280,9 +281,11 @@ export interface StatementInput {
   kind: StatementKind;
   weekStart: string | null;
   trips: number;
+  /** Τζίρος = συνολικά έσοδα + φιλοδωρήματα/quest. */
   turnover: number;
+  /** Φιλοδωρήματα / quest (χωρίς προμήθεια). */
   tips: number;
-  /** Το τελικό ποσό της κράτησης (με ΦΠΑ όπου υπάρχει). */
+  /** Το τελικό ποσό της προμήθειας (με ΦΠΑ όπου υπάρχει). */
   commission: number;
   reference: string;
   /** Το ποσοστό της εβδομάδας (null για τιμολόγιο). */
@@ -304,8 +307,10 @@ export interface ParsedStatementForm {
   preview: {
     commissionCents: number;
     vatCents: number;
-    /** Ο αυτόματος υπολογισμός από το ποσοστό (εβδομάδα), για να φαίνεται πώς βγαίνει. */
-    auto: CommissionBreakdown | null;
+    /** Εβδομάδα: η προμήθεια που δίνει το ποσοστό πάνω στα έσοδα (για έλεγχο). */
+    expected: CommissionBreakdown | null;
+    /** Η προμήθεια απέχει πολύ από το ποσοστό: μάλλον γράφτηκε άλλη γραμμή του εγγράφου. */
+    unusual: boolean;
   };
 }
 
@@ -322,6 +327,16 @@ function parseAmount(raw: string, emptyMessage: string): { value: number | null;
   return { value: round2(value) };
 }
 
+/**
+ * Η προμήθεια του εγγράφου απέχει πολύ από όση δίνει το ποσοστό πάνω στα
+ * έσοδα; Λίγο κάτω είναι φυσικό (τα φιλοδωρήματα μέσα στα έσοδα δεν έχουν
+ * προμήθεια)· πολύ πάνω ή πολύ κάτω σημαίνει συνήθως άλλη γραμμή του εγγράφου.
+ */
+export function isUnusualCommission(commissionCents: number, expected: CommissionBreakdown | null): boolean {
+  if (!expected || expected.totalCents === 0) return false;
+  return commissionCents > expected.totalCents * 1.05 + 5 || commissionCents < expected.totalCents * 0.7;
+}
+
 export function parseStatementForm(
   values: StatementFormValues,
   period: { year: number; month: number },
@@ -336,9 +351,9 @@ export function parseStatementForm(
 
   let weekStart: string | null = null;
   let trips = 0;
-  let turnover = 0;
+  let revenue = 0;
   let tips = 0;
-  let auto: CommissionBreakdown | null = null;
+  let expected: CommissionBreakdown | null = null;
   let commissionCents = 0;
 
   if (isWeek) {
@@ -350,29 +365,24 @@ export function parseStatementForm(
     else if (parsedTrips === null || parsedTrips > MAX_TRIPS) errors.trips = 'Ακέραιος αριθμός (π.χ. 12).';
     else trips = parsedTrips;
 
-    const parsedTurnover = parseAmount(values.turnover, 'Γράψτε τον τζίρο (ή 0).');
-    if (parsedTurnover.error) errors.turnover = parsedTurnover.error;
-    else turnover = parsedTurnover.value!;
+    const parsedRevenue = parseAmount(values.revenue, 'Γράψτε τα συνολικά έσοδα (ή 0).');
+    if (parsedRevenue.error) errors.revenue = parsedRevenue.error;
+    else revenue = parsedRevenue.value!;
+
+    const parsedCommission = parseAmount(values.commission, 'Γράψτε την προμήθεια όπως στο έγγραφο (ή 0).');
+    if (parsedCommission.error) errors.commission = parsedCommission.error;
+    else if (!errors.revenue && parsedCommission.value! > revenue) {
+      errors.commission = 'Η προμήθεια δεν μπορεί να είναι μεγαλύτερη από τα έσοδα.';
+    }
+    commissionCents = toCents(parsedCommission.value ?? 0);
 
     const parsedTips = parseOptionalDecimal(values.tips);
-    if (parsedTips === null) errors.tips = 'Μη έγκυρος αριθμός (π.χ. 5,50).';
+    if (parsedTips === null) errors.tips = 'Μη έγκυρος αριθμός (π.χ. 45,00).';
     else if (parsedTips >= MAX_AMOUNT) errors.tips = 'Μη ρεαλιστική τιμή.';
-    else if (!errors.turnover && round2(parsedTips) > turnover) {
-      errors.tips = 'Τα φιλοδωρήματα δεν μπορεί να είναι περισσότερα από τον τζίρο.';
-    } else tips = round2(parsedTips);
+    else tips = round2(parsedTips);
 
     if (rate && rate.ratePct !== null) {
-      auto = computeCommission(toCents(turnover), toCents(tips), { ratePct: rate.ratePct, vatRate: rate.vatRate });
-    }
-    if (values.manualCommission) {
-      const manual = parseAmount(values.commission, 'Γράψτε την κράτηση όπως στην κίνηση.');
-      if (manual.error) errors.commission = manual.error;
-      else if (!errors.turnover && manual.value! > turnover) {
-        errors.commission = 'Η κράτηση δεν μπορεί να είναι μεγαλύτερη από τον τζίρο.';
-      }
-      commissionCents = toCents(manual.value ?? 0);
-    } else {
-      commissionCents = auto?.totalCents ?? 0;
+      expected = computeCommission(toCents(revenue), 0, { ratePct: rate.ratePct, vatRate: rate.vatRate });
     }
   } else {
     const amount = parseAmount(values.commission, 'Γράψτε το ποσό του τιμολογίου.');
@@ -384,11 +394,9 @@ export function parseStatementForm(
   const reference = isWeek ? '' : values.reference.trim();
   if (reference.length > MAX_REFERENCE) errors.reference = `Έως ${MAX_REFERENCE} χαρακτήρες.`;
 
-  // Αυτόματη κράτηση: ο ΦΠΑ πάνω στην καθαρή κράτηση (ίδιος με τον εμπεριεχόμενο που υπολογίζει η βάση).
-  const vatCents =
-    isWeek && !values.manualCommission && auto
-      ? auto.vatCents
-      : commissionVatCents(rate?.vatRate ?? 0, commissionCents);
+  // Ο ΦΠΑ μέσα στην προμήθεια / στο τιμολόγιο (όπως τον υπολογίζει και η βάση).
+  const vatCents = commissionVatCents(rate?.vatRate ?? 0, commissionCents);
+  const unusual = isWeek && !errors.revenue && !errors.commission && isUnusualCommission(commissionCents, expected);
 
   const valid = Object.keys(errors).length === 0;
   return {
@@ -398,7 +406,7 @@ export function parseStatementForm(
           kind: values.kind,
           weekStart,
           trips,
-          turnover,
+          turnover: isWeek ? round2(revenue + tips) : 0,
           tips,
           commission: commissionCents / 100,
           reference,
@@ -407,7 +415,7 @@ export function parseStatementForm(
         }
       : null,
     errors,
-    preview: { commissionCents, vatCents, auto },
+    preview: { commissionCents, vatCents, expected, unusual },
   };
 }
 
@@ -438,33 +446,24 @@ function decimalText(value: number): string {
   return String(round2(Number(value))).replace('.', ',');
 }
 
-type StatementAmounts = Pick<StatementRow, 'kind' | 'turnover' | 'tips' | 'rate_pct' | 'vat_rate' | 'commission'>;
-
-/** Η κράτηση της εβδομάδας βγήκε από το ποσοστό (και όχι «Άλλο ποσό»); */
-export function isAutoCommission(row: StatementAmounts): boolean {
-  if (row.kind !== 'week' || row.rate_pct == null) return false;
-  const auto = computeCommission(toCents(Number(row.turnover)), toCents(Number(row.tips)), {
-    ratePct: Number(row.rate_pct),
-    vatRate: toVatRate(row.vat_rate),
-  });
-  return auto.totalCents === toCents(Number(row.commission));
+/** Εβδομάδα: τα «Συνολικά Έσοδα» του εγγράφου = τζίρος − φιλοδωρήματα/quest. */
+export function statementRevenueCents(row: Pick<StatementRow, 'turnover' | 'tips'>): number {
+  return toCents(Number(row.turnover)) - toCents(Number(row.tips));
 }
 
 /** Αποθηκευμένη καταχώρηση → τιμές φόρμας, για διόρθωση (ελληνική υποδιαστολή). */
 export function statementToFormValues(
-  row: StatementAmounts & Pick<StatementRow, 'platform' | 'week_start' | 'trips' | 'reference'>,
+  row: Pick<StatementRow, 'platform' | 'kind' | 'week_start' | 'trips' | 'turnover' | 'tips' | 'commission' | 'reference'>,
 ): StatementFormValues {
   const isWeek = row.kind !== 'invoice';
-  const manual = isWeek && !isAutoCommission(row);
   return {
     platform: isPlatform(row.platform) ? row.platform : 'uber',
     kind: isWeek ? 'week' : 'invoice',
     weekStart: row.week_start ?? '',
     trips: isWeek ? String(row.trips) : '',
-    turnover: isWeek ? decimalText(row.turnover) : '',
+    revenue: isWeek ? decimalText(statementRevenueCents(row) / 100) : '',
     tips: isWeek && Number(row.tips) > 0 ? decimalText(row.tips) : '',
-    manualCommission: manual,
-    commission: manual || !isWeek ? decimalText(row.commission) : '',
+    commission: decimalText(row.commission),
     reference: row.reference,
   };
 }
@@ -496,7 +495,11 @@ interface CommissionSum {
   noVatCents: number;
 }
 
-/** Μία εφαρμογή για ένα αυτοκίνητο και έναν μήνα. */
+/**
+ * Μία εφαρμογή για ένα αυτοκίνητο και έναν μήνα. Το `turnoverCents` είναι τα
+ * έσοδα των διαδρομών (τα «Συνολικά Έσοδα» των εγγράφων), που είναι μέσα στα
+ * Ζ· τα φιλοδωρήματα / quest είναι χωριστά (`tipsCents`).
+ */
 export interface PlatformMonth extends PlatformFigures {
   driverId: string;
   year: number;
@@ -504,7 +507,7 @@ export interface PlatformMonth extends PlatformFigures {
   platform: string;
   /** Πόσες εβδομάδες έχουν καταχωρηθεί. */
   weeks: number;
-  /** Φιλοδωρήματα μέσα στον τζίρο των εβδομάδων. */
+  /** Φιλοδωρήματα / quest των εβδομάδων (χωρίς προμήθεια, έξω από τα έσοδα). */
   tipsCents: number;
   /** Το άθροισμα των κρατήσεων των εβδομάδων (για σύγκριση με το τιμολόγιο). */
   weeksCommissionCents: number;
@@ -516,9 +519,9 @@ export interface PlatformMonth extends PlatformFigures {
 }
 
 /**
- * Ομαδοποίηση ανά αυτοκίνητο, μήνα και εφαρμογή, με τον κανόνα της βάσης
- * (προβολή `monthly_summary`): διαδρομές και τζίρος από τις εβδομάδες·
- * κράτηση από το τιμολόγιο, αλλιώς από τις εβδομάδες.
+ * Ομαδοποίηση ανά αυτοκίνητο, μήνα και εφαρμογή. Διαδρομές, έσοδα και
+ * φιλοδωρήματα/quest από τις εβδομάδες· κράτηση από το τιμολόγιο, αλλιώς από
+ * τις εβδομάδες (ο κανόνας της προβολής `monthly_summary` της βάσης).
  */
 export function groupStatements(rows: readonly StoredStatement[]): PlatformMonth[] {
   const groups = new Map<string, PlatformMonth & { weeksNoVatCents: number }>();
@@ -560,7 +563,7 @@ export function groupStatements(rows: readonly StoredStatement[]): PlatformMonth
     } else {
       group.weeks += 1;
       group.trips += Number(row.trips);
-      group.turnoverCents += toCents(Number(row.turnover));
+      group.turnoverCents += statementRevenueCents(row);
       group.tipsCents += toCents(Number(row.tips));
       group.weeksCommissionCents += commissionCents;
       group.weeksCommissionVatCents += vatCents;

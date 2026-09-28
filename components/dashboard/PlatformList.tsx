@@ -7,10 +7,10 @@ import { monthName, type MonthFilter } from '@/lib/period';
 import {
   findRate,
   formatWeek,
-  isAutoCommission,
   PLATFORMS,
   platformLabel,
   rateLabel,
+  statementRevenueCents,
   toVatRate,
   weekCycles,
   weekState,
@@ -38,15 +38,6 @@ function compareStatements(a: StatementRow, b: StatementRow) {
 function entryTitle(row: StatementRow) {
   if (row.kind === 'invoice') return `Τιμολόγιο${row.reference ? ` ${row.reference}` : ''}`;
   return `Εβδομάδα ${row.week_start && row.week_end ? formatWeek(row.week_start, row.week_end) : ''}`;
-}
-
-const percent = new Intl.NumberFormat('el-GR', { maximumFractionDigits: 2 });
-
-/** Πώς βγήκε η κράτηση της εβδομάδας: «κράτηση 15%» (αυτόματα) ή «ποσό της κίνησης». */
-function rateNote(row: StatementRow): string {
-  if (row.kind !== 'week') return '';
-  if (row.rate_pct != null && isAutoCommission(row)) return `κράτηση ${percent.format(Number(row.rate_pct))}%`;
-  return 'ποσό της κίνησης';
 }
 
 function vatText(row: StatementRow): string {
@@ -191,11 +182,11 @@ export function PlatformList({
                       {row.kind === 'week' && (
                         <p className="text-sm">
                           <span className="whitespace-nowrap">{formatInteger(row.trips)} διαδρομές</span> ·{' '}
-                          <span className="whitespace-nowrap">τζίρος {formatEuro(toCents(Number(row.turnover)))}</span>
+                          <span className="whitespace-nowrap">έσοδα {formatEuro(statementRevenueCents(row))}</span>
                           {tipsCents > 0 && (
                             <>
                               {' · '}
-                              <span className="whitespace-nowrap">φιλοδωρήματα {formatEuro(tipsCents)}</span>
+                              <span className="whitespace-nowrap">φιλοδ./quest {formatEuro(tipsCents)}</span>
                             </>
                           )}
                         </p>
@@ -203,7 +194,6 @@ export function PlatformList({
                       <p className="text-xs text-muted">
                         {monthName(row.month)} {row.year} · {plate ? `${plate} · ` : ''}
                         {name}
-                        {rateNote(row) && ` · ${rateNote(row)}`}
                       </p>
                     </div>
                     <p className="shrink-0 text-right font-bold tabular-nums">
@@ -238,8 +228,8 @@ export function PlatformList({
                   <th className="py-2 pr-3 font-medium">Εφαρμογή</th>
                   <th className="py-2 pr-3 font-medium">Καταχώρηση</th>
                   <th className="py-2 pr-3 text-right font-medium">Διαδρομές</th>
-                  <th className="py-2 pr-3 text-right font-medium">Τζίρος</th>
-                  <th className="py-2 pr-3 text-right font-medium">Φιλοδ.</th>
+                  <th className="py-2 pr-3 text-right font-medium">Έσοδα</th>
+                  <th className="py-2 pr-3 text-right font-medium">Φιλοδ./Quest</th>
                   <th className="py-2 pr-3 text-right font-medium">Κράτηση</th>
                   <th className="py-2 pr-3 text-right font-medium">ΦΠΑ 24%</th>
                   <th className="py-2" />
@@ -263,14 +253,13 @@ export function PlatformList({
                       <td className="py-2 pr-3 whitespace-nowrap">{entryTitle(row)}</td>
                       <td className="py-2 pr-3 text-right">{isWeek ? formatInteger(row.trips) : '—'}</td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
-                        {isWeek ? formatEuro(toCents(Number(row.turnover))) : '—'}
+                        {isWeek ? formatEuro(statementRevenueCents(row)) : '—'}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
                         {isWeek ? formatEuro(toCents(Number(row.tips))) : '—'}
                       </td>
-                      <td className="py-2 pr-3 text-right whitespace-nowrap">
-                        <span className="font-semibold">{formatEuro(toCents(Number(row.commission)))}</span>
-                        {rateNote(row) && <span className="block text-xs text-muted">{rateNote(row)}</span>}
+                      <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">
+                        {formatEuro(toCents(Number(row.commission)))}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{vatText(row)}</td>
                       <td className="py-2 text-right whitespace-nowrap">
@@ -305,8 +294,14 @@ export function PlatformList({
           <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 border-t-2 border-line pt-2 text-sm tabular-nums">
             <dt>Διαδρομές εφαρμογών</dt>
             <dd className="text-right">{formatInteger(totals.trips)}</dd>
-            <dt>Τζίρος εφαρμογών (με φιλοδωρήματα)</dt>
+            <dt>Έσοδα εφαρμογών</dt>
             <dd className="text-right">{formatEuro(totals.turnoverCents)}</dd>
+            {totals.tipsCents > 0 && (
+              <>
+                <dt>Φιλοδωρήματα / quest (χωρίς προμήθεια)</dt>
+                <dd className="text-right">{formatEuro(totals.tipsCents)}</dd>
+              </>
+            )}
             <dt className="font-semibold">Κρατήσεις που μετράνε στα έξοδα</dt>
             <dd className="text-right font-semibold">{formatEuro(totals.commissionCents)}</dd>
             <dt className="text-muted">ΦΠΑ κρατήσεων 24% (συμψηφίζεται)</dt>
@@ -367,7 +362,13 @@ function PlatformMonthCard({
       <p className="text-xs text-muted">Ποσοστό: {rateText ?? 'δεν έχει οριστεί'}</p>
       <p className="text-xs text-muted tabular-nums">
         <span className="whitespace-nowrap">{formatInteger(group?.trips ?? 0)} διαδρομές</span> ·{' '}
-        <span className="whitespace-nowrap">τζίρος {formatEuro(group?.turnoverCents ?? 0)}</span>
+        <span className="whitespace-nowrap">έσοδα {formatEuro(group?.turnoverCents ?? 0)}</span>
+        {(group?.tipsCents ?? 0) > 0 && (
+          <>
+            {' · '}
+            <span className="whitespace-nowrap">φιλοδ./quest {formatEuro(group!.tipsCents)}</span>
+          </>
+        )}
       </p>
       <ul className="mt-2 flex flex-wrap gap-1.5">
         {weeks.map((week) => {

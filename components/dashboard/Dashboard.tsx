@@ -26,9 +26,8 @@ import { periodLabel } from '@/lib/period';
 import {
   formatWeek,
   groupStatements,
-  isAutoCommission,
   platformLabel,
-  rateLabel,
+  statementRevenueCents,
   statementTitle,
   todayIso,
   toVatRate,
@@ -551,13 +550,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
             : `Τιμολόγιο${row.reference ? ` ${row.reference}` : ''}`,
           isWeek,
           trips: row.trips,
-          turnoverCents: toCents(Number(row.turnover)),
+          revenueCents: isWeek ? statementRevenueCents(row) : 0,
           tipsCents: toCents(Number(row.tips)),
-          rate: !isWeek
-            ? ''
-            : row.rate_pct != null && isAutoCommission(row)
-              ? rateLabel({ ratePct: Number(row.rate_pct), vatRate: toVatRate(row.vat_rate) })
-              : 'ποσό κίνησης',
           commissionCents: toCents(Number(row.commission)),
           vatCents: toCents(Number(row.commission_vat ?? 0)),
           hasVat: toVatRate(row.vat_rate) === 24,

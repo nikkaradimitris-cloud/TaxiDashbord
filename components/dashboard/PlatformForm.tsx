@@ -50,8 +50,6 @@ const VAT_CHOICES: readonly { id: '24' | '0'; label: string }[] = [
   { id: '0', label: 'Χωρίς ΦΠΑ (ενδοκοινοτικό)' },
 ];
 
-const percent = new Intl.NumberFormat('el-GR', { maximumFractionDigits: 2 });
-
 /** Επιτρέπει μόνο ψηφία, κόμμα και τελεία (ποσά). */
 function sanitizeAmount(value: string) {
   return value.replace(/[^\d.,]/g, '');
@@ -63,11 +61,25 @@ function entryRateText(rate: EntryRate): string {
   return rate.vatRate === 24 ? 'τιμολόγιο με ΦΠΑ 24%' : 'τιμολόγιο χωρίς ΦΠΑ';
 }
 
+/** Πού βρίσκει ο οδηγός κάθε ποσό στο εβδομαδιαίο έγγραφο της εφαρμογής. */
+function documentHints(platform: string) {
+  return platform === 'freenow'
+    ? {
+        commission: 'Η «Προμήθεια προς Freenow», χωρίς το μείον.',
+        tips: 'Οι «Λοιπές Επιστροφές / Επιβραβεύσεις». Χωρίς προμήθεια.',
+      }
+    : {
+        commission: 'Όπως στο έγγραφο, χωρίς το μείον.',
+        tips: 'Ό,τι δίνει η εφαρμογή χωρίς προμήθεια, έξω από τα έσοδα.',
+      };
+}
+
 /**
  * Εφαρμογή (Uber / FreeNow / Bolt) για το συγκεκριμένο αυτοκίνητο: η
- * εβδομαδιαία κίνηση (διαδρομές, τζίρος, φιλοδωρήματα — η κράτηση βγαίνει
- * από το ποσοστό) ή το μηνιαίο τιμολόγιο κρατήσεων. Το ποσοστό κάθε
- * εφαρμογής ορίζεται μία φορά ανά αυτοκίνητο και αλλάζει όταν χρειαστεί.
+ * εβδομάδα όπως στο έγγραφο της εφαρμογής (διαδρομές, συνολικά έσοδα,
+ * προμήθεια, φιλοδωρήματα / quest) ή το μηνιαίο τιμολόγιο κρατήσεων. Το
+ * ποσοστό κάθε εφαρμογής ορίζεται μία φορά ανά αυτοκίνητο: δίνει τον ΦΠΑ και
+ * ελέγχει ότι η προμήθεια που γράφτηκε είναι λογική.
  */
 export function PlatformForm({
   supabase,
@@ -223,7 +235,7 @@ export function PlatformForm({
   const parsed = parseStatementForm({ ...values, weekStart }, { year, month }, rate);
   const errors = showErrors ? parsed.errors : {};
   const { preview } = parsed;
-  const auto = preview.auto;
+  const hints = documentHints(values.platform);
   /** Υπάρχει ήδη: όλες οι εβδομάδες του μήνα ή το τιμολόγιο του μήνα. */
   const alreadyDone = isWeek ? selectedWeek === null : existingInvoice !== null;
 
@@ -259,7 +271,8 @@ export function PlatformForm({
       // Επόμενη καταχώρηση: ίδια εφαρμογή και είδος, η επόμενη εβδομάδα που λείπει.
       setValues((prev) => ({ ...EMPTY_STATEMENT_FORM, platform: prev.platform, kind: prev.kind }));
       setShowErrors(false);
-      setMessage({ tone: 'success', text: `✓ Καταχωρήθηκε: ${label} · ${formatEuro(toCents(row.commission))}` });
+      const amount = formatEuro(toCents(row.commission));
+      setMessage({ tone: 'success', text: `✓ Καταχωρήθηκε: ${label} · ${isWeek ? `προμήθεια ${amount}` : amount}` });
       firstInput.current?.focus();
     } catch (error) {
       setMessage({
@@ -309,11 +322,10 @@ export function PlatformForm({
       {!setting && (
         <p className="text-sm">
           Γράψτε το ποσοστό που κρατά η {platformName}
-          {driver ? ` για το ${vehicleOptionLabel(driver)}` : ''}. Μετά η κράτηση υπολογίζεται μόνη της σε κάθε
-          εβδομάδα.
+          {driver ? ` για το ${vehicleOptionLabel(driver)}` : ''}. Με αυτό ελέγχεται η προμήθεια κάθε εβδομάδας.
         </p>
       )}
-      <Field label="Ποσοστό κράτησης (%)" hint="Πάνω στον τζίρο χωρίς τα φιλοδωρήματα." error={shownRateErrors.rate}>
+      <Field label="Ποσοστό κράτησης (%)" hint="Χωρίς τον ΦΠΑ, π.χ. 12." error={shownRateErrors.rate}>
         <Input
           inputMode="decimal"
           autoComplete="off"
@@ -392,8 +404,8 @@ export function PlatformForm({
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {switcher}
         <p className="text-sm text-muted">
-          Από την εβδομαδιαία κίνηση και το μηνιαίο τιμολόγιο της εφαρμογής. Έτσι φαίνεται πόσες διαδρομές ήταν από τον
-          δρόμο και πόσα κρατάει η εφαρμογή.
+          Αντιγράψτε τα ποσά από το έγγραφο που στέλνει η εφαρμογή κάθε εβδομάδα, και το τιμολόγιο του μήνα. Έτσι
+          φαίνεται πόσες διαδρομές ήταν από τον δρόμο και πόσα κρατάει η εφαρμογή.
         </p>
         <PeriodFields target={target} prefs={prefs} onPrefsChange={onPrefsChange} />
         <DriverField
@@ -420,7 +432,8 @@ export function PlatformForm({
               name="statement-kind"
               options={KINDS}
               value={values.kind}
-              onChange={(kind) => update({ kind })}
+              // Η εβδομάδα και το τιμολόγιο γράφουν διαφορετικό ποσό στο ίδιο πεδίο.
+              onChange={(kind) => update({ kind, commission: '' })}
               error={errors.kind}
             />
 
@@ -465,22 +478,29 @@ export function PlatformForm({
                       onChange={(e) => update({ trips: e.target.value.replace(/\D/g, '') })}
                     />
                   </Field>
-                  <Field subgrid label="Τζίρος (€) *" hint="Μαζί με τα φιλοδωρήματα." error={errors.turnover}>
+                  <Field subgrid label={'Συνολικά έσοδα (€)\u00a0*'} hint="Όπως στο έγγραφο." error={errors.revenue}>
                     <Input
                       inputMode="decimal"
                       autoComplete="off"
                       placeholder="0,00"
-                      value={values.turnover}
-                      aria-invalid={Boolean(errors.turnover)}
-                      onChange={(e) => update({ turnover: sanitizeAmount(e.target.value) })}
+                      value={values.revenue}
+                      aria-invalid={Boolean(errors.revenue)}
+                      onChange={(e) => update({ revenue: sanitizeAmount(e.target.value) })}
                     />
                   </Field>
                 </FieldRow>
-                <Field
-                  label="Φιλοδωρήματα (€)"
-                  hint="Όσα είναι μέσα στον τζίρο. Η εφαρμογή δεν κρατά ποσοστό από αυτά."
-                  error={errors.tips}
-                >
+                <FieldRow>
+                  {amountInput('Προμήθεια (€) *', hints.commission)}
+                  {vatField}
+                </FieldRow>
+                {preview.unusual && preview.expected && rate.ratePct !== null && (
+                  <Notice tone="warning">
+                    Ελέγξτε την προμήθεια: με {entryRateText(rate)} θα ήταν περίπου{' '}
+                    <b className="whitespace-nowrap">{formatEuro(preview.expected.totalCents)}</b>. Μήπως γράψατε άλλη
+                    γραμμή του εγγράφου;
+                  </Notice>
+                )}
+                <Field label="Φιλοδωρήματα / Quest (€)" hint={hints.tips} error={errors.tips}>
                   <Input
                     inputMode="decimal"
                     autoComplete="off"
@@ -490,51 +510,6 @@ export function PlatformForm({
                     onChange={(e) => update({ tips: sanitizeAmount(e.target.value) })}
                   />
                 </Field>
-
-                {values.manualCommission ? (
-                  <>
-                    <FieldRow>
-                      {amountInput(`Κράτηση${hasVat ? ' με ΦΠΑ' : ''} (€) *`, 'Όπως τη γράφει η κίνηση.')}
-                      {vatField}
-                    </FieldRow>
-                    <p className="text-sm text-muted">
-                      {auto && <>Με το ποσοστό θα ήταν {formatEuro(auto.totalCents)}. </>}
-                      <button
-                        type="button"
-                        className="font-semibold text-fg underline"
-                        onClick={() => update({ manualCommission: false, commission: '' })}
-                      >
-                        Αυτόματος υπολογισμός
-                      </button>
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <FieldRow>
-                      <Field subgrid label="Κράτηση (αυτόματα)">
-                        <output className="flex min-h-11 items-center rounded-xl border border-dashed border-line bg-bg px-3 text-base font-semibold tabular-nums">
-                          {formatEuro(preview.commissionCents)}
-                        </output>
-                      </Field>
-                      {vatField}
-                    </FieldRow>
-                    {auto && rate.ratePct !== null && (
-                      <p className="text-sm text-muted tabular-nums">
-                        {percent.format(rate.ratePct)}% × {formatEuro(auto.baseCents)} (τζίρος χωρίς φιλοδωρήματα) ={' '}
-                        {formatEuro(auto.netCents)}
-                        {hasVat && (
-                          <>
-                            {' '}
-                            + ΦΠΑ {formatEuro(auto.vatCents)} = <b className="text-fg">{formatEuro(auto.totalCents)}</b>
-                          </>
-                        )}
-                      </p>
-                    )}
-                    <Button className="w-full" onClick={() => update({ manualCommission: true, commission: '' })}>
-                      Άλλο ποσό (όπως γράφει η κίνηση)
-                    </Button>
-                  </>
-                )}
               </>
             ) : (
               <>
