@@ -6,7 +6,15 @@ import { useEffect, useRef, type ReactNode } from 'react';
  * Παράθυρο πάνω από τη σελίδα για τη διόρθωση βάρδιας, ώστε ο χρήστης να
  * μένει εκεί που ήταν στο ιστορικό. Κλείνει με «Ακύρωση» ή Esc.
  */
-export function EditShiftDialog({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+export function EditShiftDialog({
+  onClose,
+  children,
+  label = 'Επεξεργασία βάρδιας',
+}: {
+  onClose: () => void;
+  children: ReactNode;
+  label?: string;
+}) {
   const panel = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -33,7 +41,7 @@ export function EditShiftDialog({ onClose, children }: { onClose: () => void; ch
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label="Επεξεργασία βάρδιας"
+        aria-label={label}
         className="mx-auto w-full max-w-xl outline-none"
       >
         {children}

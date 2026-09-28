@@ -5,6 +5,8 @@ import {
   includedExpenseVatCents,
   revenueVatCents,
   summarize,
+  computeExpense,
+  expenseFromStored,
   toCents,
   vatStatus,
   type ShiftInput,
@@ -161,6 +163,44 @@ describe('summarize', () => {
     expect(totals.totalKm).toBe(9);
     expect(totals.vatBalanceCents).toBe(totals.vatCents - totals.expensesVatCents);
     expect(totals.netCashCents).toBe(totals.grossReceiptsCents - totals.totalExpensesCents);
+  });
+});
+
+describe('έξοδα οχήματος (εκτός βάρδιας)', () => {
+  it('ΦΠΑ 24% μέσα στο ποσό: συνεργείο 800 € → 154,84 €', () => {
+    expect(computeExpense(800)).toEqual({ amountCents: 80000, vatCents: 15484 });
+    expect(expenseFromStored({ amount: 800, vat: 154.84 })).toEqual({ amountCents: 80000, vatCents: 15484 });
+    expect(expenseFromStored({ amount: 12.4, vat: null })).toEqual({ amountCents: 1240, vatCents: 240 });
+  });
+
+  it('μπαίνουν στα έξοδα, στον ΦΠΑ εξόδων και στο ταμείο της περιόδου — όχι στη βάρδια', () => {
+    // Βάρδια: 160,39 € καθαρά (ΦΠΑ 20,84), 5 € φιλοδωρήματα, 40 € καύσιμα (ΦΠΑ 7,74).
+    const shift = computeShift({ ...emptyShift, netRevenue: 160.39, tips: 5, fuel: 40 });
+    const totals = summarize([shift], [computeExpense(800), computeExpense(10)]);
+    expect(totals.fuelCents).toBe(4000);
+    expect(totals.vehicleExpensesCents).toBe(81000);
+    expect(totals.expenseCount).toBe(2);
+    expect(totals.totalExpensesCents).toBe(85000);
+    expect(totals.expensesVatCents).toBe(774 + 15484 + 194);
+    expect(totals.vatBalanceCents).toBe(2084 - 16452); // −143,68 € → πιστωτικό
+    expect(totals.netCashCents).toBe(18623 - 85000);
+    // Η βάρδια μένει καθαρή: ταμείο 146,23 €.
+    expect(shift.netCashCents).toBe(14623);
+  });
+
+  it('χωρίς βάρδιες: μόνο τα έξοδα του μήνα', () => {
+    const totals = summarize([], [computeExpense(124)]);
+    expect(totals.shifts).toBe(0);
+    expect(totals.totalExpensesCents).toBe(12400);
+    expect(totals.vatBalanceCents).toBe(-2400);
+    expect(totals.netCashCents).toBe(-12400);
+  });
+
+  it('καύσιμα + έξοδα οχήματος = σύνολο εξόδων (και με παλιά ποσά μέσα σε βάρδιες)', () => {
+    const legacy = computeShift({ ...emptyShift, fuel: 30, otherExpenses: 5, repairs: 100 });
+    const totals = summarize([legacy], [computeExpense(50)]);
+    expect(totals.fuelCents + totals.vehicleExpensesCents).toBe(totals.totalExpensesCents);
+    expect(totals.vehicleExpensesCents).toBe(15500);
   });
 });
 

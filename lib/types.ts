@@ -4,6 +4,9 @@ export type DriverRow = Tables<'drivers'>;
 export type ShiftRow = Tables<'shifts'>;
 export type ProfileRow = Tables<'profiles'>;
 export type ShiftInsert = TablesInsert<'shifts'>;
+/** Έξοδο οχήματος εκτός βάρδιας (επισκευή, service, ελαστικά…). */
+export type ExpenseRow = Tables<'vehicle_expenses'>;
+export type ExpenseInsert = TablesInsert<'vehicle_expenses'>;
 
 export type Role = 'admin' | 'driver';
 

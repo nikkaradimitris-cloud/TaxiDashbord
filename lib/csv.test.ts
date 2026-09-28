@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { computeShift, summarize } from './accounting';
-import { buildShiftsCsv, csvFileName, CSV_BOM, type CsvShift } from './csv';
+import { computeExpense, computeShift, summarize } from './accounting';
+import { buildShiftsCsv, csvFileName, CSV_BOM, type CsvExpense, type CsvShift } from './csv';
 
 const figures = computeShift({
   trips: 14,
@@ -8,8 +8,8 @@ const figures = computeShift({
   emptyKm: 40,
   netRevenue: 160.39,
   tips: 5,
-  fuel: 40,
-  otherExpenses: 10,
+  fuel: 50,
+  otherExpenses: 0,
   repairs: 0,
 });
 
@@ -37,7 +37,8 @@ describe('buildShiftsCsv', () => {
   it('επικεφαλίδες με ";" (ελληνικό Excel)', () => {
     expect(lines[0].split(';')[0]).toBe('Έτος');
     expect(lines[0]).toContain('ΦΠΑ 13% (€)');
-    expect(lines[0]).toContain('Καθαρό Ταμείο (€)');
+    expect(lines[0]).toContain('Καθαρό Ταμείο Βάρδιας (€)');
+    expect(lines[0]).not.toContain('Επισκευές');
   });
 
   it('ποσά με ελληνική υποδιαστολή', () => {
@@ -51,9 +52,38 @@ describe('buildShiftsCsv', () => {
   });
 
   it('γραμμή συνόλων και σύνοψη ΦΠΑ', () => {
-    expect(lines[2]).toContain('ΣΥΝΟΛΑ');
+    expect(lines[2]).toContain('ΣΥΝΟΛΑ ΒΑΡΔΙΩΝ');
     expect(csv).toContain('Προς Απόδοση ΦΠΑ (€);11,16;Χρεωστικό');
     expect(csv).toContain('Περίοδος;Σεπτέμβριος 2026');
+    expect(csv).not.toContain('ΕΞΟΔΑ ΟΧΗΜΑΤΟΣ');
+  });
+
+  it('έξοδα οχήματος: δική τους ενότητα, και μέσα στη σύνοψη της περιόδου', () => {
+    const repair = computeExpense(800);
+    const expense: CsvExpense = {
+      year: 2026,
+      month: 9,
+      driverName: 'Γιώργος',
+      plate: 'ΤΑΕ-1234',
+      category: 'Επισκευή / Συνεργείο',
+      description: 'Φρένα; δίσκοι',
+      createdAt: '2026-09-27T12:44:00Z',
+      figures: repair,
+    };
+    const withExpenses = buildShiftsCsv([row], summarize([figures], [repair]), { period: 'Σεπτ.', driverLabel: 'Γ' }, [
+      expense,
+    ]);
+    expect(withExpenses).toContain('ΕΞΟΔΑ ΟΧΗΜΑΤΟΣ (εκτός βάρδιας)');
+    expect(withExpenses).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Επισκευή / Συνεργείο;"Φρένα; δίσκοι";800,00;154,84;');
+    expect(withExpenses).toContain('ΣΥΝΟΛΟ ΕΞΟΔΩΝ ΟΧΗΜΑΤΟΣ;;;;800,00;154,84;');
+    // Η γραμμή της βάρδιας δεν αλλάζει: ταμείο βάρδιας 136,23 €.
+    expect(withExpenses).toContain(';50,00;9,68;11,16;136,23;');
+    // Σύνοψη: 50 € καύσιμα + 800 € οχήματος· ΦΠΑ 20,84 − (9,68 + 154,84) = 143,68 € πιστωτικό.
+    expect(withExpenses).toContain('Καύσιμα (€);50,00');
+    expect(withExpenses).toContain('Έξοδα Οχήματος (€);800,00');
+    expect(withExpenses).toContain('Σύνολο Εξόδων (€);850,00');
+    expect(withExpenses).toContain('Προς Απόδοση ΦΠΑ (€);143,68;Πιστωτικό');
+    expect(withExpenses).toContain('Καθαρό Ταμείο (€);-663,77');
   });
 
   it('ώρα καταχώρησης σε ώρα Ελλάδας', () => {

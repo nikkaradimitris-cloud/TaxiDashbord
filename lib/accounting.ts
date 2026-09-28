@@ -11,6 +11,10 @@
  *   Προς απόδοση ΦΠΑ     = ΦΠΑ 13% − ΦΠΑ εξόδων 24%
  *   Καθαρό ταμείο        = (καθαρά έσοδα + ΦΠΑ 13% + φιλοδωρήματα) − σύνολο εξόδων
  *
+ * Έξοδα οχήματος εκτός βάρδιας (επισκευές, service, ελαστικά…) καταχωρούνται
+ * χωριστά ανά μήνα και αυτοκίνητο (πίνακας `vehicle_expenses`), πάντα με ΦΠΑ
+ * 24% μέσα· μπαίνουν στα σύνολα της περιόδου (έξοδα, ΦΠΑ εξόδων, ταμείο).
+ *
  * Η βάση είναι η πηγή της αλήθειας για τις αποθηκευμένες βάρδιες· οι ίδιες
  * συναρτήσεις χρησιμοποιούνται στη φόρμα για ζωντανή προεπισκόπηση πριν την
  * αποθήκευση. Τα χρηματικά ποσά υπολογίζονται σε ακέραια λεπτά (cents) ώστε
@@ -180,16 +184,50 @@ export function figuresFromStored(row: StoredShiftAmounts): ShiftFigures {
   };
 }
 
+/** Έξοδο οχήματος εκτός βάρδιας: τελικό ποσό με ΦΠΑ 24% μέσα. */
+export interface ExpenseFigures {
+  amountCents: number;
+  /** Εμπεριεχόμενος ΦΠΑ 24%: round(ποσό / 1.24 × 0.24, 2). */
+  vatCents: number;
+}
+
+export function computeExpense(amount: number): ExpenseFigures {
+  const amountCents = toCents(amount);
+  return { amountCents, vatCents: includedExpenseVatCents(amountCents) };
+}
+
+/** Γραμμή του πίνακα `vehicle_expenses` όπως έρχεται από τη βάση. */
+export interface StoredVehicleExpense {
+  amount: number;
+  vat: number | null;
+}
+
+/** Αποθηκευμένο έξοδο → ποσά, με τον ΦΠΑ όπως τον υπολόγισε η βάση. */
+export function expenseFromStored(row: StoredVehicleExpense): ExpenseFigures {
+  const amountCents = toCents(Number(row.amount));
+  return {
+    amountCents,
+    vatCents: row.vat == null ? includedExpenseVatCents(amountCents) : toCents(Number(row.vat)),
+  };
+}
+
 /** Σύνολα περιόδου + δείκτες απόδοσης. */
 export interface Totals extends ShiftFigures {
   shifts: number;
+  /**
+   * Έξοδα οχήματος εκτός βάρδιας της περιόδου (και τυχόν παλιά «Άλλες δαπάνες» /
+   * «Επισκευές» μέσα σε βάρδιες). Καύσιμα + έξοδα οχήματος = σύνολο εξόδων.
+   */
+  vehicleExpensesCents: number;
+  /** Πλήθος καταχωρήσεων εξόδων οχήματος. */
+  expenseCount: number;
   /** Αξιοποίηση % = μισθωμένα χλμ / συνολικά χλμ × 100 (0 αν δεν υπάρχουν χλμ). */
   utilizationPct: number;
   /** Έσοδο ανά χλμ = καθαρά έσοδα / συνολικά χλμ, σε ευρώ (0 αν δεν υπάρχουν χλμ). */
   revenuePerKm: number;
 }
 
-export function summarize(items: readonly ShiftFigures[]): Totals {
+export function summarize(items: readonly ShiftFigures[], expenses: readonly ExpenseFigures[] = []): Totals {
   let paidKmHundredths = 0;
   let emptyKmHundredths = 0;
   const sum = {
@@ -224,12 +262,24 @@ export function summarize(items: readonly ShiftFigures[]): Totals {
     sum.netCashCents += s.netCashCents;
   }
 
+  // Έξοδα οχήματος: στα έξοδα, στον ΦΠΑ εξόδων (συμψηφισμός) και στο ταμείο.
+  let vehicleCents = 0;
+  for (const e of expenses) {
+    vehicleCents += e.amountCents;
+    sum.totalExpensesCents += e.amountCents;
+    sum.expensesVatCents += e.vatCents;
+    sum.vatBalanceCents -= e.vatCents;
+    sum.netCashCents -= e.amountCents;
+  }
+
   const totalKmHundredths = paidKmHundredths + emptyKmHundredths;
   const totalKm = totalKmHundredths / 100;
 
   return {
     ...sum,
     shifts: items.length,
+    vehicleExpensesCents: vehicleCents + sum.otherExpensesCents + sum.repairsCents,
+    expenseCount: expenses.length,
     paidKm: paidKmHundredths / 100,
     emptyKm: emptyKmHundredths / 100,
     totalKm,

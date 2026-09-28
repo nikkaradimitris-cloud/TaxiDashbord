@@ -2,10 +2,10 @@
 
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { cx } from '@/components/ui';
-import { summarize, vatStatus, type ShiftFigures, type Totals } from '@/lib/accounting';
+import { summarize, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
 import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
-import type { DriverRow, ShiftRow } from '@/lib/types';
+import type { DriverRow, ExpenseRow, ShiftRow } from '@/lib/types';
 import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
 
 const STATUS_TEXT = {
@@ -22,6 +22,7 @@ export function StatsPanel({
   month,
   selectedDriver,
   items,
+  expenseItems,
   driversById,
   showPerDriver,
   onSelectDriver,
@@ -34,6 +35,8 @@ export function StatsPanel({
   month: MonthFilter;
   selectedDriver: DriverRow | null;
   items: { row: ShiftRow; figures: ShiftFigures }[];
+  /** Έξοδα οχήματος της περιόδου (εκτός βάρδιας). */
+  expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[];
   driversById: Map<string, DriverRow>;
   showPerDriver: boolean;
   onSelectDriver: (driverId: string) => void;
@@ -59,7 +62,7 @@ export function StatsPanel({
         <Stat
           label="Συνολικά Έξοδα"
           value={formatEuro(totals.totalExpensesCents)}
-          sub={`Καύσιμα ${formatEuro(totals.fuelCents)} · Δαπάνες ${formatEuro(totals.otherExpensesCents)} · Επισκευές ${formatEuro(totals.repairsCents)}`}
+          sub={`Καύσιμα ${formatEuro(totals.fuelCents)} · Έξοδα οχήματος ${formatEuro(totals.vehicleExpensesCents)}`}
         />
         <Stat label="Καθαρό Ταμείο (Τσέπη)" value={formatEuro(totals.netCashCents)} emphasis />
       </div>
@@ -111,7 +114,9 @@ export function StatsPanel({
 
       {analysis}
 
-      {showPerDriver && <PerDriver items={items} driversById={driversById} onSelectDriver={onSelectDriver} />}
+      {showPerDriver && (
+        <PerDriver items={items} expenseItems={expenseItems} driversById={driversById} onSelectDriver={onSelectDriver} />
+      )}
     </section>
   );
 }
@@ -200,24 +205,32 @@ function WhatsAppIcon() {
 /** Σύνοψη ανά οδηγό (admin, όταν βλέπει όλο τον στόλο). */
 function PerDriver({
   items,
+  expenseItems,
   driversById,
   onSelectDriver,
 }: {
   items: { row: ShiftRow; figures: ShiftFigures }[];
+  expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[];
   driversById: Map<string, DriverRow>;
   onSelectDriver: (driverId: string) => void;
 }) {
   const rows = useMemo(() => {
-    const groups = new Map<string, ShiftFigures[]>();
-    for (const { row, figures } of items) {
-      const list = groups.get(row.driver_id) ?? [];
-      list.push(figures);
-      groups.set(row.driver_id, list);
-    }
+    // Κάθε οδηγός/αυτοκίνητο: οι βάρδιές του και τα έξοδα οχήματος του αυτοκινήτου του.
+    const groups = new Map<string, { shifts: ShiftFigures[]; expenses: ExpenseFigures[] }>();
+    const group = (driverId: string) => {
+      let entry = groups.get(driverId);
+      if (!entry) {
+        entry = { shifts: [], expenses: [] };
+        groups.set(driverId, entry);
+      }
+      return entry;
+    };
+    for (const { row, figures } of items) group(row.driver_id).shifts.push(figures);
+    for (const { row, figures } of expenseItems) group(row.driver_id).expenses.push(figures);
     return [...groups.entries()]
-      .map(([driverId, list]) => ({ driverId, totals: summarize(list) }))
+      .map(([driverId, list]) => ({ driverId, totals: summarize(list.shifts, list.expenses) }))
       .sort((a, b) => b.totals.netRevenueCents - a.totals.netRevenueCents);
-  }, [items]);
+  }, [items, expenseItems]);
 
   if (rows.length === 0) return null;
 

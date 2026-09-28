@@ -1,4 +1,4 @@
-import { VAT_STATUS_LABEL, vatStatus, type ShiftFigures, type Totals } from './accounting';
+import { summarize, VAT_STATUS_LABEL, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from './accounting';
 import { formatCentsPlain, formatDateTime, formatDecimalPlain } from './format';
 import { monthName } from './period';
 
@@ -8,6 +8,8 @@ import { monthName } from './period';
  * - UTF-8 με BOM, ώστε το Excel να δείχνει σωστά τα ελληνικά.
  * - Διαχωριστικό ";" και ελληνική υποδιαστολή ",", όπως περιμένει το Excel
  *   με ελληνικές τοπικές ρυθμίσεις (αλλιώς όλα πέφτουν σε μία στήλη).
+ * - Βάρδιες (με τα καύσιμα), μετά τα Έξοδα Οχήματος εκτός βάρδιας, και στο
+ *   τέλος η σύνοψη της περιόδου (όλα τα έξοδα, ΦΠΑ, ταμείο).
  */
 export const CSV_BOM = '﻿';
 const SEPARATOR = ';';
@@ -21,6 +23,17 @@ export interface CsvShift {
   zNumber: string;
   createdAt: string;
   figures: ShiftFigures;
+}
+
+export interface CsvExpense {
+  year: number;
+  month: number;
+  driverName: string;
+  plate: string | null;
+  category: string;
+  description: string;
+  createdAt: string;
+  figures: ExpenseFigures;
 }
 
 export interface CsvMeta {
@@ -43,12 +56,21 @@ const HEADERS = [
   'Φιλοδωρήματα / Άλλα Έσοδα (€)',
   'Μικτή Είσπραξη (€)',
   'Καύσιμα (€)',
-  'Άλλες Δαπάνες (€)',
-  'Επισκευές / Συντήρηση (€)',
-  'Σύνολο Εξόδων (€)',
-  'ΦΠΑ Εξόδων 24% (€)',
-  'Προς Απόδοση ΦΠΑ (€)',
-  'Καθαρό Ταμείο (€)',
+  'ΦΠΑ Καυσίμων 24% (€)',
+  'Υπόλοιπο ΦΠΑ Βάρδιας (€)',
+  'Καθαρό Ταμείο Βάρδιας (€)',
+  'Καταχώρηση',
+];
+
+const EXPENSE_HEADERS = [
+  'Έτος',
+  'Μήνας',
+  'Οδηγός',
+  'Πινακίδα',
+  'Κατηγορία',
+  'Περιγραφή',
+  'Ποσό με ΦΠΑ (€)',
+  'ΦΠΑ 24% (€)',
   'Καταχώρηση',
 ];
 
@@ -70,9 +92,7 @@ function figureCells(f: ShiftFigures): string[] {
     formatCentsPlain(f.vatCents),
     formatCentsPlain(f.tipsCents),
     formatCentsPlain(f.grossReceiptsCents),
-    formatCentsPlain(f.fuelCents),
-    formatCentsPlain(f.otherExpensesCents),
-    formatCentsPlain(f.repairsCents),
+    // Τα έξοδα της βάρδιας είναι τα καύσιμα (επισκευές κ.λπ. είναι «Έξοδα Οχήματος»).
     formatCentsPlain(f.totalExpensesCents),
     formatCentsPlain(f.expensesVatCents),
     formatCentsPlain(f.vatBalanceCents),
@@ -80,7 +100,12 @@ function figureCells(f: ShiftFigures): string[] {
   ];
 }
 
-export function buildShiftsCsv(rows: readonly CsvShift[], totals: Totals, meta: CsvMeta): string {
+export function buildShiftsCsv(
+  rows: readonly CsvShift[],
+  totals: Totals,
+  meta: CsvMeta,
+  expenses: readonly CsvExpense[] = [],
+): string {
   const lines: string[][] = [HEADERS.map(textCell)];
 
   for (const row of rows) {
@@ -95,20 +120,53 @@ export function buildShiftsCsv(rows: readonly CsvShift[], totals: Totals, meta: 
     ]);
   }
 
-  lines.push(['', '', textCell('ΣΥΝΟΛΑ'), '', '', ...figureCells(totals), '']);
+  const shiftTotals = summarize(rows.map((row) => row.figures));
+  lines.push(['', '', textCell('ΣΥΝΟΛΑ ΒΑΡΔΙΩΝ'), '', '', ...figureCells(shiftTotals), '']);
   lines.push([]);
 
+  if (expenses.length > 0) {
+    lines.push([textCell('ΕΞΟΔΑ ΟΧΗΜΑΤΟΣ (εκτός βάρδιας)')]);
+    lines.push(EXPENSE_HEADERS.map(textCell));
+    let amountCents = 0;
+    let vatCents = 0;
+    for (const expense of expenses) {
+      amountCents += expense.figures.amountCents;
+      vatCents += expense.figures.vatCents;
+      lines.push([
+        String(expense.year),
+        textCell(monthName(expense.month)),
+        textCell(expense.driverName),
+        textCell(expense.plate ?? ''),
+        textCell(expense.category),
+        textCell(expense.description),
+        formatCentsPlain(expense.figures.amountCents),
+        formatCentsPlain(expense.figures.vatCents),
+        textCell(formatDateTime(expense.createdAt)),
+      ]);
+    }
+    lines.push(['', '', textCell('ΣΥΝΟΛΟ ΕΞΟΔΩΝ ΟΧΗΜΑΤΟΣ'), '', '', '', formatCentsPlain(amountCents), formatCentsPlain(vatCents), '']);
+    lines.push([]);
+  }
+
+  // Σύνοψη περιόδου: βάρδιες + έξοδα οχήματος.
   const status = vatStatus(totals.vatBalanceCents);
   lines.push([textCell('Περίοδος'), textCell(meta.period)]);
   lines.push([textCell('Οδηγός'), textCell(meta.driverLabel)]);
   lines.push([textCell('Βάρδιες'), String(totals.shifts)]);
-  lines.push([textCell('Αξιοποίηση %'), formatDecimalPlain(totals.utilizationPct, 1)]);
-  lines.push([textCell('Έσοδο ανά χλμ (€)'), formatDecimalPlain(totals.revenuePerKm, 2)]);
+  lines.push([textCell('Μικτή Είσπραξη (€)'), formatCentsPlain(totals.grossReceiptsCents)]);
+  lines.push([textCell('Καύσιμα (€)'), formatCentsPlain(totals.totalExpensesCents - totals.vehicleExpensesCents)]);
+  lines.push([textCell('Έξοδα Οχήματος (€)'), formatCentsPlain(totals.vehicleExpensesCents)]);
+  lines.push([textCell('Σύνολο Εξόδων (€)'), formatCentsPlain(totals.totalExpensesCents)]);
+  lines.push([textCell('ΦΠΑ Εσόδων 13% (€)'), formatCentsPlain(totals.vatCents)]);
+  lines.push([textCell('ΦΠΑ Εξόδων 24% (€)'), formatCentsPlain(totals.expensesVatCents)]);
   lines.push([
     textCell('Προς Απόδοση ΦΠΑ (€)'),
     formatCentsPlain(Math.abs(totals.vatBalanceCents)),
     textCell(VAT_STATUS_LABEL[status]),
   ]);
+  lines.push([textCell('Καθαρό Ταμείο (€)'), formatCentsPlain(totals.netCashCents)]);
+  lines.push([textCell('Αξιοποίηση %'), formatDecimalPlain(totals.utilizationPct, 1)]);
+  lines.push([textCell('Έσοδο ανά χλμ (€)'), formatDecimalPlain(totals.revenuePerKm, 2)]);
 
   return CSV_BOM + lines.map((cells) => cells.join(SEPARATOR)).join(NEWLINE) + NEWLINE;
 }

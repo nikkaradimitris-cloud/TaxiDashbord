@@ -48,6 +48,9 @@ describe('toShiftInsert', () => {
     const row = toShiftInsert(input!, { id: 'x', driverId: 'd', year: 2026, month: 9, zNumber: ' Z1 ' });
     expect(row).toMatchObject({ net_revenue: 1.01, paid_km: 10.13, z_number: 'Z1', year: 2026, month: 9 });
     expect(row).not.toHaveProperty('vat');
+    // Επισκευές / άλλα έξοδα δεν ανήκουν πια στη βάρδια (είναι «Έξοδα Οχήματος»).
+    expect(row).not.toHaveProperty('repairs');
+    expect(row).not.toHaveProperty('other_expenses');
   });
 });
 
@@ -73,8 +76,6 @@ describe('shiftToFormValues', () => {
       netRevenue: '223,87',
       tips: '10',
       fuel: '',
-      otherExpenses: '',
-      repairs: '',
     });
   });
 

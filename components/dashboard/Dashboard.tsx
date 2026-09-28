@@ -5,10 +5,20 @@ import { Logo } from '@/components/Logo';
 import { SignOutButton } from '@/components/SignOutButton';
 import { TextSizeToggle } from '@/components/TextSizeToggle';
 import { Badge, Notice } from '@/components/ui';
-import { figuresFromStored, summarize } from '@/lib/accounting';
+import { expenseFromStored, figuresFromStored, summarize } from '@/lib/accounting';
 import { buildShiftsCsv, csvFileName } from '@/lib/csv';
-import { deleteShift, fetchDrivers, fetchMonthlySummary, fetchShifts, insertShift } from '@/lib/data';
+import {
+  deleteExpense,
+  deleteShift,
+  fetchDrivers,
+  fetchExpenses,
+  fetchMonthlySummary,
+  fetchShifts,
+  insertShift,
+} from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
+import { categoryLabel } from '@/lib/expenses';
+import { formatEuro } from '@/lib/format';
 import { periodLabel } from '@/lib/period';
 import {
   emptyOutbox,
@@ -22,9 +32,12 @@ import {
 } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/client';
 import type { MonthSummaryRow } from '@/lib/table';
-import type { DriverRow, SessionInfo, ShiftRow } from '@/lib/types';
+import type { DriverRow, ExpenseRow, SessionInfo, ShiftRow } from '@/lib/types';
 import { AnalysisCard } from './AnalysisCard';
 import { EditShiftDialog } from './EditShiftDialog';
+import { EntryKindSwitch, type EntryKind } from './EntryFields';
+import { ExpenseForm } from './ExpenseForm';
+import { ExpenseList } from './ExpenseList';
 import { FleetPanel } from './FleetPanel';
 import { LegacyImport } from './LegacyImport';
 import { OutboxPanel } from './OutboxPanel';
@@ -35,9 +48,9 @@ import { StatsPanel } from './StatsPanel';
 
 type Message = { tone: 'success' | 'error' | 'info'; text: string };
 
-interface ShiftsState {
+interface FetchState<Row> {
   key: string;
-  rows: ShiftRow[];
+  rows: Row[];
   fetchedAt: number;
   error: string | null;
 }
@@ -57,8 +70,11 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
   const [message, setMessage] = useState<Message | null>(null);
   const [editing, setEditing] = useState<ShiftRow | null>(null);
+  const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
+  const [entryKind, setEntryKind] = useState<EntryKind>('shift');
   const [toast, setToast] = useState<string | null>(null);
   const closeEdit = useCallback(() => setEditing(null), []);
+  const closeExpenseEdit = useCallback(() => setEditingExpense(null), []);
 
   /** Σύντομο μήνυμα κάτω στην οθόνη, ορατό όπου κι αν βρίσκεται ο χρήστης. */
   function showToast(text: string) {
@@ -103,7 +119,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   // Βάρδιες της επιλεγμένης περιόδου
   // ------------------------------------------------------------------
   const [shiftsVersion, setShiftsVersion] = useState(0);
-  const [shiftsState, setShiftsState] = useState<ShiftsState | null>(null);
+  const [shiftsState, setShiftsState] = useState<FetchState<ShiftRow> | null>(null);
   const year = prefs?.year;
   const month = prefs?.month;
   const queryKey = year === undefined ? null : `${year}|${month}|${driverFilter}|${shiftsVersion}`;
@@ -126,8 +142,35 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     };
   }, [supabase, year, month, driverFilter, shiftsVersion]);
 
-  const loading = !shiftsState || shiftsState.key !== queryKey;
+  const shiftsLoading = !shiftsState || shiftsState.key !== queryKey;
   const shifts = useMemo(() => shiftsState?.rows ?? [], [shiftsState]);
+
+  // ------------------------------------------------------------------
+  // Έξοδα οχήματος (εκτός βάρδιας) της ίδιας περιόδου
+  // ------------------------------------------------------------------
+  const [expensesState, setExpensesState] = useState<FetchState<ExpenseRow> | null>(null);
+
+  useEffect(() => {
+    if (year === undefined || month === undefined) return;
+    const key = `${year}|${month}|${driverFilter}|${shiftsVersion}`;
+    let cancelled = false;
+    fetchExpenses(supabase, { year, month, driverId: driverFilter === 'all' ? null : driverFilter }).then(
+      (rows) => {
+        if (!cancelled) setExpensesState({ key, rows, fetchedAt: Date.now(), error: null });
+      },
+      (error) => {
+        if (!cancelled) setExpensesState({ key, rows: [], fetchedAt: Date.now(), error: dataErrorMessage(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, year, month, driverFilter, shiftsVersion]);
+
+  const expensesLoading = !expensesState || expensesState.key !== queryKey;
+  const expenses = useMemo(() => expensesState?.rows ?? [], [expensesState]);
+  /** Τα στατιστικά περιμένουν και τις βάρδιες και τα έξοδα. */
+  const loading = shiftsLoading || expensesLoading;
 
   // ------------------------------------------------------------------
   // Σύνολα όλων των μηνών του έτους (πίνακας «Ανά μήνα» με ανοιχτό έναν μήνα).
@@ -167,12 +210,22 @@ export function Dashboard({ session }: { session: SessionInfo }) {
       }
     : null;
   const items = useMemo(() => shifts.map((row) => ({ row, figures: figuresFromStored(row) })), [shifts]);
-  const totals = useMemo(() => summarize(items.map((item) => item.figures)), [items]);
+  const expenseItems = useMemo(
+    () => expenses.map((row) => ({ row, figures: expenseFromStored(row) })),
+    [expenses],
+  );
+  const totals = useMemo(
+    () => summarize(
+      items.map((item) => item.figures),
+      expenseItems.map((item) => item.figures),
+    ),
+    [items, expenseItems],
+  );
 
   // ------------------------------------------------------------------
   // Ενέργειες
   // ------------------------------------------------------------------
-  const matchesView = (row: ShiftRow) =>
+  const matchesView = (row: { year: number; month: number; driver_id: string }) =>
     prefs !== null &&
     row.year === prefs.year &&
     (prefs.month === 'all' || row.month === prefs.month) &&
@@ -234,6 +287,59 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     }
   }
 
+  function handleExpenseSaved(row: ExpenseRow) {
+    if (!matchesView(row)) return;
+    setExpensesState((prev) =>
+      prev && prev.key === queryKey && !prev.rows.some((r) => r.id === row.id)
+        ? { ...prev, rows: [row, ...prev.rows] }
+        : prev,
+    );
+  }
+
+  function startExpenseEdit(row: ExpenseRow) {
+    setEditingExpense(row);
+    setMessage(null);
+  }
+
+  function expenseLabel(row: ExpenseRow) {
+    return `${categoryLabel(row.category)} ${formatEuro(Math.round(Number(row.amount) * 100))}`;
+  }
+
+  function handleExpenseUpdated(row: ExpenseRow) {
+    setExpensesState((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows: matchesView(row)
+              ? prev.rows.map((r) => (r.id === row.id ? row : r))
+              : prev.rows.filter((r) => r.id !== row.id),
+          }
+        : prev,
+    );
+    setEditingExpense(null);
+    showToast(`✓ Αποθηκεύτηκαν οι διορθώσεις στο έξοδο «${expenseLabel(row)}».`);
+  }
+
+  async function handleExpenseDelete(row: ExpenseRow) {
+    const label = expenseLabel(row);
+    if (!confirm(`Διαγραφή του εξόδου «${label}»;`)) return;
+    try {
+      const deleted = await deleteExpense(supabase, row.id);
+      if (!deleted) {
+        setMessage({
+          tone: 'error',
+          text: 'Η διαγραφή δεν επιτρέπεται. Οι οδηγοί διορθώνουν/διαγράφουν μόνο δικά τους έξοδα μέσα σε 24 ώρες — επικοινωνήστε με τον ιδιοκτήτη.',
+        });
+        return;
+      }
+      setExpensesState((prev) => (prev ? { ...prev, rows: prev.rows.filter((r) => r.id !== row.id) } : prev));
+      if (editingExpense?.id === row.id) setEditingExpense(null);
+      setMessage({ tone: 'success', text: `Το έξοδο «${label}» διαγράφηκε.` });
+    } catch (error) {
+      setMessage({ tone: 'error', text: dataErrorMessage(error) });
+    }
+  }
+
   /** Αποστολή όσων βαρδιών περιμένουν στην ουρά. */
   const flushOutbox = useCallback(async () => {
     const pending = getOutbox(userId);
@@ -289,6 +395,19 @@ export function Dashboard({ session }: { session: SessionInfo }) {
         period: periodLabel(prefs.year, prefs.month),
         driverLabel: isAdmin ? (selected?.name ?? 'Όλοι οι οδηγοί') : (ownDriver?.name ?? ''),
       },
+      expenseItems.map(({ row, figures }) => {
+        const driver = driversById.get(row.driver_id);
+        return {
+          year: row.year,
+          month: row.month,
+          driverName: driver?.name ?? '—',
+          plate: driver?.plate ?? null,
+          category: categoryLabel(row.category),
+          description: row.description,
+          createdAt: row.created_at,
+          figures,
+        };
+      }),
     );
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
@@ -339,7 +458,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               driverFilter={driverFilter}
               onChange={setPrefs}
               onExport={exportCsv}
-              canExport={!loading && shifts.length > 0}
+              canExport={!loading && (shifts.length > 0 || expenses.length > 0)}
             />
 
             {isAdmin && (
@@ -369,7 +488,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 </div>
               </Notice>
             )}
-            {shiftsState?.error && !loading && (
+            {shiftsState?.error && !shiftsLoading && (
               <Notice tone="error">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span>Οι βάρδιες δεν φορτώθηκαν. {shiftsState.error}</span>
@@ -379,23 +498,51 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 </div>
               </Notice>
             )}
+            {expensesState?.error && !expensesLoading && (
+              <Notice tone="error">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>Τα έξοδα οχήματος δεν φορτώθηκαν. {expensesState.error}</span>
+                  <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
+                    Δοκιμή ξανά
+                  </button>
+                </div>
+              </Notice>
+            )}
             {driversState?.error && <Notice tone="error">{driversState.error}</Notice>}
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
-              <ShiftForm
-                supabase={supabase}
-                isAdmin={isAdmin}
-                drivers={drivers}
-                driversLoaded={!isAdmin || driversState !== null}
-                prefs={prefs}
-                driverFilter={driverFilter}
-                onPrefsChange={setPrefs}
-                onSaved={handleSaved}
-                onQueued={handleQueued}
-                editing={null}
-                onUpdated={handleUpdated}
-                onCancelEdit={closeEdit}
-              />
+              {entryKind === 'shift' ? (
+                <ShiftForm
+                  supabase={supabase}
+                  isAdmin={isAdmin}
+                  drivers={drivers}
+                  driversLoaded={!isAdmin || driversState !== null}
+                  prefs={prefs}
+                  driverFilter={driverFilter}
+                  onPrefsChange={setPrefs}
+                  onSaved={handleSaved}
+                  onQueued={handleQueued}
+                  editing={null}
+                  onUpdated={handleUpdated}
+                  onCancelEdit={closeEdit}
+                  switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                />
+              ) : (
+                <ExpenseForm
+                  supabase={supabase}
+                  isAdmin={isAdmin}
+                  drivers={drivers}
+                  driversLoaded={!isAdmin || driversState !== null}
+                  prefs={prefs}
+                  driverFilter={driverFilter}
+                  onPrefsChange={setPrefs}
+                  onSaved={handleExpenseSaved}
+                  editing={null}
+                  onUpdated={handleExpenseUpdated}
+                  onCancelEdit={closeExpenseEdit}
+                  switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                />
+              )}
               <StatsPanel
                 totals={totals}
                 loading={loading}
@@ -404,6 +551,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 month={prefs.month}
                 selectedDriver={selectedDriver}
                 items={items}
+                expenseItems={expenseItems}
                 driversById={driversById}
                 showPerDriver={isAdmin && driverFilter === 'all'}
                 onSelectDriver={(id) => setPrefs({ driverFilter: id })}
@@ -430,7 +578,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
             <ShiftList
               items={items}
-              loading={loading}
+              loading={shiftsLoading}
               driversById={driversById}
               isAdmin={isAdmin}
               userId={userId}
@@ -457,6 +605,38 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   editing={editing}
                   onUpdated={handleUpdated}
                   onCancelEdit={closeEdit}
+                />
+              </EditShiftDialog>
+            )}
+
+            <ExpenseList
+              items={expenseItems}
+              loading={expensesLoading}
+              driversById={driversById}
+              isAdmin={isAdmin}
+              userId={userId}
+              fetchedAt={expensesState?.fetchedAt ?? 0}
+              periodText={periodLabel(prefs.year, prefs.month)}
+              editingId={editingExpense?.id ?? null}
+              onEdit={startExpenseEdit}
+              onDelete={handleExpenseDelete}
+            />
+
+            {editingExpense && (
+              <EditShiftDialog onClose={closeExpenseEdit} label="Επεξεργασία εξόδου οχήματος">
+                <ExpenseForm
+                  key={editingExpense.id}
+                  supabase={supabase}
+                  isAdmin={isAdmin}
+                  drivers={drivers}
+                  driversLoaded={!isAdmin || driversState !== null}
+                  prefs={prefs}
+                  driverFilter={driverFilter}
+                  onPrefsChange={setPrefs}
+                  onSaved={handleExpenseSaved}
+                  editing={editingExpense}
+                  onUpdated={handleExpenseUpdated}
+                  onCancelEdit={closeExpenseEdit}
                 />
               </EditShiftDialog>
             )}

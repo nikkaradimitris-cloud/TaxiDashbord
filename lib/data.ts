@@ -7,7 +7,7 @@ import type { MonthFilter } from './period';
 import type { BrowserSupabase } from './supabase/client';
 import type { TablesUpdate } from './database.types';
 import type { MonthSummaryRow } from './table';
-import type { DriverRow, ProfileRow, ShiftInsert, ShiftRow } from './types';
+import type { DriverRow, ExpenseInsert, ExpenseRow, ProfileRow, ShiftInsert, ShiftRow } from './types';
 
 const PAGE_SIZE = 1000;
 
@@ -104,6 +104,54 @@ export async function updateShift(
 /** true αν διαγράφηκε· false αν δεν επιτρέπεται (π.χ. οδηγός μετά από 24 ώρες). */
 export async function deleteShift(supabase: BrowserSupabase, id: string): Promise<boolean> {
   const { data, error } = await supabase.from('shifts').delete().eq('id', id).select('id');
+  if (error) throw error;
+  return data.length > 0;
+}
+
+/** Τα έξοδα οχήματος της περιόδου (ο οδηγός βλέπει μόνο του δικού του αυτοκινήτου — RLS). */
+export async function fetchExpenses(supabase: BrowserSupabase, query: ShiftQuery): Promise<ExpenseRow[]> {
+  const rows: ExpenseRow[] = [];
+  let total = Infinity;
+
+  while (rows.length < total) {
+    let request = supabase.from('vehicle_expenses').select('*', { count: 'exact' }).eq('year', query.year);
+    if (query.month !== 'all') request = request.eq('month', query.month);
+    if (query.driverId) request = request.eq('driver_id', query.driverId);
+
+    const { data, error, count } = await request
+      .order('month', { ascending: false })
+      .order('created_at', { ascending: false })
+      .order('id', { ascending: true })
+      .range(rows.length, rows.length + PAGE_SIZE - 1);
+    if (error) throw error;
+
+    total = count ?? rows.length + data.length;
+    rows.push(...data);
+    if (data.length === 0) break;
+  }
+  return rows;
+}
+
+export async function insertExpense(supabase: BrowserSupabase, payload: ExpenseInsert): Promise<ExpenseRow> {
+  const { data, error } = await supabase.from('vehicle_expenses').insert(payload).select('*').single();
+  if (error) throw error;
+  return data;
+}
+
+/** Η διορθωμένη εγγραφή, ή null αν δεν επιτρέπεται (π.χ. οδηγός μετά από 24 ώρες). */
+export async function updateExpense(
+  supabase: BrowserSupabase,
+  id: string,
+  changes: TablesUpdate<'vehicle_expenses'>,
+): Promise<ExpenseRow | null> {
+  const { data, error } = await supabase.from('vehicle_expenses').update(changes).eq('id', id).select('*');
+  if (error) throw error;
+  return data[0] ?? null;
+}
+
+/** true αν διαγράφηκε· false αν δεν επιτρέπεται. */
+export async function deleteExpense(supabase: BrowserSupabase, id: string): Promise<boolean> {
+  const { data, error } = await supabase.from('vehicle_expenses').delete().eq('id', id).select('id');
   if (error) throw error;
   return data.length > 0;
 }

@@ -1,12 +1,12 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, Card, cx, Field, Input, Notice, Select } from '@/components/ui';
+import { Button, Card, cx, Field, Input, Notice } from '@/components/ui';
 import { VAT_STATUS_LABEL, vatStatus } from '@/lib/accounting';
 import { findShiftByZ, insertShift, updateShift } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
 import { formatEuro, formatKm } from '@/lib/format';
-import { GREEK_MONTHS, periodLabel, yearOptions } from '@/lib/period';
+import { periodLabel } from '@/lib/period';
 import {
   EMPTY_SHIFT_FORM,
   parseShiftForm,
@@ -19,6 +19,7 @@ import type { PendingShift, Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow, ShiftRow } from '@/lib/types';
 import { newId } from '@/lib/uuid';
+import { DriverField, driverOptionLabel, PeriodFields, useEntryTarget } from './EntryFields';
 
 type Message = { tone: 'success' | 'error' | 'warning'; text: string };
 
@@ -40,6 +41,7 @@ export function ShiftForm({
   editing,
   onUpdated,
   onCancelEdit,
+  switcher,
 }: {
   supabase: BrowserSupabase;
   isAdmin: boolean;
@@ -54,40 +56,22 @@ export function ShiftForm({
   editing: ShiftRow | null;
   onUpdated: (row: ShiftRow) => void;
   onCancelEdit: () => void;
+  /** Διακόπτης «Βάρδια | Έξοδο οχήματος» (μόνο στη νέα καταχώρηση). */
+  switcher?: ReactNode;
 }) {
   const [values, setValues] = useState<ShiftFormValues>(() => (editing ? shiftToFormValues(editing) : EMPTY_SHIFT_FORM));
-  const [localDriverId, setLocalDriverId] = useState(editing?.driver_id ?? '');
-  const [localMonth, setLocalMonth] = useState(editing?.month ?? prefs.today.month);
-  const [localYear, setLocalYear] = useState(editing?.year ?? prefs.today.year);
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
   const zInput = useRef<HTMLInputElement>(null);
 
-  // Νέα καταχώρηση: η φόρμα ακολουθεί την περίοδο/οδηγό της προβολής.
-  // Διόρθωση: κρατά τα στοιχεία της βάρδιας, χωρίς να αλλάζει την προβολή.
-  const isEditing = editing !== null;
-  const year = isEditing ? localYear : prefs.year;
-  const month = isEditing || prefs.month === 'all' ? localMonth : prefs.month;
-  const followsFilter = !isEditing && driverFilter !== 'all';
-  const selectable = isAdmin
-    ? drivers.filter((d) => d.active || d.id === (followsFilter ? driverFilter : localDriverId))
-    : drivers;
-  const driverId = !isAdmin
-    ? (drivers[0]?.id ?? '')
-    : followsFilter
-      ? driverFilter
-      : selectable.some((d) => d.id === localDriverId)
-        ? localDriverId
-        : (selectable.find((d) => d.active)?.id ?? '');
-  const driver = drivers.find((d) => d.id === driverId) ?? null;
-  const inactiveSelf = !isAdmin && driver !== null && !driver.active;
+  const target = useEntryTarget({ isAdmin, drivers, prefs, driverFilter, onPrefsChange, editing });
+  const { isEditing, year, month, driver, inactiveSelf } = target;
 
   const parsed = parseShiftForm(values);
   const errors = showErrors ? parsed.errors : {};
   const preview = parsed.preview;
   const status = vatStatus(preview.vatBalanceCents);
-  const isCurrentPeriod = isEditing || (year === prefs.today.year && month === prefs.today.month);
 
   const set = (key: keyof ShiftFormValues, numeric = true) => ({
     value: values[key],
@@ -97,21 +81,6 @@ export function ShiftForm({
     },
     'aria-invalid': Boolean(errors[key]),
   });
-
-  function setMonth(value: number) {
-    if (isEditing || prefs.month === 'all') setLocalMonth(value);
-    else onPrefsChange({ month: value });
-  }
-
-  function setYear(value: number) {
-    if (isEditing) setLocalYear(value);
-    else onPrefsChange({ year: value });
-  }
-
-  function setDriver(id: string) {
-    if (followsFilter) onPrefsChange({ driverFilter: id });
-    else setLocalDriverId(id);
-  }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -173,73 +142,20 @@ export function ShiftForm({
 
   return (
     <Card
-      title={isEditing ? `Επεξεργασία Βάρδιας · Ζ ${editing.z_number}` : 'Καταχώρηση Βάρδιας'}
+      title={editing ? `Επεξεργασία Βάρδιας · Ζ ${editing.z_number}` : 'Καταχώρηση Βάρδιας'}
       id={isEditing ? 'shift-edit-form' : 'shift-form'}
       className={cx(isEditing && 'ring-2 ring-accent-strong')}
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3">
-          <Field label="Μήνας">
-            <Select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
-              {GREEK_MONTHS.map((name, index) => (
-                <option key={name} value={index + 1}>
-                  {name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Έτος">
-            <Select value={year} onChange={(e) => setYear(Number(e.target.value))}>
-              {yearOptions(prefs.today.year, [year]).map((y) => (
-                <option key={y} value={y}>
-                  {y}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        </div>
-        {!isCurrentPeriod && (
-          <Notice tone="warning">
-            Η καταχώρηση θα γίνει στον μήνα <b>{periodLabel(year, month)}</b>, όχι στον τρέχοντα.{' '}
-            <button
-              type="button"
-              className="font-semibold underline"
-              onClick={() => onPrefsChange({ year: prefs.today.year, month: prefs.today.month })}
-            >
-              Τρέχων μήνας
-            </button>
-          </Notice>
-        )}
-
-        <Field label="Οδηγός">
-          {isAdmin ? (
-            <Select value={driverId} onChange={(e) => setDriver(e.target.value)} disabled={selectable.length === 0}>
-              {selectable.length === 0 && <option value="">— Δεν υπάρχουν οδηγοί —</option>}
-              {selectable.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                  {d.plate ? ` · ${d.plate}` : ''}
-                </option>
-              ))}
-            </Select>
-          ) : (
-            <div className="flex min-h-11 items-center rounded-xl border border-line bg-bg px-3 text-base">
-              {driver ? `${driver.name}${driver.plate ? ` · ${driver.plate}` : ''}` : '—'}
-            </div>
-          )}
-        </Field>
-        {isAdmin && driversLoaded && selectable.length === 0 && (
-          <Notice tone="info">
-            Προσθέστε πρώτα οδηγό (π.χ. τον εαυτό σας) στην{' '}
-            <a href="#fleet" className="font-semibold underline">
-              Υποδομή Στόλου
-            </a>
-            .
-          </Notice>
-        )}
-        {inactiveSelf && (
-          <Notice tone="error">Ο λογαριασμός οδηγού είναι ανενεργός. Επικοινωνήστε με τον ιδιοκτήτη.</Notice>
-        )}
+        {switcher}
+        <PeriodFields target={target} prefs={prefs} onPrefsChange={onPrefsChange} />
+        <DriverField
+          target={target}
+          isAdmin={isAdmin}
+          driversLoaded={driversLoaded}
+          label="Οδηγός"
+          optionLabel={driverOptionLabel}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Αριθμός Ζ *" error={errors.zNumber}>
@@ -286,26 +202,22 @@ export function ShiftForm({
           </div>
         </Group>
 
-        <Group title="Έξοδα (τελικά ποσά με ΦΠΑ 24%)">
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Field label="Καύσιμα (€)" error={errors.fuel}>
-              <Input inputMode="decimal" autoComplete="off" placeholder="0,00" {...set('fuel')} />
-            </Field>
-            <Field label="Άλλες Δαπάνες (€)" error={errors.otherExpenses}>
-              <Input inputMode="decimal" autoComplete="off" placeholder="0,00" {...set('otherExpenses')} />
-            </Field>
-            <Field label="Επισκευές / Συντήρηση (€)" error={errors.repairs} className="col-span-2 sm:col-span-1">
-              <Input inputMode="decimal" autoComplete="off" placeholder="0,00" {...set('repairs')} />
-            </Field>
-          </div>
+        <Group title="Έξοδα βάρδιας">
+          <Field
+            label="Καύσιμα (€)"
+            hint="Τελικό ποσό με ΦΠΑ 24%. Επισκευές, service, λάστιχα κ.λπ. καταχωρούνται ως «Έξοδο οχήματος»."
+            error={errors.fuel}
+          >
+            <Input inputMode="decimal" autoComplete="off" placeholder="0,00" {...set('fuel')} />
+          </Field>
         </Group>
 
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl bg-bg p-3 text-sm tabular-nums">
           <dt className="text-muted">Μικτή είσπραξη</dt>
           <dd className="text-right">{formatEuro(preview.grossReceiptsCents)}</dd>
-          <dt className="text-muted">Σύνολο εξόδων</dt>
+          <dt className="text-muted">Καύσιμα</dt>
           <dd className="text-right">{formatEuro(preview.totalExpensesCents)}</dd>
-          <dt className="text-muted">ΦΠΑ εξόδων 24% (συμψηφίζεται)</dt>
+          <dt className="text-muted">ΦΠΑ καυσίμων 24% (συμψηφίζεται)</dt>
           <dd className="text-right">{formatEuro(preview.expensesVatCents)}</dd>
           <dt className="text-muted">Υπόλοιπο ΦΠΑ βάρδιας</dt>
           <dd className="text-right">

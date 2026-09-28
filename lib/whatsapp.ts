@@ -34,7 +34,9 @@ export function buildVatMessage({ driverName, plate, year, month, totals }: VatM
     `${month === 'all' ? 'Περίοδος' : 'Μήνας'}: ${periodLabel(year, month)}`,
     '',
     `Είσπραξη (μικτή): ${formatEuro(totals.grossReceiptsCents)}`,
-    `Έξοδα: ${formatEuro(totals.totalExpensesCents)}`,
+    totals.vehicleExpensesCents > 0
+      ? `Έξοδα: ${formatEuro(totals.totalExpensesCents)} (καύσιμα ${formatEuro(totals.totalExpensesCents - totals.vehicleExpensesCents)} + οχήματος ${formatEuro(totals.vehicleExpensesCents)})`
+      : `Έξοδα: ${formatEuro(totals.totalExpensesCents)}`,
     `ΦΠΑ εσόδων 13%: ${formatEuro(totals.vatCents)}`,
     `ΦΠΑ εξόδων 24%: ${formatEuro(totals.expensesVatCents)}`,
     `*Προς απόδοση ΦΠΑ: ${formatEuro(Math.abs(totals.vatBalanceCents))} (${VAT_STATUS_LABEL[status]})*`,

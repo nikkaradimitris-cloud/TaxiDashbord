@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeShift, summarize } from './accounting';
+import { computeExpense, computeShift, summarize } from './accounting';
 import { buildVatMessage, toWhatsAppNumber, whatsappLink } from './whatsapp';
 
 describe('toWhatsAppNumber', () => {
@@ -42,6 +42,17 @@ describe('buildVatMessage / whatsappLink', () => {
     expect(text).toContain('Έξοδα: 50,00');
     expect(text).toContain('Προς απόδοση ΦΠΑ: 11,16');
     expect(text).toContain('(Χρεωστικό)');
+  });
+
+  it('έξοδα οχήματος: στο σύνολο εξόδων, με ανάλυση καύσιμα + οχήματος', () => {
+    const withRepair = summarize(
+      [computeShift({ trips: 10, paidKm: 100, emptyKm: 50, netRevenue: 160.39, tips: 5, fuel: 50, otherExpenses: 0, repairs: 0 })],
+      [computeExpense(800)],
+    );
+    const text = buildVatMessage({ driverName: 'Γιώργος', plate: 'ΤΑΕ-1234', year: 2026, month: 9, totals: withRepair });
+    expect(text.replace(/\u00a0/g, ' ')).toContain('Έξοδα: 850,00 € (καύσιμα 50,00 € + οχήματος 800,00 €)');
+    expect(text).toContain('Προς απόδοση ΦΠΑ: 143,68');
+    expect(text).toContain('(Πιστωτικό)');
   });
 
   it('ολόκληρο έτος → "Περίοδος: Έτος 2026"', () => {

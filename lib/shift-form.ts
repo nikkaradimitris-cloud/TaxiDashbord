@@ -2,7 +2,10 @@ import { computeShift, round2, type ShiftFigures, type ShiftInput } from './acco
 import { parseOptionalDecimal, parseOptionalInteger } from './numbers';
 import type { ShiftInsert, ShiftRow } from './types';
 
-/** Οι τιμές της φόρμας όπως τις πληκτρολογεί ο χρήστης (κείμενο). */
+/**
+ * Οι τιμές της φόρμας όπως τις πληκτρολογεί ο χρήστης (κείμενο). Στη βάρδια
+ * μπαίνουν μόνο τα καύσιμα· επισκευές και άλλα έξοδα είναι «Έξοδα Οχήματος».
+ */
 export interface ShiftFormValues {
   zNumber: string;
   trips: string;
@@ -11,8 +14,6 @@ export interface ShiftFormValues {
   netRevenue: string;
   tips: string;
   fuel: string;
-  otherExpenses: string;
-  repairs: string;
 }
 
 export const EMPTY_SHIFT_FORM: ShiftFormValues = {
@@ -23,8 +24,6 @@ export const EMPTY_SHIFT_FORM: ShiftFormValues = {
   netRevenue: '',
   tips: '',
   fuel: '',
-  otherExpenses: '',
-  repairs: '',
 };
 
 export type ShiftFormErrors = Partial<Record<keyof ShiftFormValues, string>>;
@@ -38,8 +37,6 @@ const DECIMAL_FIELDS: { key: Exclude<keyof ShiftFormValues, 'zNumber' | 'trips'>
   { key: 'netRevenue', max: MAX_AMOUNT },
   { key: 'tips', max: MAX_AMOUNT },
   { key: 'fuel', max: MAX_AMOUNT },
-  { key: 'otherExpenses', max: MAX_AMOUNT },
-  { key: 'repairs', max: MAX_AMOUNT },
 ];
 
 export interface ParsedShiftForm {
@@ -75,8 +72,8 @@ export function parseShiftForm(values: ShiftFormValues): ParsedShiftForm {
     netRevenue: numbers.netRevenue,
     tips: numbers.tips,
     fuel: numbers.fuel,
-    otherExpenses: numbers.otherExpenses,
-    repairs: numbers.repairs,
+    otherExpenses: 0,
+    repairs: 0,
   };
 
   return {
@@ -86,7 +83,10 @@ export function parseShiftForm(values: ShiftFormValues): ParsedShiftForm {
   };
 }
 
-/** Οι στήλες της βάρδιας για τη βάση. Τα ποσά στρογγυλοποιούνται σε 2 δεκαδικά όπως θα αποθηκευτούν. */
+/**
+ * Οι στήλες της βάρδιας για τη βάση. Τα ποσά στρογγυλοποιούνται σε 2 δεκαδικά όπως θα αποθηκευτούν.
+ * Οι παλιές στήλες «Άλλες δαπάνες» / «Επισκευές» δεν στέλνονται (μένουν ό,τι ήταν, κανονικά 0).
+ */
 export function toShiftValues(
   input: ShiftInput,
   meta: { driverId: string; year: number; month: number; zNumber: string },
@@ -102,8 +102,6 @@ export function toShiftValues(
     net_revenue: round2(input.netRevenue),
     tips: round2(input.tips),
     fuel: round2(input.fuel),
-    other_expenses: round2(input.otherExpenses),
-    repairs: round2(input.repairs),
   };
 }
 
@@ -123,10 +121,7 @@ function toInput(value: number | null | undefined): string {
 
 /** Αποθηκευμένη βάρδια → τιμές φόρμας, για διόρθωση. */
 export function shiftToFormValues(
-  row: Pick<
-    ShiftRow,
-    'z_number' | 'trips' | 'paid_km' | 'empty_km' | 'net_revenue' | 'tips' | 'fuel' | 'other_expenses' | 'repairs'
-  >,
+  row: Pick<ShiftRow, 'z_number' | 'trips' | 'paid_km' | 'empty_km' | 'net_revenue' | 'tips' | 'fuel'>,
 ): ShiftFormValues {
   return {
     zNumber: row.z_number,
@@ -136,7 +131,5 @@ export function shiftToFormValues(
     netRevenue: toInput(row.net_revenue),
     tips: toInput(row.tips),
     fuel: toInput(row.fuel),
-    otherExpenses: toInput(row.other_expenses),
-    repairs: toInput(row.repairs),
   };
 }
