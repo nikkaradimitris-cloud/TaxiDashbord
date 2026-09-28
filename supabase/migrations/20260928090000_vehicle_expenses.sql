@@ -1,10 +1,11 @@
 -- =====================================================================
 --  Έξοδα Οχήματος (εκτός βάρδιας)
 -- =====================================================================
---  Επισκευές, service, ελαστικά, πλύσιμο, διόδια κ.λπ. δεν ανήκουν σε μία
+--  Επισκευές / συντήρηση και άλλα έξοδα του αυτοκινήτου δεν ανήκουν σε μία
 --  βάρδια (π.χ. ένα συνεργείο 800 € θα «χαλούσε» το ταμείο της βάρδιας):
 --  καταχωρούνται χωριστά, ανά Έτος/Μήνα, για το συγκεκριμένο αυτοκίνητο
 --  (εγγραφή στόλου: οδηγός + πινακίδα). Στη βάρδια μένουν τα καύσιμα.
+--  Δύο είδη: 'repairs' (Επισκευές / Συντήρηση) και 'other' (Άλλα έξοδα).
 --
 --  Τα ποσά είναι τελικά, με ΦΠΑ 24% μέσα· ο ΦΠΑ τους συμψηφίζεται με τον
 --  ΦΠΑ εσόδων 13%, όπως των καυσίμων.
@@ -19,8 +20,7 @@ create table public.vehicle_expenses (
   driver_id   uuid not null references public.drivers (id) on delete restrict,
   year        smallint not null check (year between 2000 and 2100),
   month       smallint not null check (month between 1 and 12),
-  category    text not null default 'other'
-              check (category in ('repairs', 'service', 'tires', 'wash', 'tolls', 'other')),
+  category    text not null default 'other' check (category in ('repairs', 'other')),
   description text not null default '' check (char_length(description) <= 200),
   amount      numeric(12, 2) not null check (amount > 0 and amount <= 1000000),
   -- Εμπεριεχόμενος ΦΠΑ 24%: ποσό / 1.24 × 0.24 (ίδιος τύπος με τις βάρδιες).
@@ -30,7 +30,7 @@ create table public.vehicle_expenses (
   updated_at  timestamptz not null default now()
 );
 comment on table public.vehicle_expenses is
-  'Έξοδα αυτοκινήτου εκτός βάρδιας (επισκευές, service, ελαστικά…), ανά Έτος/Μήνα, με ΦΠΑ 24% μέσα.';
+  'Έξοδα αυτοκινήτου εκτός βάρδιας (επισκευές / συντήρηση, άλλα έξοδα), ανά Έτος/Μήνα, με ΦΠΑ 24% μέσα.';
 comment on column public.vehicle_expenses.driver_id is 'Το αυτοκίνητο: εγγραφή στόλου (οδηγός + πινακίδα).';
 
 create index vehicle_expenses_driver_period_idx on public.vehicle_expenses (driver_id, year, month);

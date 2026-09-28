@@ -1,19 +1,15 @@
 /**
- * Έξοδα οχήματος εκτός βάρδιας: επισκευές, service, ελαστικά, πλύσιμο,
- * διόδια… Καταχωρούνται ανά Έτος/Μήνα για το συγκεκριμένο αυτοκίνητο, με
- * τελικό ποσό (ΦΠΑ 24% μέσα), και μπαίνουν στα σύνολα της περιόδου.
+ * Έξοδα οχήματος εκτός βάρδιας: «Επισκευές / Συντήρηση» ή «Άλλα έξοδα».
+ * Καταχωρούνται ανά Έτος/Μήνα για το συγκεκριμένο αυτοκίνητο, με τελικό
+ * ποσό (ΦΠΑ 24% μέσα), και μπαίνουν στα σύνολα της περιόδου.
  */
 import { computeExpense, round2, type ExpenseFigures } from './accounting';
 import { parseDecimal } from './numbers';
 import type { ExpenseInsert, ExpenseRow } from './types';
 
 export const EXPENSE_CATEGORIES = [
-  { id: 'repairs', label: 'Επισκευή / Συνεργείο' },
-  { id: 'service', label: 'Service / Λάδια' },
-  { id: 'tires', label: 'Ελαστικά' },
-  { id: 'wash', label: 'Πλύσιμο' },
-  { id: 'tolls', label: 'Διόδια / Parking' },
-  { id: 'other', label: 'Άλλο' },
+  { id: 'repairs', label: 'Επισκευές / Συντήρηση' },
+  { id: 'other', label: 'Άλλα έξοδα' },
 ] as const;
 
 export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number]['id'];
@@ -23,7 +19,7 @@ export function isExpenseCategory(value: unknown): value is ExpenseCategory {
 }
 
 export function categoryLabel(id: string): string {
-  return EXPENSE_CATEGORIES.find((category) => category.id === id)?.label ?? 'Άλλο';
+  return EXPENSE_CATEGORIES.find((category) => category.id === id)?.label ?? 'Άλλα έξοδα';
 }
 
 export const MAX_DESCRIPTION = 200;

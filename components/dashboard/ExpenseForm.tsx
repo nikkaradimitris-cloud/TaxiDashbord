@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
-import { Button, Card, cx, Field, Input, Notice, Select } from '@/components/ui';
+import { Button, Card, cx, Field, Input, Notice } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
 import { insertExpense, updateExpense } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
@@ -10,7 +10,6 @@ import {
   EMPTY_EXPENSE_FORM,
   EXPENSE_CATEGORIES,
   expenseToFormValues,
-  isExpenseCategory,
   MAX_DESCRIPTION,
   parseExpenseForm,
   toExpenseValues,
@@ -26,8 +25,8 @@ import { DriverField, PeriodFields, useEntryTarget, vehicleOptionLabel } from '.
 type Message = { tone: 'success' | 'error'; text: string };
 
 /**
- * Έξοδο οχήματος εκτός βάρδιας (επισκευή, service, λάστιχα, πλύσιμο…):
- * μήνας/έτος, αυτοκίνητο, κατηγορία, τελικό ποσό (ΦΠΑ 24% μέσα), περιγραφή.
+ * Έξοδο οχήματος εκτός βάρδιας («Επισκευές / Συντήρηση» ή «Άλλα έξοδα»):
+ * μήνας/έτος, αυτοκίνητο, είδος, τελικό ποσό (ΦΠΑ 24% μέσα), περιγραφή.
  */
 export function ExpenseForm({
   supabase,
@@ -126,8 +125,7 @@ export function ExpenseForm({
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {switcher}
         <p className="text-sm text-muted">
-          Επισκευές, service, λάστιχα, πλύσιμο κ.λπ. — για το αυτοκίνητο, εκτός βάρδιας. Μετράνε στα έξοδα, στον ΦΠΑ
-          και στο ταμείο του μήνα.
+          Έξοδα του αυτοκινήτου εκτός βάρδιας. Μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο του μήνα.
         </p>
         <PeriodFields target={target} prefs={prefs} onPrefsChange={onPrefsChange} />
         <DriverField
@@ -138,20 +136,34 @@ export function ExpenseForm({
           optionLabel={vehicleOptionLabel}
         />
 
-        <Field label="Κατηγορία" error={errors.category}>
-          <Select
-            value={values.category}
-            onChange={(e) => {
-              if (isExpenseCategory(e.target.value)) update({ category: e.target.value });
-            }}
-          >
+        <fieldset>
+          <legend className="mb-1 block text-sm font-medium">Είδος εξόδου</legend>
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-bg p-1">
             {EXPENSE_CATEGORIES.map((category) => (
-              <option key={category.id} value={category.id}>
+              <label
+                key={category.id}
+                className={cx(
+                  'flex min-h-11 cursor-pointer items-center justify-center rounded-lg px-2 py-1 text-center text-sm leading-tight transition-colors',
+                  'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-strong',
+                  values.category === category.id
+                    ? 'bg-card font-semibold text-fg shadow-sm ring-1 ring-line'
+                    : 'text-muted hover:bg-card hover:text-fg',
+                )}
+              >
+                <input
+                  type="radio"
+                  name="expense-category"
+                  value={category.id}
+                  checked={values.category === category.id}
+                  onChange={() => update({ category: category.id })}
+                  className="sr-only"
+                />
                 {category.label}
-              </option>
+              </label>
             ))}
-          </Select>
-        </Field>
+          </div>
+          {errors.category && <span className="mt-1 block text-sm text-bad">{errors.category}</span>}
+        </fieldset>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ποσό με ΦΠΑ (€) *" error={errors.amount}>
@@ -174,7 +186,7 @@ export function ExpenseForm({
 
         <Field
           label="Περιγραφή"
-          hint="Προαιρετικά, π.χ. «Φρένα – συνεργείο» ή αριθμός τιμολογίου."
+          hint="Προαιρετικά, π.χ. «Φρένα – συνεργείο», «Λογιστής» ή αριθμός τιμολογίου."
           error={errors.description}
         >
           <Input

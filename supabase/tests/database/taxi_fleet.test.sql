@@ -133,7 +133,7 @@ select throws_ok(
 -- ------------------------------------------------------------------
 insert into public.vehicle_expenses (id, driver_id, year, month, category, description, amount) values
   ('e0000000-0000-0000-0000-000000000001', 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb', 2026, 9, 'repairs', '  Φρένα – συνεργείο  ', 800),
-  ('e0000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'wash', '', 10);
+  ('e0000000-0000-0000-0000-000000000002', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'other', '', 10);
 
 select is((select vat from public.vehicle_expenses where id = 'e0000000-0000-0000-0000-000000000001'), 154.84,
   'ΦΠΑ 24% εξόδου: 800 / 1.24 × 0.24 = 154,84');
@@ -146,8 +146,8 @@ select throws_ok(
   '23514', null, 'το ποσό εξόδου πρέπει να είναι θετικό'
 );
 select throws_ok(
-  $$ insert into public.vehicle_expenses (driver_id, year, month, category, amount) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'casino', 5) $$,
-  '23514', null, 'μόνο γνωστές κατηγορίες εξόδων'
+  $$ insert into public.vehicle_expenses (driver_id, year, month, category, amount) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'wash', 5) $$,
+  '23514', null, 'μόνο «Επισκευές / Συντήρηση» ή «Άλλα έξοδα»'
 );
 select throws_ok(
   $$ insert into public.vehicle_expenses (driver_id, year, month, amount, vat) values ('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 5, 1) $$,
@@ -200,7 +200,7 @@ select throws_ok(
 );
 select lives_ok(
   $$ insert into public.vehicle_expenses (id, driver_id, year, month, category, amount)
-     values ('e0000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'tolls', 12.40) $$,
+     values ('e0000000-0000-0000-0000-000000000003', 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa', 2026, 9, 'other', 12.40) $$,
   'καταχωρεί έξοδο για το δικό του αυτοκίνητο'
 );
 select results_eq(

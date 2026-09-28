@@ -205,7 +205,7 @@ export function ShiftForm({
         <Group title="Έξοδα βάρδιας">
           <Field
             label="Καύσιμα (€)"
-            hint="Τελικό ποσό με ΦΠΑ 24%. Επισκευές, service, λάστιχα κ.λπ. καταχωρούνται ως «Έξοδο οχήματος»."
+            hint="Τελικό ποσό με ΦΠΑ 24%. Επισκευές / συντήρηση και άλλα έξοδα του αυτοκινήτου καταχωρούνται ως «Έξοδο οχήματος»."
             error={errors.fuel}
           >
             <Input inputMode="decimal" autoComplete="off" placeholder="0,00" {...set('fuel')} />

@@ -37,13 +37,13 @@ describe('parseExpenseForm', () => {
 
 describe('toExpenseValues / expenseToFormValues', () => {
   it('στρογγυλοποιεί και καθαρίζει την περιγραφή', () => {
-    const values = { category: 'tires' as const, amount: '320,555', description: '  4 λάστιχα ' };
+    const values = { category: 'other' as const, amount: '320,555', description: '  4 λάστιχα ' };
     const row = toExpenseValues(values, parseExpenseForm(values).amount!, { driverId: 'd', year: 2026, month: 9 });
     expect(row).toEqual({
       driver_id: 'd',
       year: 2026,
       month: 9,
-      category: 'tires',
+      category: 'other',
       description: '4 λάστιχα',
       amount: 320.56,
     });
@@ -58,7 +58,8 @@ describe('toExpenseValues / expenseToFormValues', () => {
   });
 
   it('ετικέτες κατηγοριών', () => {
-    expect(categoryLabel('repairs')).toBe('Επισκευή / Συνεργείο');
-    expect(categoryLabel('άγνωστη')).toBe('Άλλο');
+    expect(categoryLabel('repairs')).toBe('Επισκευές / Συντήρηση');
+    expect(categoryLabel('other')).toBe('Άλλα έξοδα');
+    expect(categoryLabel('wash')).toBe('Άλλα έξοδα');
   });
 });

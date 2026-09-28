@@ -65,7 +65,7 @@ describe('buildShiftsCsv', () => {
       month: 9,
       driverName: 'Γιώργος',
       plate: 'ΤΑΕ-1234',
-      category: 'Επισκευή / Συνεργείο',
+      category: 'Επισκευές / Συντήρηση',
       description: 'Φρένα; δίσκοι',
       createdAt: '2026-09-27T12:44:00Z',
       figures: repair,
@@ -74,7 +74,7 @@ describe('buildShiftsCsv', () => {
       expense,
     ]);
     expect(withExpenses).toContain('ΕΞΟΔΑ ΟΧΗΜΑΤΟΣ (εκτός βάρδιας)');
-    expect(withExpenses).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Επισκευή / Συνεργείο;"Φρένα; δίσκοι";800,00;154,84;');
+    expect(withExpenses).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Επισκευές / Συντήρηση;"Φρένα; δίσκοι";800,00;154,84;');
     expect(withExpenses).toContain('ΣΥΝΟΛΟ ΕΞΟΔΩΝ ΟΧΗΜΑΤΟΣ;;;;800,00;154,84;');
     // Η γραμμή της βάρδιας δεν αλλάζει: ταμείο βάρδιας 136,23 €.
     expect(withExpenses).toContain(';50,00;9,68;11,16;136,23;');
