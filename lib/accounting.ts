@@ -11,9 +11,11 @@
  *   Προς απόδοση ΦΠΑ     = ΦΠΑ 13% − ΦΠΑ εξόδων 24%
  *   Καθαρό ταμείο        = (καθαρά έσοδα + ΦΠΑ 13% + φιλοδωρήματα) − σύνολο εξόδων
  *
- * Έξοδα οχήματος εκτός βάρδιας (επισκευές, service, ελαστικά…) καταχωρούνται
- * χωριστά ανά μήνα και αυτοκίνητο (πίνακας `vehicle_expenses`), πάντα με ΦΠΑ
- * 24% μέσα· μπαίνουν στα σύνολα της περιόδου (έξοδα, ΦΠΑ εξόδων, ταμείο).
+ * Έξοδα οχήματος εκτός βάρδιας (επισκευές / συντήρηση, άλλα έξοδα)
+ * καταχωρούνται χωριστά ανά μήνα και αυτοκίνητο (πίνακας `vehicle_expenses`),
+ * πάντα με ΦΠΑ 24% μέσα· μπαίνουν στα σύνολα της περιόδου (έξοδα, ΦΠΑ εξόδων,
+ * ταμείο). Το ίδιο και οι κρατήσεις των εφαρμογών (Uber / FreeNow, πίνακας
+ * `platform_statements`)· ΦΠΑ έχει μόνο η κράτηση της FreeNow.
  *
  * Η βάση είναι η πηγή της αλήθειας για τις αποθηκευμένες βάρδιες· οι ίδιες
  * συναρτήσεις χρησιμοποιούνται στη φόρμα για ζωντανή προεπισκόπηση πριν την
@@ -211,23 +213,52 @@ export function expenseFromStored(row: StoredVehicleExpense): ExpenseFigures {
   };
 }
 
+/**
+ * Μία εφαρμογή (Uber / FreeNow) για ένα αυτοκίνητο και έναν μήνα: διαδρομές
+ * και τζίρος από τις εβδομάδες· κράτηση από το τιμολόγιο του μήνα, αλλιώς
+ * το άθροισμα των εβδομάδων (βλ. lib/platforms.ts).
+ */
+export interface PlatformFigures {
+  trips: number;
+  turnoverCents: number;
+  /** Η κράτηση που μετράει στα έξοδα (με ΦΠΑ όπου υπάρχει). */
+  commissionCents: number;
+  /** ΦΠΑ 24% μέσα στην κράτηση (FreeNow)· 0 για την Uber. */
+  commissionVatCents: number;
+}
+
 /** Σύνολα περιόδου + δείκτες απόδοσης. */
 export interface Totals extends ShiftFigures {
   shifts: number;
   /**
    * Έξοδα οχήματος εκτός βάρδιας της περιόδου (και τυχόν παλιά «Άλλες δαπάνες» /
-   * «Επισκευές» μέσα σε βάρδιες). Καύσιμα + έξοδα οχήματος = σύνολο εξόδων.
+   * «Επισκευές» μέσα σε βάρδιες). Καύσιμα + έξοδα οχήματος + κρατήσεις
+   * εφαρμογών = σύνολο εξόδων.
    */
   vehicleExpensesCents: number;
   /** Πλήθος καταχωρήσεων εξόδων οχήματος. */
   expenseCount: number;
+  /** Διαδρομές των εφαρμογών (μέσα στις διαδρομές των Ζ). */
+  appTrips: number;
+  /** Διαδρομές από τον δρόμο = διαδρομές Ζ − διαδρομές εφαρμογών. */
+  streetTrips: number;
+  /** Τζίρος των εφαρμογών (από τις εβδομάδες). */
+  appTurnoverCents: number;
+  /** Κρατήσεις των εφαρμογών που μετράνε στα έξοδα. */
+  appCommissionCents: number;
+  /** ΦΠΑ 24% μέσα στις κρατήσεις (μόνο FreeNow), μέσα στον ΦΠΑ εξόδων. */
+  appCommissionVatCents: number;
   /** Αξιοποίηση % = μισθωμένα χλμ / συνολικά χλμ × 100 (0 αν δεν υπάρχουν χλμ). */
   utilizationPct: number;
   /** Έσοδο ανά χλμ = καθαρά έσοδα / συνολικά χλμ, σε ευρώ (0 αν δεν υπάρχουν χλμ). */
   revenuePerKm: number;
 }
 
-export function summarize(items: readonly ShiftFigures[], expenses: readonly ExpenseFigures[] = []): Totals {
+export function summarize(
+  items: readonly ShiftFigures[],
+  expenses: readonly ExpenseFigures[] = [],
+  platforms: readonly PlatformFigures[] = [],
+): Totals {
   let paidKmHundredths = 0;
   let emptyKmHundredths = 0;
   const sum = {
@@ -272,6 +303,19 @@ export function summarize(items: readonly ShiftFigures[], expenses: readonly Exp
     sum.netCashCents -= e.amountCents;
   }
 
+  // Κρατήσεις εφαρμογών: στα έξοδα, στον ΦΠΑ εξόδων (μόνο FreeNow) και στο ταμείο.
+  const app = { trips: 0, turnoverCents: 0, commissionCents: 0, commissionVatCents: 0 };
+  for (const p of platforms) {
+    app.trips += p.trips;
+    app.turnoverCents += p.turnoverCents;
+    app.commissionCents += p.commissionCents;
+    app.commissionVatCents += p.commissionVatCents;
+    sum.totalExpensesCents += p.commissionCents;
+    sum.expensesVatCents += p.commissionVatCents;
+    sum.vatBalanceCents -= p.commissionVatCents;
+    sum.netCashCents -= p.commissionCents;
+  }
+
   const totalKmHundredths = paidKmHundredths + emptyKmHundredths;
   const totalKm = totalKmHundredths / 100;
 
@@ -280,6 +324,11 @@ export function summarize(items: readonly ShiftFigures[], expenses: readonly Exp
     shifts: items.length,
     vehicleExpensesCents: vehicleCents + sum.otherExpensesCents + sum.repairsCents,
     expenseCount: expenses.length,
+    appTrips: app.trips,
+    streetTrips: sum.trips - app.trips,
+    appTurnoverCents: app.turnoverCents,
+    appCommissionCents: app.commissionCents,
+    appCommissionVatCents: app.commissionVatCents,
     paidKm: paidKmHundredths / 100,
     emptyKm: emptyKmHundredths / 100,
     totalKm,

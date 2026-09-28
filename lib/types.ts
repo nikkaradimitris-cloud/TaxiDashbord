@@ -4,9 +4,12 @@ export type DriverRow = Tables<'drivers'>;
 export type ShiftRow = Tables<'shifts'>;
 export type ProfileRow = Tables<'profiles'>;
 export type ShiftInsert = TablesInsert<'shifts'>;
-/** Έξοδο οχήματος εκτός βάρδιας (επισκευή, service, ελαστικά…). */
+/** Έξοδο οχήματος εκτός βάρδιας («Επισκευές / Συντήρηση» ή «Άλλα έξοδα»). */
 export type ExpenseRow = Tables<'vehicle_expenses'>;
 export type ExpenseInsert = TablesInsert<'vehicle_expenses'>;
+/** Εφαρμογή (Uber / FreeNow): εβδομαδιαία κίνηση ή μηνιαίο τιμολόγιο. */
+export type StatementRow = Tables<'platform_statements'>;
+export type StatementInsert = TablesInsert<'platform_statements'>;
 
 export type Role = 'admin' | 'driver';
 

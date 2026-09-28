@@ -204,6 +204,41 @@ describe('έξοδα οχήματος (εκτός βάρδιας)', () => {
   });
 });
 
+describe('κρατήσεις εφαρμογών', () => {
+  // Βάρδια: 20 διαδρομές, 160,39 € καθαρά (ΦΠΑ 20,84), 40 € καύσιμα (ΦΠΑ 7,74).
+  const shift = computeShift({ ...emptyShift, trips: 20, netRevenue: 160.39, fuel: 40 });
+  const uber = { trips: 5, turnoverCents: 6000, commissionCents: 900, commissionVatCents: 0 };
+  const freenow = { trips: 3, turnoverCents: 4000, commissionCents: 620, commissionVatCents: 120 };
+
+  it('μπαίνουν στα έξοδα και στο ταμείο· ΦΠΑ συμψηφίζεται μόνο της FreeNow', () => {
+    const totals = summarize([shift], [], [uber, freenow]);
+    expect(totals.appCommissionCents).toBe(1520);
+    expect(totals.appCommissionVatCents).toBe(120);
+    expect(totals.totalExpensesCents).toBe(4000 + 1520);
+    expect(totals.expensesVatCents).toBe(774 + 120);
+    expect(totals.vatBalanceCents).toBe(2084 - 894);
+    expect(totals.netCashCents).toBe(shift.grossReceiptsCents - 5520);
+    // Τα καύσιμα και τα έξοδα οχήματος δεν αλλάζουν.
+    expect(totals.fuelCents).toBe(4000);
+    expect(totals.vehicleExpensesCents).toBe(0);
+  });
+
+  it('διαδρομές από τον δρόμο = διαδρομές Ζ − διαδρομές εφαρμογών', () => {
+    const totals = summarize([shift], [], [uber, freenow]);
+    expect(totals.trips).toBe(20);
+    expect(totals.appTrips).toBe(8);
+    expect(totals.streetTrips).toBe(12);
+    expect(totals.appTurnoverCents).toBe(10000);
+  });
+
+  it('χωρίς εφαρμογές όλες οι διαδρομές είναι από τον δρόμο', () => {
+    const totals = summarize([shift]);
+    expect(totals.appTrips).toBe(0);
+    expect(totals.streetTrips).toBe(20);
+    expect(totals.appCommissionCents).toBe(0);
+  });
+});
+
 describe('vatStatus', () => {
   it('χρεωστικό / πιστωτικό / μηδενικό', () => {
     expect(vatStatus(1)).toBe('debit');

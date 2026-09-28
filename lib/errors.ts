@@ -72,6 +72,12 @@ export function dataErrorMessage(error: unknown): string {
     case '42501':
       return 'Δεν έχετε δικαίωμα για αυτή την ενέργεια.';
     case '23505':
+      if ((e.message ?? '').includes('platform_statements_week_key')) {
+        return 'Αυτή η εβδομάδα έχει ήδη καταχωρηθεί για την εφαρμογή και το αυτοκίνητο. Διορθώστε την από τη λίστα «Εφαρμογές».';
+      }
+      if ((e.message ?? '').includes('platform_statements_invoice_key')) {
+        return 'Υπάρχει ήδη τιμολόγιο της εφαρμογής για τον μήνα. Διορθώστε το από τη λίστα «Εφαρμογές».';
+      }
       return (e.message ?? '').includes('email')
         ? 'Το email χρησιμοποιείται ήδη από άλλον οδηγό.'
         : 'Η εγγραφή υπάρχει ήδη.';

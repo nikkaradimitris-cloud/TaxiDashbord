@@ -71,15 +71,22 @@ export function Field({
   error,
   children,
   className,
+  subgrid,
 }: {
   label: ReactNode;
   hint?: ReactNode;
   error?: string | null;
   children: ReactNode;
   className?: string;
+  /**
+   * Μέσα σε `FieldRow`: ετικέτα, πεδίο και μήνυμα μοιράζονται τις γραμμές με το
+   * διπλανό πεδίο, ώστε τα κουτιά να μένουν στην ίδια ευθεία κι όταν μια ετικέτα
+   * πιάνει δύο γραμμές (στενό κινητό, «Α+»).
+   */
+  subgrid?: boolean;
 }) {
   return (
-    <label className={cx('block', className)}>
+    <label className={cx(subgrid ? 'row-span-3 grid grid-rows-subgrid' : 'block', className)}>
       <span className="mb-1 block text-sm font-medium [overflow-wrap:anywhere]">{label}</span>
       {children}
       {error ? (
@@ -89,6 +96,11 @@ export function Field({
       ) : null}
     </label>
   );
+}
+
+/** Δύο πεδία δίπλα-δίπλα (με `subgrid`), με τα κουτιά τους στην ίδια ευθεία. */
+export function FieldRow({ children }: { children: ReactNode }) {
+  return <div className="grid grid-cols-2 grid-rows-[auto_auto_auto] gap-x-3">{children}</div>;
 }
 
 export function Input({ className, ...props }: ComponentProps<'input'>) {

@@ -30,4 +30,11 @@ describe('dataErrorMessage', () => {
     expect(isMissingSchemaError({ code: 'PGRST205' })).toBe(true);
     expect(dataErrorMessage({ code: 'PGRST205', message: '' })).toContain('SQL');
   });
+
+  it('διπλή εβδομάδα ή διπλό τιμολόγιο εφαρμογής', () => {
+    const duplicate = (index: string) =>
+      dataErrorMessage({ code: '23505', message: `duplicate key value violates unique constraint "${index}"` });
+    expect(duplicate('platform_statements_week_key')).toContain('εβδομάδα');
+    expect(duplicate('platform_statements_invoice_key')).toContain('τιμολόγιο');
+  });
 });

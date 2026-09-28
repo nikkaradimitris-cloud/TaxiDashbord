@@ -1,7 +1,7 @@
 'use client';
 
-import { useState } from 'react';
-import { Field, Notice, Select } from '@/components/ui';
+import { useState, type CSSProperties } from 'react';
+import { cx, Field, Notice, Select } from '@/components/ui';
 import { GREEK_MONTHS, periodLabel, yearOptions } from '@/lib/period';
 import type { Preferences } from '@/lib/storage';
 import type { DriverRow } from '@/lib/types';
@@ -172,6 +172,57 @@ export function DriverField({
   );
 }
 
+/** Επιλογή με κουμπιά σε μία γραμμή (radio), π.χ. «Uber | FreeNow». */
+export function SegmentedField<T extends string>({
+  legend,
+  name,
+  options,
+  value,
+  onChange,
+  error,
+}: {
+  legend: string;
+  name: string;
+  options: readonly { id: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  error?: string;
+}) {
+  return (
+    <fieldset>
+      <legend className="mb-1 block text-sm font-medium">{legend}</legend>
+      <div
+        className="grid gap-1 rounded-xl bg-bg p-1"
+        style={{ gridTemplateColumns: `repeat(${options.length}, minmax(min-content, 1fr))` } as CSSProperties}
+      >
+        {options.map((option) => (
+          <label
+            key={option.id}
+            className={cx(
+              'flex min-h-11 cursor-pointer items-center justify-center rounded-lg px-2 py-1 text-center text-sm leading-tight transition-colors',
+              'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-strong',
+              value === option.id
+                ? 'bg-card font-semibold text-fg shadow-sm ring-1 ring-line'
+                : 'text-muted hover:bg-card hover:text-fg',
+            )}
+          >
+            <input
+              type="radio"
+              name={name}
+              value={option.id}
+              checked={value === option.id}
+              onChange={() => onChange(option.id)}
+              className="sr-only"
+            />
+            {option.label}
+          </label>
+        ))}
+      </div>
+      {error && <span className="mt-1 block text-sm text-bad">{error}</span>}
+    </fieldset>
+  );
+}
+
 /** «Γιώργος Παπαδόπουλος · ΤΑΕ-1234» */
 export function driverOptionLabel(driver: DriverRow): string {
   return `${driver.name}${driver.plate ? ` · ${driver.plate}` : ''}`;
@@ -182,16 +233,22 @@ export function vehicleOptionLabel(driver: DriverRow): string {
   return driver.plate ? `${driver.plate} · ${driver.name}` : driver.name;
 }
 
-/** Διακόπτης «Βάρδια | Έξοδο οχήματος» πάνω στη φόρμα νέας καταχώρησης. */
-export type EntryKind = 'shift' | 'expense';
+/** Διακόπτης «Βάρδια | Έξοδο οχήματος | Εφαρμογή» πάνω στη φόρμα νέας καταχώρησης. */
+export type EntryKind = 'shift' | 'expense' | 'platform';
 
 export function EntryKindSwitch({ value, onChange }: { value: EntryKind; onChange: (kind: EntryKind) => void }) {
   const options: [EntryKind, string][] = [
     ['shift', 'Βάρδια'],
     ['expense', 'Έξοδο οχήματος'],
+    ['platform', 'Εφαρμογή'],
   ];
   return (
-    <div role="group" aria-label="Τι καταχωρείτε" className="grid grid-cols-2 gap-1 rounded-xl bg-bg p-1">
+    // minmax(min-content, 1fr): ίσα κουμπιά, αλλά μια μεγάλη λέξη («Εφαρμογή» με «Α+») δεν βγαίνει έξω.
+    <div
+      role="group"
+      aria-label="Τι καταχωρείτε"
+      className="grid grid-cols-[repeat(3,minmax(min-content,1fr))] gap-1 rounded-xl bg-bg p-1"
+    >
       {options.map(([kind, label]) => (
         <button
           key={kind}

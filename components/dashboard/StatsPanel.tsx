@@ -1,10 +1,17 @@
 'use client';
 
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
-import { cx } from '@/components/ui';
+import { cx, Notice } from '@/components/ui';
 import { summarize, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
 import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
+import {
+  commissionRatePct,
+  platformLabel,
+  totalsByPlatform,
+  type PlatformMonth,
+  type PlatformTotals,
+} from '@/lib/platforms';
 import type { DriverRow, ExpenseRow, ShiftRow } from '@/lib/types';
 import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
 
@@ -23,6 +30,7 @@ export function StatsPanel({
   selectedDriver,
   items,
   expenseItems,
+  platformMonths,
   driversById,
   showPerDriver,
   onSelectDriver,
@@ -37,6 +45,8 @@ export function StatsPanel({
   items: { row: ShiftRow; figures: ShiftFigures }[];
   /** Έξοδα οχήματος της περιόδου (εκτός βάρδιας). */
   expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[];
+  /** Εφαρμογές ανά αυτοκίνητο, μήνα και εφαρμογή (κράτηση: τιμολόγιο ή εβδομάδες). */
+  platformMonths: PlatformMonth[];
   driversById: Map<string, DriverRow>;
   showPerDriver: boolean;
   onSelectDriver: (driverId: string) => void;
@@ -44,6 +54,14 @@ export function StatsPanel({
   analysis: ReactNode;
 }) {
   const status = vatStatus(totals.vatBalanceCents);
+  const uberCommissionCents = platformMonths
+    .filter((group) => group.platform === 'uber')
+    .reduce((sum, group) => sum + group.commissionCents, 0);
+  const expenseParts = [
+    `Καύσιμα ${formatEuro(totals.fuelCents)}`,
+    `Έξοδα οχήματος ${formatEuro(totals.vehicleExpensesCents)}`,
+    totals.appCommissionCents > 0 ? `Κρατήσεις εφαρμογών ${formatEuro(totals.appCommissionCents)}` : null,
+  ];
 
   return (
     <section aria-busy={loading} className={cx('min-w-0 space-y-4 transition-opacity', loading && 'opacity-50')}>
@@ -62,7 +80,7 @@ export function StatsPanel({
         <Stat
           label="Συνολικά Έξοδα"
           value={formatEuro(totals.totalExpensesCents)}
-          sub={`Καύσιμα ${formatEuro(totals.fuelCents)} · Έξοδα οχήματος ${formatEuro(totals.vehicleExpensesCents)}`}
+          sub={expenseParts.filter(Boolean).join(' · ')}
         />
         <Stat label="Καθαρό Ταμείο (Τσέπη)" value={formatEuro(totals.netCashCents)} emphasis />
       </div>
@@ -99,6 +117,11 @@ export function StatsPanel({
           <dt>ΦΠΑ εξόδων 24% (εμπεριεχόμενος)</dt>
           <dd className="text-right">− {formatEuro(totals.expensesVatCents)}</dd>
         </dl>
+        {uberCommissionCents > 0 && (
+          <p className="mt-2 text-xs">
+            Οι κρατήσεις Uber ({formatEuro(uberCommissionCents)}) δεν έχουν ΦΠΑ και δεν συμψηφίζονται.
+          </p>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -109,15 +132,116 @@ export function StatsPanel({
         />
         <Stat label="Αξιοποίηση" value={formatPercent(totals.utilizationPct)} sub="Μισθωμένα / Συνολικά χλμ" />
         <Stat label="Έσοδο ανά χλμ" value={formatEuroPerKm(totals.revenuePerKm)} sub="Καθαρά / Συνολικά χλμ" />
-        <Stat label="Διαδρομές" value={formatInteger(totals.trips)} sub={`${totals.shifts} βάρδιες`} />
+        <Stat
+          label="Διαδρομές"
+          value={formatInteger(totals.trips)}
+          sub={`${totals.shifts} βάρδιες${platformMonths.length > 0 ? ` · δρόμος ${formatInteger(totals.streetTrips)}` : ''}`}
+        />
       </div>
+
+      {platformMonths.length > 0 && <StreetAndApps totals={totals} platformMonths={platformMonths} />}
 
       {analysis}
 
       {showPerDriver && (
-        <PerDriver items={items} expenseItems={expenseItems} driversById={driversById} onSelectDriver={onSelectDriver} />
+        <PerDriver
+          items={items}
+          expenseItems={expenseItems}
+          platformMonths={platformMonths}
+          driversById={driversById}
+          onSelectDriver={onSelectDriver}
+        />
       )}
     </section>
+  );
+}
+
+/**
+ * Δρόμος & Εφαρμογές: οι κούρσες των εφαρμογών είναι μέσα στα Ζ, οι υπόλοιπες
+ * είναι από τον δρόμο. Κράτηση ανά εφαρμογή, με ποσοστό επί του τζίρου της.
+ */
+function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMonths: PlatformMonth[] }) {
+  const platforms = totalsByPlatform(platformMonths);
+  const share = (trips: number) => (totals.trips > 0 ? formatPercent((trips / totals.trips) * 100) : '—');
+  const source = (invoiced: number, months: number) =>
+    invoiced === months ? 'τιμολόγιο' : invoiced === 0 ? 'προσωρινή' : `τιμολόγια ${invoiced}/${months}`;
+  const rate = (platform: PlatformTotals) => {
+    const pct = commissionRatePct(platform);
+    return pct === null ? null : formatPercent(pct);
+  };
+
+  return (
+    <div className="rounded-2xl border border-line bg-card p-4 shadow-sm">
+      <h3 className="font-semibold">Δρόμος & Εφαρμογές</h3>
+      <p className="text-xs text-muted">Οι κούρσες των εφαρμογών είναι μέσα στα Ζ· οι υπόλοιπες είναι από τον δρόμο.</p>
+      <div className="-mx-4 mt-3 overflow-x-auto px-4">
+        <table className="w-full min-w-[19rem] text-sm tabular-nums">
+          <thead className="text-left text-xs text-muted">
+            <tr>
+              <th className="py-1 pr-2 font-medium">
+                <span className="sr-only">Πηγή</span>
+              </th>
+              <th className="py-1 pr-2 text-right font-medium">Διαδρομές</th>
+              <th className="py-1 pr-2 text-right font-medium">Τζίρος</th>
+              <th className="py-1 text-right font-medium">Κράτηση</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t border-line">
+              <th scope="row" className="py-2 pr-2 text-left font-medium">
+                Δρόμος
+              </th>
+              <td className="py-2 pr-2 text-right">
+                {formatInteger(totals.streetTrips)}
+                <span className="block text-xs text-muted">{share(totals.streetTrips)}</span>
+              </td>
+              <td className="py-2 pr-2 text-right">{formatEuro(totals.grossReceiptsCents - totals.appTurnoverCents)}</td>
+              <td className="py-2 text-right text-muted">—</td>
+            </tr>
+            {platforms.map((platform) => (
+              <tr key={platform.platform} className="border-t border-line">
+                <th scope="row" className="py-2 pr-2 text-left font-medium">
+                  {platformLabel(platform.platform)}
+                  {/* Στο κινητό το ποσοστό φαίνεται στη λίστα «Εφαρμογές» (ο πίνακας δεν χωράει). */}
+                  {rate(platform) && (
+                    <span className="hidden text-xs font-normal whitespace-nowrap text-muted sm:block">
+                      κράτηση {rate(platform)}
+                    </span>
+                  )}
+                </th>
+                <td className="py-2 pr-2 text-right">
+                  {formatInteger(platform.trips)}
+                  <span className="block text-xs text-muted">{share(platform.trips)}</span>
+                </td>
+                <td className="py-2 pr-2 text-right">{formatEuro(platform.turnoverCents)}</td>
+                <td className="py-2 text-right">
+                  {formatEuro(platform.commissionCents)}
+                  <span className="block text-xs text-muted">{source(platform.invoiced, platform.months)}</span>
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t-2 border-line font-semibold">
+              <th scope="row" className="py-2 pr-2 text-left whitespace-nowrap">
+                Σύνολο Ζ
+              </th>
+              <td className="py-2 pr-2 text-right">{formatInteger(totals.trips)}</td>
+              <td className="py-2 pr-2 text-right">{formatEuro(totals.grossReceiptsCents)}</td>
+              <td className="py-2 text-right">{formatEuro(totals.appCommissionCents)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {totals.streetTrips < 0 && (
+        <Notice tone="warning" className="mt-3">
+          Οι διαδρομές των εφαρμογών ({formatInteger(totals.appTrips)}) είναι περισσότερες από τις διαδρομές των Ζ (
+          {formatInteger(totals.trips)}). Λείπει κάποια βάρδια ή υπάρχει λάθος σε κάποια εβδομάδα;
+        </Notice>
+      )}
+      <p className="mt-2 text-xs text-muted">
+        Τζίρος δρόμου = μικτή είσπραξη των Ζ − τζίρος εφαρμογών. «Προσωρινή» κράτηση: από τις εβδομάδες, μέχρι να
+        καταχωρηθεί το τιμολόγιο του μήνα.
+      </p>
+    </div>
   );
 }
 
@@ -206,31 +330,34 @@ function WhatsAppIcon() {
 function PerDriver({
   items,
   expenseItems,
+  platformMonths,
   driversById,
   onSelectDriver,
 }: {
   items: { row: ShiftRow; figures: ShiftFigures }[];
   expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[];
+  platformMonths: PlatformMonth[];
   driversById: Map<string, DriverRow>;
   onSelectDriver: (driverId: string) => void;
 }) {
   const rows = useMemo(() => {
-    // Κάθε οδηγός/αυτοκίνητο: οι βάρδιές του και τα έξοδα οχήματος του αυτοκινήτου του.
-    const groups = new Map<string, { shifts: ShiftFigures[]; expenses: ExpenseFigures[] }>();
+    // Κάθε οδηγός/αυτοκίνητο: οι βάρδιές του, τα έξοδα οχήματος και οι εφαρμογές του αυτοκινήτου του.
+    const groups = new Map<string, { shifts: ShiftFigures[]; expenses: ExpenseFigures[]; platforms: PlatformMonth[] }>();
     const group = (driverId: string) => {
       let entry = groups.get(driverId);
       if (!entry) {
-        entry = { shifts: [], expenses: [] };
+        entry = { shifts: [], expenses: [], platforms: [] };
         groups.set(driverId, entry);
       }
       return entry;
     };
     for (const { row, figures } of items) group(row.driver_id).shifts.push(figures);
     for (const { row, figures } of expenseItems) group(row.driver_id).expenses.push(figures);
+    for (const platform of platformMonths) group(platform.driverId).platforms.push(platform);
     return [...groups.entries()]
-      .map(([driverId, list]) => ({ driverId, totals: summarize(list.shifts, list.expenses) }))
+      .map(([driverId, list]) => ({ driverId, totals: summarize(list.shifts, list.expenses, list.platforms) }))
       .sort((a, b) => b.totals.netRevenueCents - a.totals.netRevenueCents);
-  }, [items, expenseItems]);
+  }, [items, expenseItems, platformMonths]);
 
   if (rows.length === 0) return null;
 

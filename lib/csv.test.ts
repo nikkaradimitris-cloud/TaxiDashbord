@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeExpense, computeShift, summarize } from './accounting';
-import { buildShiftsCsv, csvFileName, CSV_BOM, type CsvExpense, type CsvShift } from './csv';
+import { buildShiftsCsv, csvFileName, CSV_BOM, type CsvExpense, type CsvShift, type CsvStatement } from './csv';
 
 const figures = computeShift({
   trips: 14,
@@ -84,6 +84,52 @@ describe('buildShiftsCsv', () => {
     expect(withExpenses).toContain('Σύνολο Εξόδων (€);850,00');
     expect(withExpenses).toContain('Προς Απόδοση ΦΠΑ (€);143,68;Πιστωτικό');
     expect(withExpenses).toContain('Καθαρό Ταμείο (€);-663,77');
+  });
+
+  it('εφαρμογές: δική τους ενότητα, κρατήσεις στα έξοδα, διαδρομές δρόμου στη σύνοψη', () => {
+    const uber = { trips: 5, turnoverCents: 6000, commissionCents: 900, commissionVatCents: 0 };
+    const statement: CsvStatement = {
+      year: 2026,
+      month: 9,
+      driverName: 'Γιώργος',
+      plate: 'ΤΑΕ-1234',
+      platform: 'Uber',
+      entry: 'Εβδομάδα 7–13 Σεπ',
+      isWeek: true,
+      trips: 5,
+      turnoverCents: 6000,
+      commissionCents: 900,
+      vatCents: 0,
+      hasVat: false,
+      createdAt: '2026-09-27T12:44:00Z',
+    };
+    const invoice: CsvStatement = {
+      ...statement,
+      platform: 'FreeNow',
+      entry: 'Τιμολόγιο FN-1',
+      isWeek: false,
+      trips: 0,
+      turnoverCents: 0,
+      commissionCents: 3720,
+      vatCents: 720,
+      hasVat: true,
+    };
+    const withApps = buildShiftsCsv(
+      [row],
+      summarize([figures], [], [uber]),
+      { period: 'Σεπτ.', driverLabel: 'Γ' },
+      [],
+      [statement, invoice],
+    );
+    expect(withApps).toContain('ΕΦΑΡΜΟΓΕΣ (Uber / FreeNow)');
+    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Uber;Εβδομάδα 7–13 Σεπ;5;60,00;9,00;χωρίς ΦΠΑ;');
+    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;FreeNow;Τιμολόγιο FN-1;;;37,20;7,20;');
+    expect(withApps).toContain('Διαδρομές (Ζ);14');
+    expect(withApps).toContain('Διαδρομές Εφαρμογών;5');
+    expect(withApps).toContain('Διαδρομές Δρόμου;9');
+    expect(withApps).toContain('Καύσιμα (€);50,00');
+    expect(withApps).toContain('Κρατήσεις Εφαρμογών (€);9,00');
+    expect(withApps).toContain('Σύνολο Εξόδων (€);59,00');
   });
 
   it('ώρα καταχώρησης σε ώρα Ελλάδας', () => {

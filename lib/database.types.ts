@@ -56,6 +56,71 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_statements: {
+        Row: {
+          commission: number;
+          commission_vat: number | null;
+          created_at: string;
+          created_by: string | null;
+          driver_id: string;
+          id: string;
+          kind: string;
+          month: number;
+          platform: string;
+          reference: string;
+          trips: number;
+          turnover: number;
+          updated_at: string;
+          week_end: string | null;
+          week_start: string | null;
+          year: number;
+        };
+        Insert: {
+          commission: number;
+          commission_vat?: never;
+          created_at?: string;
+          created_by?: string | null;
+          driver_id: string;
+          id?: string;
+          kind: string;
+          month: number;
+          platform: string;
+          reference?: string;
+          trips?: number;
+          turnover?: number;
+          updated_at?: string;
+          week_end?: never;
+          week_start?: string | null;
+          year: number;
+        };
+        Update: {
+          commission?: number;
+          commission_vat?: never;
+          created_at?: string;
+          created_by?: string | null;
+          driver_id?: string;
+          id?: string;
+          kind?: string;
+          month?: number;
+          platform?: string;
+          reference?: string;
+          trips?: number;
+          turnover?: number;
+          updated_at?: string;
+          week_end?: never;
+          week_start?: string | null;
+          year?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "platform_statements_driver_id_fkey";
+            columns: ["driver_id"];
+            isOneToOne: false;
+            referencedRelation: "drivers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       profiles: {
         Row: {
           created_at: string;
@@ -223,6 +288,10 @@ export type Database = {
     Views: {
       monthly_summary: {
         Row: {
+          app_commission: number | null;
+          app_commission_vat: number | null;
+          app_trips: number | null;
+          app_turnover: number | null;
           driver_id: string | null;
           driver_name: string | null;
           empty_km: number | null;
@@ -238,6 +307,7 @@ export type Database = {
           repairs: number | null;
           revenue_per_km: number | null;
           shifts: number | null;
+          street_trips: number | null;
           tips: number | null;
           total_expenses: number | null;
           total_km: number | null;

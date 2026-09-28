@@ -24,6 +24,12 @@ export function formatEuro(cents: number): string {
   return euro.format(cents / 100);
 }
 
+/** Διαφορά με πρόσημο: 620 → "+6,20 €", −10 → "−0,10 €", 0 → "0,00 €" */
+export function formatSignedEuro(cents: number): string {
+  const sign = cents > 0 ? '+' : cents < 0 ? '−' : '';
+  return `${sign}${euro.format(Math.abs(cents) / 100)}`;
+}
+
 /** Χιλιόμετρα με έως 1 δεκαδικό: 1234.56 → "1.234,6" */
 export function formatKm(km: number): string {
   return decimal1.format(km);

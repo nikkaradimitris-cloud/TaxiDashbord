@@ -55,6 +55,19 @@ describe('buildVatMessage / whatsappLink', () => {
     expect(text).toContain('(Πιστωτικό)');
   });
 
+  it('εφαρμογές: κρατήσεις στα έξοδα και διαδρομές δρόμου / εφαρμογών', () => {
+    const withApps = summarize(
+      [computeShift({ trips: 10, paidKm: 100, emptyKm: 50, netRevenue: 160.39, tips: 5, fuel: 50, otherExpenses: 0, repairs: 0 })],
+      [],
+      [{ trips: 4, turnoverCents: 8000, commissionCents: 1200, commissionVatCents: 0 }],
+    );
+    const text = buildVatMessage({ driverName: 'Γ', plate: 'Χ', year: 2026, month: 9, totals: withApps }).replace(/ /g, ' ');
+    expect(text).toContain('Έξοδα: 62,00 € (καύσιμα 50,00 € + κρατήσεις εφαρμογών 12,00 €)');
+    expect(text).toContain('Διαδρομές: 10 (δρόμος 6, εφαρμογές 4)');
+    // Χωρίς εφαρμογές δεν εμφανίζεται η γραμμή διαδρομών.
+    expect(buildVatMessage({ driverName: 'Γ', plate: 'Χ', year: 2026, month: 9, totals })).not.toContain('Διαδρομές');
+  });
+
   it('ολόκληρο έτος → "Περίοδος: Έτος 2026"', () => {
     const text = buildVatMessage({ driverName: 'Γ', plate: null, year: 2026, month: 'all', totals });
     expect(text).toContain('Περίοδος: Έτος 2026');

@@ -20,7 +20,7 @@ import { periodLabel } from '@/lib/period';
 import type { Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow, ExpenseRow } from '@/lib/types';
-import { DriverField, PeriodFields, useEntryTarget, vehicleOptionLabel } from './EntryFields';
+import { DriverField, PeriodFields, SegmentedField, useEntryTarget, vehicleOptionLabel } from './EntryFields';
 
 type Message = { tone: 'success' | 'error'; text: string };
 
@@ -136,34 +136,14 @@ export function ExpenseForm({
           optionLabel={vehicleOptionLabel}
         />
 
-        <fieldset>
-          <legend className="mb-1 block text-sm font-medium">Είδος εξόδου</legend>
-          <div className="grid grid-cols-2 gap-1 rounded-xl bg-bg p-1">
-            {EXPENSE_CATEGORIES.map((category) => (
-              <label
-                key={category.id}
-                className={cx(
-                  'flex min-h-11 cursor-pointer items-center justify-center rounded-lg px-2 py-1 text-center text-sm leading-tight transition-colors',
-                  'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent-strong',
-                  values.category === category.id
-                    ? 'bg-card font-semibold text-fg shadow-sm ring-1 ring-line'
-                    : 'text-muted hover:bg-card hover:text-fg',
-                )}
-              >
-                <input
-                  type="radio"
-                  name="expense-category"
-                  value={category.id}
-                  checked={values.category === category.id}
-                  onChange={() => update({ category: category.id })}
-                  className="sr-only"
-                />
-                {category.label}
-              </label>
-            ))}
-          </div>
-          {errors.category && <span className="mt-1 block text-sm text-bad">{errors.category}</span>}
-        </fieldset>
+        <SegmentedField
+          legend="Είδος εξόδου"
+          name="expense-category"
+          options={EXPENSE_CATEGORIES}
+          value={values.category}
+          onChange={(category) => update({ category })}
+          error={errors.category}
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ποσό με ΦΠΑ (€) *" error={errors.amount}>

@@ -5,21 +5,31 @@ import { Logo } from '@/components/Logo';
 import { SignOutButton } from '@/components/SignOutButton';
 import { TextSizeToggle } from '@/components/TextSizeToggle';
 import { Badge, Notice } from '@/components/ui';
-import { expenseFromStored, figuresFromStored, summarize } from '@/lib/accounting';
+import { expenseFromStored, figuresFromStored, summarize, toCents } from '@/lib/accounting';
 import { buildShiftsCsv, csvFileName } from '@/lib/csv';
 import {
   deleteExpense,
   deleteShift,
+  deleteStatement,
   fetchDrivers,
   fetchExpenses,
   fetchMonthlySummary,
   fetchShifts,
+  fetchStatements,
   insertShift,
 } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
 import { categoryLabel } from '@/lib/expenses';
 import { formatEuro } from '@/lib/format';
 import { periodLabel } from '@/lib/period';
+import {
+  formatWeek,
+  groupStatements,
+  platformHasVat,
+  platformLabel,
+  statementTitle,
+  todayIso,
+} from '@/lib/platforms';
 import {
   emptyOutbox,
   getOutbox,
@@ -32,7 +42,7 @@ import {
 } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/client';
 import type { MonthSummaryRow } from '@/lib/table';
-import type { DriverRow, ExpenseRow, SessionInfo, ShiftRow } from '@/lib/types';
+import type { DriverRow, ExpenseRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
 import { AnalysisCard } from './AnalysisCard';
 import { EditShiftDialog } from './EditShiftDialog';
 import { EntryKindSwitch, type EntryKind } from './EntryFields';
@@ -42,6 +52,8 @@ import { FleetPanel } from './FleetPanel';
 import { LegacyImport } from './LegacyImport';
 import { OutboxPanel } from './OutboxPanel';
 import { PeriodBar } from './PeriodBar';
+import { PlatformForm } from './PlatformForm';
+import { PlatformList } from './PlatformList';
 import { ShiftForm } from './ShiftForm';
 import { ShiftList } from './ShiftList';
 import { StatsPanel } from './StatsPanel';
@@ -71,10 +83,12 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const [message, setMessage] = useState<Message | null>(null);
   const [editing, setEditing] = useState<ShiftRow | null>(null);
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
+  const [editingStatement, setEditingStatement] = useState<StatementRow | null>(null);
   const [entryKind, setEntryKind] = useState<EntryKind>('shift');
   const [toast, setToast] = useState<string | null>(null);
   const closeEdit = useCallback(() => setEditing(null), []);
   const closeExpenseEdit = useCallback(() => setEditingExpense(null), []);
+  const closeStatementEdit = useCallback(() => setEditingStatement(null), []);
 
   /** Σύντομο μήνυμα κάτω στην οθόνη, ορατό όπου κι αν βρίσκεται ο χρήστης. */
   function showToast(text: string) {
@@ -169,8 +183,37 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
   const expensesLoading = !expensesState || expensesState.key !== queryKey;
   const expenses = useMemo(() => expensesState?.rows ?? [], [expensesState]);
-  /** Τα στατιστικά περιμένουν και τις βάρδιες και τα έξοδα. */
-  const loading = shiftsLoading || expensesLoading;
+
+  // ------------------------------------------------------------------
+  // Εφαρμογές (εβδομαδιαία κίνηση / τιμολόγια) της ίδιας περιόδου
+  // ------------------------------------------------------------------
+  const [statementsState, setStatementsState] = useState<FetchState<StatementRow> | null>(null);
+
+  useEffect(() => {
+    if (year === undefined || month === undefined) return;
+    const key = `${year}|${month}|${driverFilter}|${shiftsVersion}`;
+    let cancelled = false;
+    fetchStatements(supabase, { year, month, driverId: driverFilter === 'all' ? null : driverFilter }).then(
+      (rows) => {
+        if (!cancelled) setStatementsState({ key, rows, fetchedAt: Date.now(), error: null });
+      },
+      (error) => {
+        if (!cancelled) setStatementsState({ key, rows: [], fetchedAt: Date.now(), error: dataErrorMessage(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, year, month, driverFilter, shiftsVersion]);
+
+  const statementsLoading = !statementsState || statementsState.key !== queryKey;
+  const statements = useMemo(() => statementsState?.rows ?? [], [statementsState]);
+  /** Ανά αυτοκίνητο, μήνα και εφαρμογή: η κράτηση από το τιμολόγιο, αλλιώς από τις εβδομάδες. */
+  const platformMonths = useMemo(() => groupStatements(statements), [statements]);
+  /** Η μέρα της τελευταίας φόρτωσης: ποιες εβδομάδες έχουν τελειώσει. */
+  const today = statementsState ? todayIso(new Date(statementsState.fetchedAt)) : '';
+  /** Τα στατιστικά περιμένουν βάρδιες, έξοδα και εφαρμογές. */
+  const loading = shiftsLoading || expensesLoading || statementsLoading;
 
   // ------------------------------------------------------------------
   // Σύνολα όλων των μηνών του έτους (πίνακας «Ανά μήνα» με ανοιχτό έναν μήνα).
@@ -218,8 +261,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     () => summarize(
       items.map((item) => item.figures),
       expenseItems.map((item) => item.figures),
+      platformMonths,
     ),
-    [items, expenseItems],
+    [items, expenseItems, platformMonths],
   );
 
   // ------------------------------------------------------------------
@@ -340,6 +384,55 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     }
   }
 
+  function handleStatementSaved(row: StatementRow) {
+    if (!matchesView(row)) return;
+    setStatementsState((prev) =>
+      prev && prev.key === queryKey && !prev.rows.some((r) => r.id === row.id)
+        ? { ...prev, rows: [row, ...prev.rows] }
+        : prev,
+    );
+  }
+
+  function startStatementEdit(row: StatementRow) {
+    setEditingStatement(row);
+    setMessage(null);
+  }
+
+  function handleStatementUpdated(row: StatementRow) {
+    setStatementsState((prev) =>
+      prev
+        ? {
+            ...prev,
+            rows: matchesView(row)
+              ? prev.rows.map((r) => (r.id === row.id ? row : r))
+              : prev.rows.filter((r) => r.id !== row.id),
+          }
+        : prev,
+    );
+    setEditingStatement(null);
+    showToast(`✓ Αποθηκεύτηκαν οι διορθώσεις: ${statementTitle(row)}.`);
+  }
+
+  async function handleStatementDelete(row: StatementRow) {
+    const label = statementTitle(row);
+    if (!confirm(`Διαγραφή της καταχώρησης «${label}»;`)) return;
+    try {
+      const deleted = await deleteStatement(supabase, row.id);
+      if (!deleted) {
+        setMessage({
+          tone: 'error',
+          text: 'Η διαγραφή δεν επιτρέπεται. Οι οδηγοί διορθώνουν/διαγράφουν μόνο δικές τους καταχωρήσεις μέσα σε 24 ώρες — επικοινωνήστε με τον ιδιοκτήτη.',
+        });
+        return;
+      }
+      setStatementsState((prev) => (prev ? { ...prev, rows: prev.rows.filter((r) => r.id !== row.id) } : prev));
+      if (editingStatement?.id === row.id) setEditingStatement(null);
+      setMessage({ tone: 'success', text: `Η καταχώρηση «${label}» διαγράφηκε.` });
+    } catch (error) {
+      setMessage({ tone: 'error', text: dataErrorMessage(error) });
+    }
+  }
+
   /** Αποστολή όσων βαρδιών περιμένουν στην ουρά. */
   const flushOutbox = useCallback(async () => {
     const pending = getOutbox(userId);
@@ -408,6 +501,27 @@ export function Dashboard({ session }: { session: SessionInfo }) {
           figures,
         };
       }),
+      statements.map((row) => {
+        const driver = driversById.get(row.driver_id);
+        const isWeek = row.kind === 'week';
+        return {
+          year: row.year,
+          month: row.month,
+          driverName: driver?.name ?? '—',
+          plate: driver?.plate ?? null,
+          platform: platformLabel(row.platform),
+          entry: isWeek
+            ? `Εβδομάδα ${row.week_start && row.week_end ? formatWeek(row.week_start, row.week_end) : ''}`
+            : `Τιμολόγιο${row.reference ? ` ${row.reference}` : ''}`,
+          isWeek,
+          trips: row.trips,
+          turnoverCents: toCents(Number(row.turnover)),
+          commissionCents: toCents(Number(row.commission)),
+          vatCents: toCents(Number(row.commission_vat ?? 0)),
+          hasVat: platformHasVat(row.platform),
+          createdAt: row.created_at,
+        };
+      }),
     );
     const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
     const link = document.createElement('a');
@@ -458,7 +572,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               driverFilter={driverFilter}
               onChange={setPrefs}
               onExport={exportCsv}
-              canExport={!loading && (shifts.length > 0 || expenses.length > 0)}
+              canExport={!loading && (shifts.length > 0 || expenses.length > 0 || statements.length > 0)}
             />
 
             {isAdmin && (
@@ -508,6 +622,16 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 </div>
               </Notice>
             )}
+            {statementsState?.error && !statementsLoading && (
+              <Notice tone="error">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>Οι καταχωρήσεις εφαρμογών δεν φορτώθηκαν. {statementsState.error}</span>
+                  <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
+                    Δοκιμή ξανά
+                  </button>
+                </div>
+              </Notice>
+            )}
             {driversState?.error && <Notice tone="error">{driversState.error}</Notice>}
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
@@ -527,7 +651,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   onCancelEdit={closeEdit}
                   switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
                 />
-              ) : (
+              ) : entryKind === 'expense' ? (
                 <ExpenseForm
                   supabase={supabase}
                   isAdmin={isAdmin}
@@ -542,6 +666,23 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   onCancelEdit={closeExpenseEdit}
                   switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
                 />
+              ) : (
+                <PlatformForm
+                  supabase={supabase}
+                  isAdmin={isAdmin}
+                  drivers={drivers}
+                  driversLoaded={!isAdmin || driversState !== null}
+                  prefs={prefs}
+                  driverFilter={driverFilter}
+                  onPrefsChange={setPrefs}
+                  statements={statements}
+                  today={today}
+                  onSaved={handleStatementSaved}
+                  editing={null}
+                  onUpdated={handleStatementUpdated}
+                  onCancelEdit={closeStatementEdit}
+                  switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                />
               )}
               <StatsPanel
                 totals={totals}
@@ -552,6 +693,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 selectedDriver={selectedDriver}
                 items={items}
                 expenseItems={expenseItems}
+                platformMonths={platformMonths}
                 driversById={driversById}
                 showPerDriver={isAdmin && driverFilter === 'all'}
                 onSelectDriver={(id) => setPrefs({ driverFilter: id })}
@@ -637,6 +779,45 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   editing={editingExpense}
                   onUpdated={handleExpenseUpdated}
                   onCancelEdit={closeExpenseEdit}
+                />
+              </EditShiftDialog>
+            )}
+
+            <PlatformList
+              statements={statements}
+              months={platformMonths}
+              loading={statementsLoading}
+              driversById={driversById}
+              isAdmin={isAdmin}
+              userId={userId}
+              fetchedAt={statementsState?.fetchedAt ?? 0}
+              today={today}
+              year={prefs.year}
+              month={prefs.month}
+              carId={isAdmin ? (driverFilter === 'all' ? null : driverFilter) : (ownDriver?.id ?? null)}
+              periodText={periodLabel(prefs.year, prefs.month)}
+              editingId={editingStatement?.id ?? null}
+              onEdit={startStatementEdit}
+              onDelete={handleStatementDelete}
+            />
+
+            {editingStatement && (
+              <EditShiftDialog onClose={closeStatementEdit} label="Επεξεργασία καταχώρησης εφαρμογής">
+                <PlatformForm
+                  key={editingStatement.id}
+                  supabase={supabase}
+                  isAdmin={isAdmin}
+                  drivers={drivers}
+                  driversLoaded={!isAdmin || driversState !== null}
+                  prefs={prefs}
+                  driverFilter={driverFilter}
+                  onPrefsChange={setPrefs}
+                  statements={statements}
+                  today={today}
+                  onSaved={handleStatementSaved}
+                  editing={editingStatement}
+                  onUpdated={handleStatementUpdated}
+                  onCancelEdit={closeStatementEdit}
                 />
               </EditShiftDialog>
             )}

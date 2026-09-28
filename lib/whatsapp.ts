@@ -27,6 +27,12 @@ export interface VatMessageInput {
 /** Προσυμπληρωμένο κείμενο ενημέρωσης ΦΠΑ για WhatsApp. */
 export function buildVatMessage({ driverName, plate, year, month, totals }: VatMessageInput): string {
   const status = vatStatus(totals.vatBalanceCents);
+  // Ανάλυση εξόδων μόνο όταν υπάρχουν κι άλλα εκτός από καύσιμα.
+  const expenseParts = [
+    `καύσιμα ${formatEuro(totals.fuelCents)}`,
+    totals.vehicleExpensesCents > 0 ? `οχήματος ${formatEuro(totals.vehicleExpensesCents)}` : null,
+    totals.appCommissionCents > 0 ? `κρατήσεις εφαρμογών ${formatEuro(totals.appCommissionCents)}` : null,
+  ].filter(Boolean);
   return [
     '*Ενημέρωση ΦΠΑ – Taxi Fleet*',
     `Οδηγός: ${driverName}`,
@@ -34,14 +40,17 @@ export function buildVatMessage({ driverName, plate, year, month, totals }: VatM
     `${month === 'all' ? 'Περίοδος' : 'Μήνας'}: ${periodLabel(year, month)}`,
     '',
     `Είσπραξη (μικτή): ${formatEuro(totals.grossReceiptsCents)}`,
-    totals.vehicleExpensesCents > 0
-      ? `Έξοδα: ${formatEuro(totals.totalExpensesCents)} (καύσιμα ${formatEuro(totals.totalExpensesCents - totals.vehicleExpensesCents)} + οχήματος ${formatEuro(totals.vehicleExpensesCents)})`
+    expenseParts.length > 1
+      ? `Έξοδα: ${formatEuro(totals.totalExpensesCents)} (${expenseParts.join(' + ')})`
       : `Έξοδα: ${formatEuro(totals.totalExpensesCents)}`,
     `ΦΠΑ εσόδων 13%: ${formatEuro(totals.vatCents)}`,
     `ΦΠΑ εξόδων 24%: ${formatEuro(totals.expensesVatCents)}`,
     `*Προς απόδοση ΦΠΑ: ${formatEuro(Math.abs(totals.vatBalanceCents))} (${VAT_STATUS_LABEL[status]})*`,
     `Καθαρό ταμείο: ${formatEuro(totals.netCashCents)}`,
     `Βάρδιες: ${totals.shifts}`,
+    ...(totals.appTrips > 0
+      ? [`Διαδρομές: ${totals.trips} (δρόμος ${totals.streetTrips}, εφαρμογές ${totals.appTrips})`]
+      : []),
   ].join('\n');
 }
 
