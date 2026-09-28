@@ -12,6 +12,9 @@
 
 # testing
 /coverage
+/e2e/node_modules
+/e2e/shots
+/e2e/.logs
 
 # next.js
 /.next/

@@ -289,6 +289,7 @@ lib/supabase/            clients (browser/server) και ανανέωση συν
 proxy.ts                 ανανέωση συνεδρίας & ανακατεύθυνση στο /login (Next.js 16: πρώην middleware)
 supabase/migrations/     σχήμα βάσης, υπολογιζόμενες στήλες, triggers, RLS
 supabase/tests/          tests ασφαλείας/λογιστικής της βάσης (pgTAP)
+e2e/                     πλήρης αυτόματος έλεγχος στον browser (Playwright): run.sh, run.mjs
 ```
 
 | Εντολή | |
@@ -301,6 +302,7 @@ supabase/tests/          tests ασφαλείας/λογιστικής της β
 | `npm run db:reset` | επαναδημιουργία τοπικής βάσης από τα migrations |
 | `npm run db:test` | tests της βάσης: ποιος βλέπει τι, ΦΠΑ, triggers |
 | `npm run db:types` | TypeScript τύποι από την τοπική βάση (`lib/database.types.ts`) |
+| `bash e2e/run.sh` | πλήρης αυτόματος έλεγχος στον browser (ιδιοκτήτης/οδηγοί, κινητό/υπολογιστής) σε τοπική βάση δοκιμών — χρειάζεται Docker |
 
 Για τοπικό Supabase: `npm run db:start`, και στο `.env.local` βάλτε το `API_URL` και το
 `PUBLISHABLE_KEY` που εμφανίζει η εντολή. Τα email επιβεβαίωσης φαίνονται στο Mailpit
