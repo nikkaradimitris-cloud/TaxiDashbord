@@ -8,6 +8,7 @@ import { TextSizeToggle } from '@/components/TextSizeToggle';
 import { Badge, Notice } from '@/components/ui';
 import { expenseFromStored, figuresFromStored, summarize, toCents } from '@/lib/accounting';
 import { buildShiftsCsv, csvFileName } from '@/lib/csv';
+import { saveFile } from '@/lib/download';
 import {
   deleteExpense,
   deleteShift,
@@ -47,6 +48,7 @@ import { createClient } from '@/lib/supabase/client';
 import type { MonthSummaryRow } from '@/lib/table';
 import type { DriverRow, ExpenseRow, PlatformRateRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
 import { AnalysisCard } from './AnalysisCard';
+import { BackupPanel, BackupReminder, useBackup } from './Backup';
 import { EditShiftDialog } from './EditShiftDialog';
 import { EntryKindSwitch, NewEntryButton, type EntryKind } from './EntryFields';
 import { ExpenseForm } from './ExpenseForm';
@@ -74,6 +76,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const supabase = useMemo(() => createClient(), []);
   const { userId, ownDriver } = session;
   const isAdmin = session.role === 'admin';
+  const backup = useBackup(supabase, session.email, isAdmin);
 
   // Μνήμη συσκευής: περίοδος/φίλτρα και ουρά αποστολής (null κατά το server render).
   const prefs = useSyncExternalStore(subscribeStorage, () => getPreferences(userId), () => null);
@@ -573,14 +576,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
         };
       }),
     );
-    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = csvFileName(prefs.year, prefs.month);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    saveFile(csv, 'text/csv;charset=utf-8', csvFileName(prefs.year, prefs.month));
   }
 
   const selectedDriver = driverFilter === 'all' ? null : (driversById.get(driverFilter) ?? null);
@@ -636,6 +632,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   }}
                 />
               )}
+
+              {isAdmin && <BackupReminder backup={backup} hasData={drivers.length > 0} />}
 
               <OutboxPanel
                 items={outbox}
@@ -906,6 +904,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   onChanged={() => setDriversVersion((v) => v + 1)}
                 />
               )}
+
+              {isAdmin && <BackupPanel backup={backup} />}
             </>
           )}
         </main>

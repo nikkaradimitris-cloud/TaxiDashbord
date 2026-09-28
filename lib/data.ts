@@ -3,6 +3,7 @@
  * δικαιώματα του συνδεδεμένου χρήστη· το Row Level Security της βάσης
  * αποφασίζει τι βλέπει ο καθένας (admin: όλα, οδηγός: μόνο τα δικά του).
  */
+import type { BackupTable } from './backup';
 import type { MonthFilter } from './period';
 import type { BrowserSupabase } from './supabase/client';
 import type { TablesUpdate } from './database.types';
@@ -289,4 +290,23 @@ export async function fetchProfiles(supabase: BrowserSupabase): Promise<ProfileR
   const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
   if (error) throw error;
   return data;
+}
+
+/** Όλες οι γραμμές ενός πίνακα για το αντίγραφο ασφαλείας (ό,τι επιτρέπει το RLS: ο admin βλέπει όλα). */
+export async function fetchBackupTable(supabase: BrowserSupabase, table: BackupTable): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  let total = Infinity;
+
+  while (rows.length < total) {
+    const request = supabase.from(table).select('*', { count: 'exact' });
+    // Σταθερή σειρά, ώστε οι σελίδες να μην επικαλύπτονται ούτε να αφήνουν κενά.
+    const ordered = table === 'platform_rates' ? request.order('driver_id').order('platform') : request.order('id');
+    const { data, error, count } = await ordered.range(rows.length, rows.length + PAGE_SIZE - 1);
+    if (error) throw error;
+
+    total = count ?? rows.length + data.length;
+    rows.push(...data);
+    if (data.length === 0) break;
+  }
+  return rows;
 }

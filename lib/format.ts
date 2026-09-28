@@ -12,6 +12,20 @@ const dateTime = new Intl.DateTimeFormat('el-GR', {
   hourCycle: 'h23',
 });
 
+const dateOnly = new Intl.DateTimeFormat('el-GR', {
+  timeZone: 'Europe/Athens',
+  day: '2-digit',
+  month: '2-digit',
+  year: 'numeric',
+});
+
+/** ISO timestamp → "27/09/2026" (ημερομηνία Ελλάδας). */
+export function formatDate(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return dateOnly.format(date);
+}
+
 /** ISO timestamp → "27/09/2026 15:44" (ώρα Ελλάδας). */
 export function formatDateTime(iso: string): string {
   const date = new Date(iso);

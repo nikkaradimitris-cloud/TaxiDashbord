@@ -167,6 +167,8 @@ check(
   !(await panelOpen(page, 'shifts')) && nbsp0(await page.locator('#shifts').innerText()).includes('Καμία βάρδια'),
   'κλειστό πάνελ «Ιστορικό βαρδιών» με σύνοψη «Καμία βάρδια»',
 );
+await page.locator('#backup').getByText('Δεν έχει γίνει ακόμα', { exact: true }).waitFor();
+check((await page.getByTestId('backup-reminder').count()) === 0, 'χωρίς οδηγούς δεν εμφανίζεται υπενθύμιση για αντίγραφο ασφαλείας');
 
 // ---------------------------------------------------------------------
 console.log('2. Υποδομή Στόλου');
@@ -559,6 +561,10 @@ check(dtext.includes('Γιώργος Παπαδόπουλος · ΤΑΕ-1234'), 
 check(!dtext.includes('Μαρία'), 'ο οδηγός ΔΕΝ βλέπει άλλους οδηγούς');
 check(!dtext.includes('Υποδομή Στόλου'), 'ο οδηγός ΔΕΝ βλέπει την Υποδομή Στόλου');
 check(!dtext.includes('Αποστολή WhatsApp'), 'ο οδηγός δεν έχει κουμπί WhatsApp');
+check(
+  (await dpage.locator('#backup').count()) === 0 && (await dpage.getByTestId('backup-reminder').count()) === 0,
+  'ο οδηγός δεν έχει «Αντίγραφο ασφαλείας»',
+);
 check(dtext.includes('160,39') && !dtext.includes('260,39'), 'στατιστικά μόνο από τις δικές του βάρδιες');
 const driverYellow = await yellowNotPressable(dpage);
 check(driverYellow.length === 0, `οδηγός: κίτρινο μόνο σε ό,τι πατιέται${driverYellow.length ? ` ✘ ${driverYellow.join(' | ')}` : ''}`);
@@ -1099,6 +1105,59 @@ await page.getByRole('button', { name: 'Βάρδια', exact: true }).click();
 await page.locator('#filters').getByLabel('Οδηγός').selectOption('all');
 
 // ---------------------------------------------------------------------
+console.log('9ε. Αντίγραφο ασφαλείας (ιδιοκτήτης)');
+const reminder = page.getByTestId('backup-reminder');
+await reminder.waitFor();
+check(
+  (await reminder.innerText()).includes('Δεν έχετε κρατήσει ακόμα αντίγραφο ασφαλείας'),
+  'υπενθύμιση πάνω στη σελίδα: δεν έχει γίνει ακόμα αντίγραφο',
+);
+const backupPanel = page.locator('#backup');
+check(
+  nbsp0(await backupPanel.innerText()).includes('δεν έχει γίνει ακόμα') &&
+    (await backupPanel.getByText('χρειάζεται', { exact: true }).isVisible()),
+  'πάνελ «Αντίγραφο ασφαλείας»: δεν έχει γίνει ακόμα, σήμανση «χρειάζεται»',
+);
+await page.screenshot({ path: `${OUT}/13-backup-reminder.png` });
+const [backupDownload] = await Promise.all([
+  page.waitForEvent('download'),
+  reminder.getByRole('button', { name: 'Κατέβασμα τώρα' }).click(),
+]);
+check(
+  backupDownload.suggestedFilename() === 'taxi-fleet-antigrafo-2026-09-28.json',
+  `όνομα αρχείου ${backupDownload.suggestedFilename()}`,
+);
+const backupPath = `${OUT}/backup.json`;
+await backupDownload.saveAs(backupPath);
+const backupFile = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+check(
+  backupFile.app === 'taxi-fleet-tracker' && backupFile.format === 1 && backupFile.createdBy === 'owner@example.com',
+  'αρχείο: εφαρμογή, μορφή, ποιος το κατέβασε',
+);
+const expectedCounts = { profiles: 3, drivers: 4, platform_rates: 3, shifts: 6, vehicle_expenses: 3, platform_statements: 5 };
+check(
+  JSON.stringify(backupFile.counts) === JSON.stringify(expectedCounts) &&
+    Object.entries(backupFile.tables).every(([table, rows]) => rows.length === backupFile.counts[table]),
+  `όλοι οι πίνακες, όλες οι γραμμές: ${JSON.stringify(backupFile.counts)}`,
+);
+check(
+  backupFile.tables.shifts.some((row) => row.z_number === '101' && Number(row.net_revenue) === 160.39 && Number(row.tips) === 7) &&
+    backupFile.tables.drivers.some((row) => row.name === 'Μαρία Κωνσταντίνου' && row.plate === 'ΙΚΒ-5678') &&
+    backupFile.tables.platform_statements.some((row) => row.reference === 'FN-0925') &&
+    backupFile.tables.vehicle_expenses.some((row) => row.description === 'Φρένα'),
+  'το αρχείο έχει τα πραγματικά ποσά (Ζ 101, Μαρία, τιμολόγιο FN-0925, Φρένα)',
+);
+check(!/access_token|refresh_token|password/i.test(JSON.stringify(backupFile)), 'το αρχείο δεν έχει κωδικούς ή κλειδιά σύνδεσης');
+await page.getByText('✓ Κατέβηκε το taxi-fleet-antigrafo-2026-09-28.json: 4 οδηγοί · 6 βάρδιες · 3 έξοδα · 5 καταχωρήσεις εφαρμογών.').waitFor();
+check(true, 'μήνυμα: τι κατέβηκε');
+check(
+  nbsp0(await backupPanel.innerText()).includes('28/09/2026') && (await backupPanel.getByText('χρειάζεται', { exact: true }).count()) === 0,
+  'πάνελ: τελευταίο αντίγραφο 28/09/2026, χωρίς σήμανση',
+);
+await page.reload();
+await backupPanel.getByText(/28\/09\/2026/).first().waitFor();
+check((await page.getByTestId('backup-reminder').count()) === 0, 'μετά από ανανέωση η υπενθύμιση δεν ξαναφαίνεται (η ημερομηνία μένει στον λογαριασμό)');
+
 console.log('10. Μνήμη έτους/μήνα & αποσύνδεση');
 await page.locator('#filters').getByLabel('Έτος').selectOption('2025');
 await page.reload();
