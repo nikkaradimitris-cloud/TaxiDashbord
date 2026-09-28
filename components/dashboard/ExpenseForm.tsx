@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { CollapseButton } from '@/components/Panel';
 import { Button, Card, cx, Field, Input, Notice } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
 import { insertExpense, updateExpense } from '@/lib/data';
@@ -20,7 +21,7 @@ import { periodLabel } from '@/lib/period';
 import type { Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow, ExpenseRow } from '@/lib/types';
-import { DriverField, PeriodFields, SegmentedField, useEntryTarget, vehicleOptionLabel } from './EntryFields';
+import { EntryTargetFields, SegmentedField, useEntryTarget, vehicleOptionLabel } from './EntryFields';
 
 type Message = { tone: 'success' | 'error'; text: string };
 
@@ -41,6 +42,7 @@ export function ExpenseForm({
   onUpdated,
   onCancelEdit,
   switcher,
+  onCollapse,
 }: {
   supabase: BrowserSupabase;
   isAdmin: boolean;
@@ -56,6 +58,8 @@ export function ExpenseForm({
   onCancelEdit: () => void;
   /** Διακόπτης «Βάρδια | Έξοδο οχήματος» (μόνο στη νέα καταχώρηση). */
   switcher?: ReactNode;
+  /** «Κλείσιμο» της φόρμας νέας καταχώρησης (η φόρμα μένει φορτωμένη, απλώς κρύβεται). */
+  onCollapse?: () => void;
 }) {
   const [values, setValues] = useState<ExpenseFormValues>(() =>
     editing ? expenseToFormValues(editing) : EMPTY_EXPENSE_FORM,
@@ -121,15 +125,17 @@ export function ExpenseForm({
       title={isEditing ? 'Επεξεργασία Εξόδου Οχήματος' : 'Καταχώρηση Εξόδου Οχήματος'}
       id={isEditing ? 'expense-edit-form' : 'expense-form'}
       className={cx(isEditing && 'ring-2 ring-accent-strong')}
+      actions={onCollapse && !isEditing ? <CollapseButton onClick={onCollapse} label="Κλείσιμο φόρμας" /> : undefined}
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {switcher}
         <p className="text-sm text-muted">
           Έξοδα του αυτοκινήτου εκτός βάρδιας. Μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο του μήνα.
         </p>
-        <PeriodFields target={target} prefs={prefs} onPrefsChange={onPrefsChange} />
-        <DriverField
+        <EntryTargetFields
           target={target}
+          prefs={prefs}
+          onPrefsChange={onPrefsChange}
           isAdmin={isAdmin}
           driversLoaded={driversLoaded}
           label="Αυτοκίνητο"

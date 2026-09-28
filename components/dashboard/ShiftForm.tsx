@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { CollapseButton } from '@/components/Panel';
 import { Button, Card, cx, Field, Input, Notice } from '@/components/ui';
 import { VAT_STATUS_LABEL, vatStatus } from '@/lib/accounting';
 import { findShiftByZ, insertShift, updateShift } from '@/lib/data';
@@ -19,7 +20,7 @@ import type { PendingShift, Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow, ShiftRow } from '@/lib/types';
 import { newId } from '@/lib/uuid';
-import { DriverField, driverOptionLabel, PeriodFields, useEntryTarget } from './EntryFields';
+import { driverOptionLabel, EntryTargetFields, useEntryTarget } from './EntryFields';
 
 type Message = { tone: 'success' | 'error' | 'warning'; text: string };
 
@@ -42,6 +43,7 @@ export function ShiftForm({
   onUpdated,
   onCancelEdit,
   switcher,
+  onCollapse,
 }: {
   supabase: BrowserSupabase;
   isAdmin: boolean;
@@ -58,6 +60,8 @@ export function ShiftForm({
   onCancelEdit: () => void;
   /** Διακόπτης «Βάρδια | Έξοδο οχήματος» (μόνο στη νέα καταχώρηση). */
   switcher?: ReactNode;
+  /** «Κλείσιμο» της φόρμας νέας καταχώρησης (η φόρμα μένει φορτωμένη, απλώς κρύβεται). */
+  onCollapse?: () => void;
 }) {
   const [values, setValues] = useState<ShiftFormValues>(() => (editing ? shiftToFormValues(editing) : EMPTY_SHIFT_FORM));
   const [showErrors, setShowErrors] = useState(false);
@@ -145,12 +149,14 @@ export function ShiftForm({
       title={editing ? `Επεξεργασία Βάρδιας · Ζ ${editing.z_number}` : 'Καταχώρηση Βάρδιας'}
       id={isEditing ? 'shift-edit-form' : 'shift-form'}
       className={cx(isEditing && 'ring-2 ring-accent-strong')}
+      actions={onCollapse && !isEditing ? <CollapseButton onClick={onCollapse} label="Κλείσιμο φόρμας" /> : undefined}
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {switcher}
-        <PeriodFields target={target} prefs={prefs} onPrefsChange={onPrefsChange} />
-        <DriverField
+        <EntryTargetFields
           target={target}
+          prefs={prefs}
+          onPrefsChange={onPrefsChange}
           isAdmin={isAdmin}
           driversLoaded={driversLoaded}
           label="Οδηγός"

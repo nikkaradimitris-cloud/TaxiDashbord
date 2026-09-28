@@ -114,6 +114,37 @@ export function updatePreferences(userId: string, changes: Partial<Omit<Preferen
 }
 
 // ---------------------------------------------------------------------
+// Πάνελ ανοιχτά / κλειστά (ανά χρήστη και συσκευή)
+// ---------------------------------------------------------------------
+
+/** Τα πάνελ που άνοιξε ή έκλεισε ο χρήστης· όσα λείπουν έχουν την προεπιλογή τους. */
+export type PanelStates = Readonly<Record<string, boolean>>;
+
+const panelsKey = (userId: string) => `taxi-tracker:panels:v1:${userId}`;
+const NO_PANELS: PanelStates = {};
+
+export function getPanelStates(userId: string): PanelStates {
+  return cached(panelsKey(userId), () => {
+    const stored = read(panelsKey(userId));
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return NO_PANELS;
+    return Object.fromEntries(Object.entries(stored).filter(([, open]) => typeof open === 'boolean'));
+  });
+}
+
+export function emptyPanelStates(): PanelStates {
+  return NO_PANELS;
+}
+
+export function setPanelOpen(userId: string, id: string, open: boolean) {
+  const current = getPanelStates(userId);
+  if (current[id] === open) return;
+  const next = { ...current, [id]: open };
+  snapshots.set(panelsKey(userId), next);
+  write(panelsKey(userId), next);
+  notify();
+}
+
+// ---------------------------------------------------------------------
 // Μέγεθος γραμμάτων (ίδιο για όλους τους χρήστες της συσκευής)
 // ---------------------------------------------------------------------
 

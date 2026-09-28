@@ -10,7 +10,7 @@ import {
   type KeyboardEvent,
   type PointerEvent,
 } from 'react';
-import { cx } from '@/components/ui';
+import { choiceStyles, cx } from '@/components/ui';
 import type { ShiftFigures } from '@/lib/accounting';
 import {
   buildChartData,
@@ -102,7 +102,7 @@ export function TrendChart({
             className={cx(
               'min-h-11 rounded-lg px-2 py-1 text-sm leading-tight transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
-              metric === id ? 'bg-accent font-semibold text-on-accent shadow-sm' : 'text-muted hover:bg-card hover:text-fg',
+              metric === id ? choiceStyles.on : choiceStyles.off,
             )}
           >
             {label}

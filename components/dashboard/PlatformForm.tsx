@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import { CollapseButton } from '@/components/Panel';
 import { Button, Card, cx, Field, FieldRow, Input, Notice, Select } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
 import { insertStatement, savePlatformRate, updateStatement } from '@/lib/data';
@@ -36,7 +37,7 @@ import {
 import type { Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow, PlatformRateRow, StatementRow } from '@/lib/types';
-import { DriverField, PeriodFields, SegmentedField, useEntryTarget, vehicleOptionLabel } from './EntryFields';
+import { EntryTargetFields, SegmentedField, useEntryTarget, vehicleOptionLabel } from './EntryFields';
 
 type Message = { tone: 'success' | 'error'; text: string };
 
@@ -99,6 +100,7 @@ export function PlatformForm({
   onUpdated,
   onCancelEdit,
   switcher,
+  onCollapse,
 }: {
   supabase: BrowserSupabase;
   isAdmin: boolean;
@@ -122,6 +124,8 @@ export function PlatformForm({
   onCancelEdit: () => void;
   /** Διακόπτης «Βάρδια | Έξοδο οχήματος | Εφαρμογή» (μόνο στη νέα καταχώρηση). */
   switcher?: ReactNode;
+  /** «Κλείσιμο» της φόρμας νέας καταχώρησης (η φόρμα μένει φορτωμένη, απλώς κρύβεται). */
+  onCollapse?: () => void;
 }) {
   const [values, setValues] = useState<StatementFormValues>(() =>
     editing ? statementToFormValues(editing) : EMPTY_STATEMENT_FORM,
@@ -400,6 +404,7 @@ export function PlatformForm({
       title={isEditing ? 'Επεξεργασία Εφαρμογής' : 'Καταχώρηση από Εφαρμογή'}
       id={isEditing ? 'platform-edit-form' : 'platform-form'}
       className={cx(isEditing && 'ring-2 ring-accent-strong')}
+      actions={onCollapse && !isEditing ? <CollapseButton onClick={onCollapse} label="Κλείσιμο φόρμας" /> : undefined}
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {switcher}
@@ -407,9 +412,10 @@ export function PlatformForm({
           Αντιγράψτε τα ποσά από το έγγραφο που στέλνει η εφαρμογή κάθε εβδομάδα, και το τιμολόγιο του μήνα. Έτσι
           φαίνεται πόσες διαδρομές ήταν από τον δρόμο και πόσα κρατάει η εφαρμογή.
         </p>
-        <PeriodFields target={target} prefs={prefs} onPrefsChange={onPrefsChange} />
-        <DriverField
+        <EntryTargetFields
           target={target}
+          prefs={prefs}
+          onPrefsChange={onPrefsChange}
           isAdmin={isAdmin}
           driversLoaded={driversLoaded}
           label="Αυτοκίνητο"

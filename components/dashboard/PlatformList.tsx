@@ -1,6 +1,7 @@
 'use client';
 
-import { Button, Card, cx } from '@/components/ui';
+import { Panel } from '@/components/Panel';
+import { Badge, Button, cx } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
 import { formatEuro, formatInteger, formatSignedEuro } from '@/lib/format';
 import { monthName, type MonthFilter } from '@/lib/period';
@@ -115,15 +116,37 @@ export function PlatformList({
     const driver = driversById.get(row.driver_id);
     return { plate: driver?.plate ?? null, name: driver?.name ?? '—' };
   };
+  // Εβδομάδες που τελείωσαν χωρίς καταχώρηση (για ένα αυτοκίνητο και έναν μήνα): φαίνονται και με κλειστό πάνελ.
+  const missingWeeks =
+    checklist
+      ? usedPlatforms.reduce((sum, { id }) => {
+          const entered = new Set(
+            statements.flatMap((row) =>
+              row.driver_id === carId && row.month === month && row.platform === id && row.kind === 'week' && row.week_start
+                ? [row.week_start]
+                : [],
+            ),
+          );
+          return sum + weekCycles(year, month).filter((week) => weekState(week, entered, today) === 'missing').length;
+        }, 0)
+      : 0;
+  const count = statements.length === 1 ? '1 καταχώρηση' : `${statements.length} καταχωρήσεις`;
 
   return (
-    <Card
+    <Panel
       id="platforms"
       title={`Εφαρμογές · ${periodText}`}
-      actions={
-        <span className="text-sm text-muted">
-          {loading ? 'Φόρτωση…' : statements.length === 1 ? '1 καταχώρηση' : `${statements.length} καταχωρήσεις`}
-        </span>
+      summary={
+        loading
+          ? 'Φόρτωση…'
+          : statements.length === 0
+            ? 'Καμία καταχώρηση'
+            : `${count} · κρατήσεις ${formatEuro(totals.commissionCents)}`
+      }
+      badge={
+        missingWeeks > 0 && !loading ? (
+          <Badge tone="warn">{missingWeeks === 1 ? 'λείπει 1 εβδ.' : `λείπουν ${missingWeeks} εβδ.`}</Badge>
+        ) : null
       }
       className={cx(loading && 'opacity-60')}
     >
@@ -318,7 +341,7 @@ export function PlatformList({
           </p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 

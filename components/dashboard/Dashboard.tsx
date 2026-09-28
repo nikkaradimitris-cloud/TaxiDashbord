@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Logo } from '@/components/Logo';
+import { PanelMemoryProvider, usePanelOpen } from '@/components/Panel';
 import { SignOutButton } from '@/components/SignOutButton';
 import { TextSizeToggle } from '@/components/TextSizeToggle';
 import { Badge, Notice } from '@/components/ui';
@@ -47,7 +48,7 @@ import type { MonthSummaryRow } from '@/lib/table';
 import type { DriverRow, ExpenseRow, PlatformRateRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
 import { AnalysisCard } from './AnalysisCard';
 import { EditShiftDialog } from './EditShiftDialog';
-import { EntryKindSwitch, type EntryKind } from './EntryFields';
+import { EntryKindSwitch, NewEntryButton, type EntryKind } from './EntryFields';
 import { ExpenseForm } from './ExpenseForm';
 import { ExpenseList } from './ExpenseList';
 import { FleetPanel } from './FleetPanel';
@@ -87,6 +88,19 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const [editingExpense, setEditingExpense] = useState<ExpenseRow | null>(null);
   const [editingStatement, setEditingStatement] = useState<StatementRow | null>(null);
   const [entryKind, setEntryKind] = useState<EntryKind>('shift');
+  // Η φόρμα νέας καταχώρησης: ανοιχτή για τον οδηγό, κλειστή («+ Νέα καταχώρηση») για τον ιδιοκτήτη.
+  const [entryOpen, setEntryOpen] = usePanelOpen('entry', !isAdmin, userId);
+  const entryRef = useRef<HTMLDivElement>(null);
+  const newEntryRef = useRef<HTMLButtonElement>(null);
+  // Το κουμπί που πατήθηκε εξαφανίζεται· ο κέρσορας (πληκτρολόγιο) πάει στη φόρμα ή πίσω στο κουμπί.
+  const openEntry = useCallback(() => {
+    setEntryOpen(true);
+    requestAnimationFrame(() => entryRef.current?.focus());
+  }, [setEntryOpen]);
+  const collapseEntry = useCallback(() => {
+    setEntryOpen(false);
+    requestAnimationFrame(() => newEntryRef.current?.focus());
+  }, [setEntryOpen]);
   const [toast, setToast] = useState<string | null>(null);
   const closeEdit = useCallback(() => setEditing(null), []);
   const closeExpenseEdit = useCallback(() => setEditingExpense(null), []);
@@ -572,328 +586,338 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const selectedDriver = driverFilter === 'all' ? null : (driversById.get(driverFilter) ?? null);
 
   return (
-    <div className="min-h-dvh">
-      <header className="sticky top-0 z-20 border-b border-line bg-card/95 backdrop-blur">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-2 sm:px-6">
-          <div className="flex min-w-0 items-center gap-2">
-            <Logo className="h-9 w-9 shrink-0" />
-            <div className="min-w-0">
-              <p className="truncate font-bold leading-tight">Taxi Fleet Tracker</p>
-              <p className="truncate text-xs text-muted">
-                {isAdmin ? 'Διαχειριστής' : `${ownDriver?.name ?? ''}${ownDriver?.plate ? ` · ${ownDriver.plate}` : ''}`}
-              </p>
+    <PanelMemoryProvider userId={userId}>
+      <div className="min-h-dvh">
+        <header className="sticky top-0 z-20 border-b border-line bg-card/95 backdrop-blur">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-2 sm:px-6">
+            <div className="flex min-w-0 items-center gap-2">
+              <Logo className="h-9 w-9 shrink-0" />
+              <div className="min-w-0">
+                <p className="truncate font-bold leading-tight">Taxi Fleet Tracker</p>
+                <p className="truncate text-xs text-muted">
+                  {isAdmin ? 'Διαχειριστής' : `${ownDriver?.name ?? ''}${ownDriver?.plate ? ` · ${ownDriver.plate}` : ''}`}
+                </p>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <span className="hidden text-sm text-muted lg:inline">{session.email}</span>
+              {/* Στο κινητό ο ρόλος φαίνεται ήδη κάτω από τον τίτλο. */}
+              <span className="hidden sm:inline-flex">
+                <Badge tone={isAdmin ? 'accent' : 'neutral'}>{isAdmin ? 'Admin' : 'Οδηγός'}</Badge>
+              </span>
+              <TextSizeToggle />
+              <SignOutButton className="px-3" />
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <span className="hidden text-sm text-muted lg:inline">{session.email}</span>
-            {/* Στο κινητό ο ρόλος φαίνεται ήδη κάτω από τον τίτλο. */}
-            <span className="hidden sm:inline-flex">
-              <Badge tone={isAdmin ? 'accent' : 'neutral'}>{isAdmin ? 'Admin' : 'Οδηγός'}</Badge>
-            </span>
-            <TextSizeToggle />
-            <SignOutButton className="px-3" />
-          </div>
-        </div>
-      </header>
+        </header>
 
-      <main className="mx-auto max-w-7xl space-y-4 px-3 pb-16 pt-4 sm:px-6">
-        {!prefs ? (
-          <p className="py-20 text-center text-muted">Φόρτωση…</p>
-        ) : (
-          <>
-            <PeriodBar
-              prefs={prefs}
-              isAdmin={isAdmin}
-              drivers={drivers}
-              driverFilter={driverFilter}
-              onChange={setPrefs}
-              onExport={exportCsv}
-              canExport={!loading && (shifts.length > 0 || expenses.length > 0 || statements.length > 0)}
-            />
-
-            {isAdmin && (
-              <LegacyImport
-                supabase={supabase}
+        <main className="mx-auto max-w-7xl space-y-4 px-3 pb-16 pt-4 sm:px-6">
+          {!prefs ? (
+            <p className="py-20 text-center text-muted">Φόρτωση…</p>
+          ) : (
+            <>
+              <PeriodBar
+                prefs={prefs}
+                isAdmin={isAdmin}
                 drivers={drivers}
-                onImported={() => {
-                  setDriversVersion((v) => v + 1);
-                  setShiftsVersion((v) => v + 1);
-                }}
+                driverFilter={driverFilter}
+                onChange={setPrefs}
+                onExport={exportCsv}
+                canExport={!loading && (shifts.length > 0 || expenses.length > 0 || statements.length > 0)}
               />
-            )}
 
-            <OutboxPanel
-              items={outbox}
-              onSend={flushOutbox}
-              onDiscard={(id) => setOutbox(userId, getOutbox(userId).filter((item) => item.payload.id !== id))}
-            />
-
-            {message && (
-              <Notice tone={message.tone}>
-                <div className="flex items-start justify-between gap-3">
-                  <span>{message.text}</span>
-                  <button type="button" className="font-semibold" onClick={() => setMessage(null)} aria-label="Κλείσιμο">
-                    ✕
-                  </button>
-                </div>
-              </Notice>
-            )}
-            {shiftsState?.error && !shiftsLoading && (
-              <Notice tone="error">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>Οι βάρδιες δεν φορτώθηκαν. {shiftsState.error}</span>
-                  <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
-                    Δοκιμή ξανά
-                  </button>
-                </div>
-              </Notice>
-            )}
-            {expensesState?.error && !expensesLoading && (
-              <Notice tone="error">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>Τα έξοδα οχήματος δεν φορτώθηκαν. {expensesState.error}</span>
-                  <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
-                    Δοκιμή ξανά
-                  </button>
-                </div>
-              </Notice>
-            )}
-            {statementsState?.error && !statementsLoading && (
-              <Notice tone="error">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>Οι καταχωρήσεις εφαρμογών δεν φορτώθηκαν. {statementsState.error}</span>
-                  <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
-                    Δοκιμή ξανά
-                  </button>
-                </div>
-              </Notice>
-            )}
-            {ratesState?.error && (
-              <Notice tone="error">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span>Τα ποσοστά των εφαρμογών δεν φορτώθηκαν. {ratesState.error}</span>
-                  <button type="button" className="font-semibold underline" onClick={() => setRatesVersion((v) => v + 1)}>
-                    Δοκιμή ξανά
-                  </button>
-                </div>
-              </Notice>
-            )}
-            {driversState?.error && <Notice tone="error">{driversState.error}</Notice>}
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
-              {entryKind === 'shift' ? (
-                <ShiftForm
+              {isAdmin && (
+                <LegacyImport
                   supabase={supabase}
-                  isAdmin={isAdmin}
                   drivers={drivers}
-                  driversLoaded={!isAdmin || driversState !== null}
-                  prefs={prefs}
-                  driverFilter={driverFilter}
-                  onPrefsChange={setPrefs}
-                  onSaved={handleSaved}
-                  onQueued={handleQueued}
-                  editing={null}
-                  onUpdated={handleUpdated}
-                  onCancelEdit={closeEdit}
-                  switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
-                />
-              ) : entryKind === 'expense' ? (
-                <ExpenseForm
-                  supabase={supabase}
-                  isAdmin={isAdmin}
-                  drivers={drivers}
-                  driversLoaded={!isAdmin || driversState !== null}
-                  prefs={prefs}
-                  driverFilter={driverFilter}
-                  onPrefsChange={setPrefs}
-                  onSaved={handleExpenseSaved}
-                  editing={null}
-                  onUpdated={handleExpenseUpdated}
-                  onCancelEdit={closeExpenseEdit}
-                  switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
-                />
-              ) : (
-                <PlatformForm
-                  supabase={supabase}
-                  isAdmin={isAdmin}
-                  drivers={drivers}
-                  driversLoaded={!isAdmin || driversState !== null}
-                  prefs={prefs}
-                  driverFilter={driverFilter}
-                  onPrefsChange={setPrefs}
-                  statements={statements}
-                  rates={rates}
-                  ratesLoaded={ratesLoaded}
-                  onRateSaved={handleRateSaved}
-                  today={today}
-                  onSaved={handleStatementSaved}
-                  editing={null}
-                  onUpdated={handleStatementUpdated}
-                  onCancelEdit={closeStatementEdit}
-                  switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                  onImported={() => {
+                    setDriversVersion((v) => v + 1);
+                    setShiftsVersion((v) => v + 1);
+                  }}
                 />
               )}
-              <StatsPanel
-                totals={totals}
-                loading={loading}
+
+              <OutboxPanel
+                items={outbox}
+                onSend={flushOutbox}
+                onDiscard={(id) => setOutbox(userId, getOutbox(userId).filter((item) => item.payload.id !== id))}
+              />
+
+              {message && (
+                <Notice tone={message.tone}>
+                  <div className="flex items-start justify-between gap-3">
+                    <span>{message.text}</span>
+                    <button type="button" className="font-semibold" onClick={() => setMessage(null)} aria-label="Κλείσιμο">
+                      ✕
+                    </button>
+                  </div>
+                </Notice>
+              )}
+              {shiftsState?.error && !shiftsLoading && (
+                <Notice tone="error">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>Οι βάρδιες δεν φορτώθηκαν. {shiftsState.error}</span>
+                    <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
+                      Δοκιμή ξανά
+                    </button>
+                  </div>
+                </Notice>
+              )}
+              {expensesState?.error && !expensesLoading && (
+                <Notice tone="error">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>Τα έξοδα οχήματος δεν φορτώθηκαν. {expensesState.error}</span>
+                    <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
+                      Δοκιμή ξανά
+                    </button>
+                  </div>
+                </Notice>
+              )}
+              {statementsState?.error && !statementsLoading && (
+                <Notice tone="error">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>Οι καταχωρήσεις εφαρμογών δεν φορτώθηκαν. {statementsState.error}</span>
+                    <button type="button" className="font-semibold underline" onClick={() => setShiftsVersion((v) => v + 1)}>
+                      Δοκιμή ξανά
+                    </button>
+                  </div>
+                </Notice>
+              )}
+              {ratesState?.error && (
+                <Notice tone="error">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span>Τα ποσοστά των εφαρμογών δεν φορτώθηκαν. {ratesState.error}</span>
+                    <button type="button" className="font-semibold underline" onClick={() => setRatesVersion((v) => v + 1)}>
+                      Δοκιμή ξανά
+                    </button>
+                  </div>
+                </Notice>
+              )}
+              {driversState?.error && <Notice tone="error">{driversState.error}</Notice>}
+
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
+                <div className="min-w-0">
+                  {!entryOpen && <NewEntryButton ref={newEntryRef} onClick={openEntry} />}
+                  <div ref={entryRef} tabIndex={-1} hidden={!entryOpen} className="outline-none">
+                    {entryKind === 'shift' ? (
+                      <ShiftForm
+                        supabase={supabase}
+                        isAdmin={isAdmin}
+                        drivers={drivers}
+                        driversLoaded={!isAdmin || driversState !== null}
+                        prefs={prefs}
+                        driverFilter={driverFilter}
+                        onPrefsChange={setPrefs}
+                        onSaved={handleSaved}
+                        onQueued={handleQueued}
+                        editing={null}
+                        onUpdated={handleUpdated}
+                        onCancelEdit={closeEdit}
+                        switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                        onCollapse={collapseEntry}
+                      />
+                    ) : entryKind === 'expense' ? (
+                      <ExpenseForm
+                        supabase={supabase}
+                        isAdmin={isAdmin}
+                        drivers={drivers}
+                        driversLoaded={!isAdmin || driversState !== null}
+                        prefs={prefs}
+                        driverFilter={driverFilter}
+                        onPrefsChange={setPrefs}
+                        onSaved={handleExpenseSaved}
+                        editing={null}
+                        onUpdated={handleExpenseUpdated}
+                        onCancelEdit={closeExpenseEdit}
+                        switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                        onCollapse={collapseEntry}
+                      />
+                    ) : (
+                      <PlatformForm
+                        supabase={supabase}
+                        isAdmin={isAdmin}
+                        drivers={drivers}
+                        driversLoaded={!isAdmin || driversState !== null}
+                        prefs={prefs}
+                        driverFilter={driverFilter}
+                        onPrefsChange={setPrefs}
+                        statements={statements}
+                        rates={rates}
+                        ratesLoaded={ratesLoaded}
+                        onRateSaved={handleRateSaved}
+                        today={today}
+                        onSaved={handleStatementSaved}
+                        editing={null}
+                        onUpdated={handleStatementUpdated}
+                        onCancelEdit={closeStatementEdit}
+                        switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                        onCollapse={collapseEntry}
+                      />
+                    )}
+                  </div>
+                </div>
+                <StatsPanel
+                  totals={totals}
+                  loading={loading}
+                  isAdmin={isAdmin}
+                  year={prefs.year}
+                  month={prefs.month}
+                  selectedDriver={selectedDriver}
+                  items={items}
+                  expenseItems={expenseItems}
+                  platformMonths={platformMonths}
+                  driversById={driversById}
+                  showPerDriver={isAdmin && driverFilter === 'all'}
+                  onSelectDriver={(id) => setPrefs({ driverFilter: id })}
+                  analysis={
+                    <AnalysisCard
+                      items={items}
+                      driversById={driversById}
+                      isAdmin={isAdmin}
+                      selectedDriver={selectedDriver}
+                      year={prefs.year}
+                      month={prefs.month}
+                      view={prefs.statsView}
+                      onViewChange={(statsView) => setPrefs({ statsView })}
+                      tableGroup={prefs.tableGroup}
+                      onTableGroupChange={(tableGroup) => setPrefs({ tableGroup })}
+                      chartMetric={prefs.chartMetric}
+                      onChartMetricChange={(chartMetric) => setPrefs({ chartMetric })}
+                      yearSummary={yearSummary}
+                      onSelectMonth={(month) => setPrefs({ month, tableGroup: 'shifts' })}
+                    />
+                  }
+                />
+              </div>
+
+              <ShiftList
+                items={items}
+                loading={shiftsLoading}
+                driversById={driversById}
                 isAdmin={isAdmin}
+                userId={userId}
+                fetchedAt={shiftsState?.fetchedAt ?? 0}
+                periodText={periodLabel(prefs.year, prefs.month)}
+                editingId={editing?.id ?? null}
+                onEdit={startEdit}
+                onDelete={handleDelete}
+              />
+
+              {editing && (
+                <EditShiftDialog onClose={closeEdit}>
+                  <ShiftForm
+                    key={editing.id}
+                    supabase={supabase}
+                    isAdmin={isAdmin}
+                    drivers={drivers}
+                    driversLoaded={!isAdmin || driversState !== null}
+                    prefs={prefs}
+                    driverFilter={driverFilter}
+                    onPrefsChange={setPrefs}
+                    onSaved={handleSaved}
+                    onQueued={handleQueued}
+                    editing={editing}
+                    onUpdated={handleUpdated}
+                    onCancelEdit={closeEdit}
+                  />
+                </EditShiftDialog>
+              )}
+
+              <ExpenseList
+                items={expenseItems}
+                loading={expensesLoading}
+                driversById={driversById}
+                isAdmin={isAdmin}
+                userId={userId}
+                fetchedAt={expensesState?.fetchedAt ?? 0}
+                periodText={periodLabel(prefs.year, prefs.month)}
+                editingId={editingExpense?.id ?? null}
+                onEdit={startExpenseEdit}
+                onDelete={handleExpenseDelete}
+              />
+
+              {editingExpense && (
+                <EditShiftDialog onClose={closeExpenseEdit} label="Επεξεργασία εξόδου οχήματος">
+                  <ExpenseForm
+                    key={editingExpense.id}
+                    supabase={supabase}
+                    isAdmin={isAdmin}
+                    drivers={drivers}
+                    driversLoaded={!isAdmin || driversState !== null}
+                    prefs={prefs}
+                    driverFilter={driverFilter}
+                    onPrefsChange={setPrefs}
+                    onSaved={handleExpenseSaved}
+                    editing={editingExpense}
+                    onUpdated={handleExpenseUpdated}
+                    onCancelEdit={closeExpenseEdit}
+                  />
+                </EditShiftDialog>
+              )}
+
+              <PlatformList
+                statements={statements}
+                months={platformMonths}
+                rates={rates}
+                loading={statementsLoading}
+                driversById={driversById}
+                isAdmin={isAdmin}
+                userId={userId}
+                fetchedAt={statementsState?.fetchedAt ?? 0}
+                today={today}
                 year={prefs.year}
                 month={prefs.month}
-                selectedDriver={selectedDriver}
-                items={items}
-                expenseItems={expenseItems}
-                platformMonths={platformMonths}
-                driversById={driversById}
-                showPerDriver={isAdmin && driverFilter === 'all'}
-                onSelectDriver={(id) => setPrefs({ driverFilter: id })}
-                analysis={
-                  <AnalysisCard
-                    items={items}
-                    driversById={driversById}
+                carId={isAdmin ? (driverFilter === 'all' ? null : driverFilter) : (ownDriver?.id ?? null)}
+                periodText={periodLabel(prefs.year, prefs.month)}
+                editingId={editingStatement?.id ?? null}
+                onEdit={startStatementEdit}
+                onDelete={handleStatementDelete}
+              />
+
+              {editingStatement && (
+                <EditShiftDialog onClose={closeStatementEdit} label="Επεξεργασία καταχώρησης εφαρμογής">
+                  <PlatformForm
+                    key={editingStatement.id}
+                    supabase={supabase}
                     isAdmin={isAdmin}
-                    selectedDriver={selectedDriver}
-                    year={prefs.year}
-                    month={prefs.month}
-                    view={prefs.statsView}
-                    onViewChange={(statsView) => setPrefs({ statsView })}
-                    tableGroup={prefs.tableGroup}
-                    onTableGroupChange={(tableGroup) => setPrefs({ tableGroup })}
-                    chartMetric={prefs.chartMetric}
-                    onChartMetricChange={(chartMetric) => setPrefs({ chartMetric })}
-                    yearSummary={yearSummary}
-                    onSelectMonth={(month) => setPrefs({ month, tableGroup: 'shifts' })}
+                    drivers={drivers}
+                    driversLoaded={!isAdmin || driversState !== null}
+                    prefs={prefs}
+                    driverFilter={driverFilter}
+                    onPrefsChange={setPrefs}
+                    statements={statements}
+                    rates={rates}
+                    ratesLoaded={ratesLoaded}
+                    onRateSaved={handleRateSaved}
+                    today={today}
+                    onSaved={handleStatementSaved}
+                    editing={editingStatement}
+                    onUpdated={handleStatementUpdated}
+                    onCancelEdit={closeStatementEdit}
                   />
-                }
-              />
-            </div>
+                </EditShiftDialog>
+              )}
 
-            <ShiftList
-              items={items}
-              loading={shiftsLoading}
-              driversById={driversById}
-              isAdmin={isAdmin}
-              userId={userId}
-              fetchedAt={shiftsState?.fetchedAt ?? 0}
-              periodText={periodLabel(prefs.year, prefs.month)}
-              editingId={editing?.id ?? null}
-              onEdit={startEdit}
-              onDelete={handleDelete}
-            />
-
-            {editing && (
-              <EditShiftDialog onClose={closeEdit}>
-                <ShiftForm
-                  key={editing.id}
+              {isAdmin && (
+                <FleetPanel
                   supabase={supabase}
-                  isAdmin={isAdmin}
                   drivers={drivers}
-                  driversLoaded={!isAdmin || driversState !== null}
-                  prefs={prefs}
-                  driverFilter={driverFilter}
-                  onPrefsChange={setPrefs}
-                  onSaved={handleSaved}
-                  onQueued={handleQueued}
-                  editing={editing}
-                  onUpdated={handleUpdated}
-                  onCancelEdit={closeEdit}
+                  loaded={driversState !== null}
+                  onChanged={() => setDriversVersion((v) => v + 1)}
                 />
-              </EditShiftDialog>
-            )}
+              )}
+            </>
+          )}
+        </main>
 
-            <ExpenseList
-              items={expenseItems}
-              loading={expensesLoading}
-              driversById={driversById}
-              isAdmin={isAdmin}
-              userId={userId}
-              fetchedAt={expensesState?.fetchedAt ?? 0}
-              periodText={periodLabel(prefs.year, prefs.month)}
-              editingId={editingExpense?.id ?? null}
-              onEdit={startExpenseEdit}
-              onDelete={handleExpenseDelete}
-            />
-
-            {editingExpense && (
-              <EditShiftDialog onClose={closeExpenseEdit} label="Επεξεργασία εξόδου οχήματος">
-                <ExpenseForm
-                  key={editingExpense.id}
-                  supabase={supabase}
-                  isAdmin={isAdmin}
-                  drivers={drivers}
-                  driversLoaded={!isAdmin || driversState !== null}
-                  prefs={prefs}
-                  driverFilter={driverFilter}
-                  onPrefsChange={setPrefs}
-                  onSaved={handleExpenseSaved}
-                  editing={editingExpense}
-                  onUpdated={handleExpenseUpdated}
-                  onCancelEdit={closeExpenseEdit}
-                />
-              </EditShiftDialog>
-            )}
-
-            <PlatformList
-              statements={statements}
-              months={platformMonths}
-              rates={rates}
-              loading={statementsLoading}
-              driversById={driversById}
-              isAdmin={isAdmin}
-              userId={userId}
-              fetchedAt={statementsState?.fetchedAt ?? 0}
-              today={today}
-              year={prefs.year}
-              month={prefs.month}
-              carId={isAdmin ? (driverFilter === 'all' ? null : driverFilter) : (ownDriver?.id ?? null)}
-              periodText={periodLabel(prefs.year, prefs.month)}
-              editingId={editingStatement?.id ?? null}
-              onEdit={startStatementEdit}
-              onDelete={handleStatementDelete}
-            />
-
-            {editingStatement && (
-              <EditShiftDialog onClose={closeStatementEdit} label="Επεξεργασία καταχώρησης εφαρμογής">
-                <PlatformForm
-                  key={editingStatement.id}
-                  supabase={supabase}
-                  isAdmin={isAdmin}
-                  drivers={drivers}
-                  driversLoaded={!isAdmin || driversState !== null}
-                  prefs={prefs}
-                  driverFilter={driverFilter}
-                  onPrefsChange={setPrefs}
-                  statements={statements}
-                  rates={rates}
-                  ratesLoaded={ratesLoaded}
-                  onRateSaved={handleRateSaved}
-                  today={today}
-                  onSaved={handleStatementSaved}
-                  editing={editingStatement}
-                  onUpdated={handleStatementUpdated}
-                  onCancelEdit={closeStatementEdit}
-                />
-              </EditShiftDialog>
-            )}
-
-            {isAdmin && (
-              <FleetPanel
-                supabase={supabase}
-                drivers={drivers}
-                loaded={driversState !== null}
-                onChanged={() => setDriversVersion((v) => v + 1)}
-              />
-            )}
-          </>
+        {toast && (
+          <div className="pointer-events-none fixed inset-x-3 bottom-4 z-40 mx-auto max-w-md">
+            <Notice tone="success" className="pointer-events-auto shadow-lg">
+              {toast}
+            </Notice>
+          </div>
         )}
-      </main>
-
-      {toast && (
-        <div className="pointer-events-none fixed inset-x-3 bottom-4 z-40 mx-auto max-w-md">
-          <Notice tone="success" className="pointer-events-auto shadow-lg">
-            {toast}
-          </Notice>
-        </div>
-      )}
-    </div>
+      </div>
+    </PanelMemoryProvider>
   );
 }

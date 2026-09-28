@@ -1,7 +1,8 @@
 'use client';
 
 import { Fragment, useMemo, useState, type ReactNode } from 'react';
-import { cx } from '@/components/ui';
+import { Panel } from '@/components/Panel';
+import { choiceStyles, cx } from '@/components/ui';
 import type { ShiftFigures } from '@/lib/accounting';
 import type { ChartMetric } from '@/lib/chart';
 import { formatDecimal, formatEuro, formatInteger } from '@/lib/format';
@@ -67,15 +68,18 @@ export function AnalysisCard({
   const who = selectedDriver?.name ?? (isAdmin ? 'Όλος ο στόλος' : ([...driversById.values()][0]?.name ?? ''));
   const period = view === 'table' && tableGroup === 'months' ? `Έτος ${year}` : periodLabel(year, month);
 
+  const subtitle = [who, period].filter(Boolean).join(' · ');
+
   return (
-    <section aria-labelledby="analysis-title" data-testid="analysis-card" className="rounded-2xl border border-line bg-card p-4 shadow-sm">
+    <Panel
+      id="analysis"
+      headingLevel={3}
+      title="Αναλυτικά"
+      summary={`${subtitle} · πίνακας ή γράφημα`}
+      data-testid="analysis-card"
+    >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
-        <div className="min-w-0">
-          <h3 id="analysis-title" className="text-lg font-semibold">
-            Αναλυτικά
-          </h3>
-          <p className="text-sm text-muted">{[who, period].filter(Boolean).join(' · ')}</p>
-        </div>
+        <p className="min-w-0 text-sm text-muted">{subtitle}</p>
         <div role="group" aria-label="Προβολή" className="flex rounded-xl bg-bg p-1">
           <ViewButton active={view === 'table'} onClick={() => onViewChange('table')} icon={<TableIcon />}>
             Πίνακας
@@ -107,7 +111,7 @@ export function AnalysisCard({
           onMetricChange={onChartMetricChange}
         />
       )}
-    </section>
+    </Panel>
   );
 }
 
@@ -130,7 +134,7 @@ function ViewButton({
       className={cx(
         'inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 py-1 text-sm transition-colors',
         'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
-        active ? 'bg-accent font-semibold text-on-accent shadow-sm' : 'text-muted hover:bg-card hover:text-fg',
+        active ? choiceStyles.on : choiceStyles.off,
       )}
     >
       {icon}
@@ -197,7 +201,7 @@ function AnalysisTable({
             className={cx(
               'min-h-11 rounded-lg px-2 py-1 text-sm transition-colors',
               'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
-              group === id ? 'bg-card font-semibold text-fg shadow-sm ring-1 ring-line' : 'text-muted hover:bg-card hover:text-fg',
+              group === id ? choiceStyles.on : choiceStyles.off,
             )}
           >
             {label}

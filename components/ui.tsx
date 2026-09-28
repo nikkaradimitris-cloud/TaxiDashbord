@@ -20,8 +20,8 @@ export function Card({
   return (
     <section id={id} className={cx('rounded-2xl border border-line bg-card p-4 shadow-sm sm:p-5', className)}>
       {(title || actions) && (
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-2">
-          {title && <h2 className="text-lg font-semibold">{title}</h2>}
+        <header className="mb-4 flex items-center justify-between gap-2">
+          {title && <h2 className="min-w-0 text-lg font-semibold">{title}</h2>}
           {actions}
         </header>
       )}
@@ -141,5 +141,11 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
   }[tone];
   return <span className={cx('inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium', styles)}>{children}</span>;
 }
+
+/** Ομάδα επιλογών (π.χ. «Uber | FreeNow»): η επιλεγμένη με το ίδιο κίτρινο που έχουν τα κύρια κουμπιά. */
+export const choiceStyles = {
+  on: 'bg-accent font-semibold text-on-accent shadow-sm',
+  off: 'text-muted hover:bg-card hover:text-fg',
+} as const;
 
 export { cx };

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { Button, Card, cx } from '@/components/ui';
+import { Panel } from '@/components/Panel';
+import { Button, cx } from '@/components/ui';
 import type { ShiftFigures } from '@/lib/accounting';
 import { formatDateTime, formatEuro, formatKm } from '@/lib/format';
 import { monthName } from '@/lib/period';
@@ -35,15 +36,23 @@ export function ShiftList({
 }) {
   const [limit, setLimit] = useState(PAGE);
   const visible = items.slice(0, limit);
+  const grossCents = items.reduce((sum, item) => sum + item.figures.grossReceiptsCents, 0);
 
   // Ο οδηγός διορθώνει/διαγράφει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
   const canModify = (row: ShiftRow) =>
     isAdmin || (row.created_by === userId && Date.parse(row.created_at) > fetchedAt - DAY_MS);
 
   return (
-    <Card
+    <Panel
+      id="shifts"
       title={`Ιστορικό Βαρδιών · ${periodText}`}
-      actions={<span className="text-sm text-muted">{loading ? 'Φόρτωση…' : `${items.length} βάρδιες`}</span>}
+      summary={
+        loading
+          ? 'Φόρτωση…'
+          : items.length === 0
+            ? 'Καμία βάρδια'
+            : `${items.length === 1 ? '1 βάρδια' : `${items.length} βάρδιες`} · μικτή είσπραξη ${formatEuro(grossCents)}`
+      }
       className={cx(loading && 'opacity-60')}
     >
       {items.length === 0 ? (
@@ -184,6 +193,6 @@ export function ShiftList({
           )}
         </>
       )}
-    </Card>
+    </Panel>
   );
 }

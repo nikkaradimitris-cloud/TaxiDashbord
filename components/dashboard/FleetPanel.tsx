@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
-import { Badge, Button, Card, Field, Input, Notice, Select } from '@/components/ui';
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { Panel, usePanelOpen } from '@/components/Panel';
+import { Badge, Button, Field, Input, Notice, Select } from '@/components/ui';
 import { createDriver, deleteDriver, fetchProfiles, updateDriver, type DriverInput } from '@/lib/data';
 import { dataErrorMessage } from '@/lib/errors';
 import { formatDateTime } from '@/lib/format';
@@ -42,6 +43,13 @@ export function FleetPanel({
   const [message, setMessage] = useState<Message | null>(null);
   const [profiles, setProfiles] = useState<ProfileRow[] | null>(null);
   const [assign, setAssign] = useState<Record<string, string>>({});
+  /** Η φόρμα «νέος οδηγός» ανοίγει με κουμπί (ανοιχτή από την αρχή όταν δεν υπάρχει κανένας οδηγός). */
+  const [adding, setAdding] = useState(false);
+  const showAddForm = adding || (loaded && drivers.length === 0);
+  const newDriverRef = useRef<HTMLButtonElement>(null);
+  // Χωρίς οδηγούς το πάνελ ανοίγει μόνο του· μετά τον πρώτο οδηγό μένει ανοιχτό μέχρι να το κλείσει ο χρήστης.
+  const [, setPanelOpen] = usePanelOpen('fleet', false);
+  const linkedCount = drivers.filter((driver) => driver.user_id).length;
 
   useEffect(() => {
     let cancelled = false;
@@ -87,7 +95,12 @@ export function FleetPanel({
       return;
     }
     const ok = await run(() => createDriver(supabase, form), `Ο οδηγός «${form.name.trim()}» προστέθηκε.`);
-    if (ok) setForm(EMPTY);
+    if (ok) {
+      setForm(EMPTY);
+      // Η φόρμα μένει ανοιχτή για τον επόμενο οδηγό (και όταν ήταν ο πρώτος).
+      setAdding(true);
+      setPanelOpen(true);
+    }
   }
 
   async function handleSaveEdit(driver: DriverRow) {
@@ -141,50 +154,85 @@ export function FleetPanel({
   }
 
   return (
-    <Card title="Υποδομή Στόλου" id="fleet">
-      <p className="-mt-2 mb-4 text-sm text-muted">
-        Οι οδηγοί που προσθέτετε εμφανίζονται αυτόματα στα μενού. Αν δηλώσετε email, ο οδηγός κάνει εγγραφή με αυτό
-        και βλέπει/καταχωρεί μόνο τις δικές του βάρδιες.
-      </p>
-
-      <form onSubmit={handleAdd} className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Field label="Όνομα Οδηγού *">
-          <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoComplete="off" />
-        </Field>
-        <Field label="Πινακίδα">
-          <Input
-            value={form.plate}
-            placeholder="π.χ. ΤΑΕ-1234"
-            onChange={(e) => setForm({ ...form, plate: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-        <Field label="Κινητό" error={phoneWarning(form.phone)}>
-          <Input
-            type="tel"
-            inputMode="tel"
-            value={form.phone}
-            placeholder="69XXXXXXXX"
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-        <Field label="Email σύνδεσης" hint="Προαιρετικό">
-          <Input
-            type="email"
-            inputMode="email"
-            value={form.email}
-            placeholder="odigos@email.gr"
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            autoComplete="off"
-          />
-        </Field>
-        <div className="flex items-end">
-          <Button type="submit" variant="primary" className="w-full" disabled={busy}>
-            + Προσθήκη οδηγού
-          </Button>
-        </div>
-      </form>
+    <Panel
+      id="fleet"
+      title="Υποδομή Στόλου"
+      summary={
+        !loaded
+          ? 'Φόρτωση…'
+          : drivers.length === 0
+            ? 'Κανένας οδηγός ακόμη'
+            : `${drivers.length === 1 ? '1 οδηγός' : `${drivers.length} οδηγοί`} · ${linkedCount} με λογαριασμό`
+      }
+      badge={unlinked.length > 0 ? <Badge tone="warn">{unlinked.length} χωρίς αντιστοίχιση</Badge> : null}
+      defaultOpen={loaded && drivers.length === 0}
+    >
+      {showAddForm ? (
+        <>
+          <p className="mb-3 text-sm text-muted">
+            Οι οδηγοί που προσθέτετε εμφανίζονται αυτόματα στα μενού. Αν δηλώσετε email, ο οδηγός κάνει εγγραφή με
+            αυτό και βλέπει/καταχωρεί μόνο τις δικές του βάρδιες.
+          </p>
+          <form onSubmit={handleAdd} className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2 lg:grid-cols-5">
+            <Field label="Όνομα Οδηγού *">
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                autoComplete="off"
+                autoFocus={adding}
+              />
+            </Field>
+            <Field label="Πινακίδα">
+              <Input
+                value={form.plate}
+                placeholder="π.χ. ΤΑΕ-1234"
+                onChange={(e) => setForm({ ...form, plate: e.target.value })}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Κινητό" error={phoneWarning(form.phone)}>
+              <Input
+                type="tel"
+                inputMode="tel"
+                value={form.phone}
+                placeholder="69XXXXXXXX"
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                autoComplete="off"
+              />
+            </Field>
+            <Field label="Email σύνδεσης" hint="Προαιρετικό">
+              <Input
+                type="email"
+                inputMode="email"
+                value={form.email}
+                placeholder="odigos@email.gr"
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                autoComplete="off"
+              />
+            </Field>
+            <div className="flex items-end gap-2">
+              <Button type="submit" variant="primary" className="w-full" disabled={busy}>
+                + Προσθήκη οδηγού
+              </Button>
+              {drivers.length > 0 && (
+                <Button
+                  onClick={() => {
+                    setAdding(false);
+                    requestAnimationFrame(() => newDriverRef.current?.focus());
+                  }}
+                  disabled={busy}
+                >
+                  Άκυρο
+                </Button>
+              )}
+            </div>
+          </form>
+        </>
+      ) : (
+        <Button ref={newDriverRef} variant="primary" onClick={() => setAdding(true)}>
+          + Νέος οδηγός
+        </Button>
+      )}
 
       {message && (
         <Notice tone={message.tone} className="mt-3">
@@ -310,6 +358,6 @@ export function FleetPanel({
           </ul>
         </div>
       )}
-    </Card>
+    </Panel>
   );
 }

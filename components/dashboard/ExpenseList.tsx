@@ -1,6 +1,7 @@
 'use client';
 
-import { Button, Card, cx } from '@/components/ui';
+import { Panel } from '@/components/Panel';
+import { Button, cx } from '@/components/ui';
 import type { ExpenseFigures } from '@/lib/accounting';
 import { categoryLabel } from '@/lib/expenses';
 import { formatDateTime, formatEuro } from '@/lib/format';
@@ -45,13 +46,15 @@ export function ExpenseList({
   };
 
   return (
-    <Card
+    <Panel
       id="expenses"
       title={`Έξοδα Οχήματος · ${periodText}`}
-      actions={
-        <span className="text-sm text-muted">
-          {loading ? 'Φόρτωση…' : items.length === 1 ? '1 έξοδο' : `${items.length} έξοδα`}
-        </span>
+      summary={
+        loading
+          ? 'Φόρτωση…'
+          : items.length === 0
+            ? 'Κανένα έξοδο'
+            : `${items.length === 1 ? '1 έξοδο' : `${items.length} έξοδα`} · ${formatEuro(totalCents)}`
       }
       className={cx(loading && 'opacity-60')}
     >
@@ -171,6 +174,6 @@ export function ExpenseList({
           </dl>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }

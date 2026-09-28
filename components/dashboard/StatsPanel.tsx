@@ -1,7 +1,8 @@
 'use client';
 
 import { useMemo, type CSSProperties, type ReactNode } from 'react';
-import { cx, Notice } from '@/components/ui';
+import { Chevron, Panel, usePanelOpen } from '@/components/Panel';
+import { Badge, cx, Notice } from '@/components/ui';
 import { summarize, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
 import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
@@ -56,6 +57,7 @@ export function StatsPanel({
     `Έξοδα οχήματος ${formatEuro(totals.vehicleExpensesCents)}`,
     totals.appCommissionCents > 0 ? `Κρατήσεις εφαρμογών ${formatEuro(totals.appCommissionCents)}` : null,
   ];
+  const [vatOpen, setVatOpen] = usePanelOpen('vat-details', false);
 
   return (
     <section aria-busy={loading} className={cx('min-w-0 space-y-4 transition-opacity', loading && 'opacity-50')}>
@@ -67,16 +69,18 @@ export function StatsPanel({
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-        <Stat label="Καθαρά Έσοδα" value={formatEuro(totals.netRevenueCents)} />
-        <Stat label="ΦΠΑ Εσόδων 13%" value={formatEuro(totals.vatCents)} />
-        <Stat label="Φιλοδωρήματα / Άλλα" value={formatEuro(totals.tipsCents)} sub="Χωρίς ΦΠΑ" />
         <Stat label="Μικτή Είσπραξη (Τζίρος)" value={formatEuro(totals.grossReceiptsCents)} />
         <Stat
           label="Συνολικά Έξοδα"
           value={formatEuro(totals.totalExpensesCents)}
           sub={expenseParts.filter(Boolean).join(' · ')}
         />
-        <Stat label="Καθαρό Ταμείο (Τσέπη)" value={formatEuro(totals.netCashCents)} emphasis />
+        <Stat
+          label="Καθαρό Ταμείο (Τσέπη)"
+          value={formatEuro(totals.netCashCents)}
+          emphasis
+          className="col-span-2 xl:col-span-1"
+        />
       </div>
 
       <div
@@ -105,34 +109,59 @@ export function StatsPanel({
             <WhatsAppShare driver={selectedDriver} year={year} month={month} totals={totals} loading={loading} />
           )}
         </div>
-        <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm tabular-nums">
-          <dt>ΦΠΑ εσόδων 13%</dt>
-          <dd className="text-right">+ {formatEuro(totals.vatCents)}</dd>
-          <dt>ΦΠΑ εξόδων 24% (εμπεριεχόμενος)</dt>
-          <dd className="text-right">− {formatEuro(totals.expensesVatCents)}</dd>
-        </dl>
-        {noVatCents > 0 && (
-          <p className="mt-2 text-xs">
-            Οι κρατήσεις {noVatPlatforms.map((platform) => platformLabel(platform.platform)).join(', ')} (
-            {formatEuro(noVatCents)}) δεν έχουν ΦΠΑ και δεν συμψηφίζονται.
-          </p>
-        )}
+        <button
+          type="button"
+          aria-expanded={vatOpen}
+          aria-controls="vat-details"
+          onClick={() => setVatOpen(!vatOpen)}
+          className={cx(
+            'mt-2 inline-flex min-h-9 items-center gap-1 rounded-lg text-sm font-semibold',
+            'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
+          )}
+        >
+          Ανάλυση ΦΠΑ
+          <Chevron open={vatOpen} className="text-current" />
+        </button>
+        <div id="vat-details" hidden={!vatOpen}>
+          <dl className="mt-1 grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 text-sm tabular-nums">
+            <dt>ΦΠΑ εσόδων 13%</dt>
+            <dd className="text-right">+ {formatEuro(totals.vatCents)}</dd>
+            <dt>ΦΠΑ εξόδων 24% (εμπεριεχόμενος)</dt>
+            <dd className="text-right">− {formatEuro(totals.expensesVatCents)}</dd>
+          </dl>
+          {noVatCents > 0 && (
+            <p className="mt-2 text-xs">
+              Οι κρατήσεις {noVatPlatforms.map((platform) => platformLabel(platform.platform)).join(', ')} (
+              {formatEuro(noVatCents)}) δεν έχουν ΦΠΑ και δεν συμψηφίζονται.
+            </p>
+          )}
+        </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat
-          label="Συνολικά Χλμ"
-          value={formatKm(totals.totalKm)}
-          sub={`Μισθ. ${formatKm(totals.paidKm)} · Ελεύθ. ${formatKm(totals.emptyKm)}`}
-        />
-        <Stat label="Αξιοποίηση" value={formatPercent(totals.utilizationPct)} sub="Μισθωμένα / Συνολικά χλμ" />
-        <Stat label="Έσοδο ανά χλμ" value={formatEuroPerKm(totals.revenuePerKm)} sub="Καθαρά / Συνολικά χλμ" />
-        <Stat
-          label="Διαδρομές"
-          value={formatInteger(totals.trips)}
-          sub={`${totals.shifts} βάρδιες${platformMonths.length > 0 ? ` · δρόμος ${formatInteger(totals.streetTrips)}` : ''}`}
-        />
-      </div>
+      <Panel
+        id="stats-details"
+        headingLevel={3}
+        title="Έσοδα, χιλιόμετρα & διαδρομές"
+        summary={`καθαρά ${formatEuro(totals.netRevenueCents)} · ${formatKm(totals.totalKm)} χλμ · ${formatInteger(totals.trips)} διαδρομές`}
+      >
+        <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 text-sm tabular-nums">
+          <Detail label="Καθαρά έσοδα" value={formatEuro(totals.netRevenueCents)} />
+          <Detail label="ΦΠΑ εσόδων 13%" value={formatEuro(totals.vatCents)} />
+          <Detail label="Φιλοδωρήματα / άλλα" sub="χωρίς ΦΠΑ" value={formatEuro(totals.tipsCents)} />
+          <Detail
+            label="Συνολικά χλμ"
+            sub={`μισθωμένα ${formatKm(totals.paidKm)} · ελεύθερα ${formatKm(totals.emptyKm)}`}
+            value={formatKm(totals.totalKm)}
+          />
+          <Detail label="Αξιοποίηση" sub="μισθωμένα / συνολικά χλμ" value={formatPercent(totals.utilizationPct)} />
+          <Detail label="Έσοδο ανά χλμ" sub="καθαρά / συνολικά χλμ" value={formatEuroPerKm(totals.revenuePerKm)} />
+          <Detail
+            label="Διαδρομές"
+            sub={`${totals.shifts} βάρδιες${platformMonths.length > 0 ? ` · δρόμος ${formatInteger(totals.streetTrips)}` : ''}`}
+            value={formatInteger(totals.trips)}
+          />
+        </dl>
+      </Panel>
 
       {platformMonths.length > 0 && <StreetAndApps totals={totals} platformMonths={platformMonths} />}
 
@@ -162,10 +191,15 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
     invoiced === months ? 'τιμολόγιο' : invoiced === 0 ? 'προσωρινή' : `τιμολόγια ${invoiced}/${months}`;
 
   return (
-    <div className="rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <h3 className="font-semibold">Δρόμος & Εφαρμογές</h3>
+    <Panel
+      id="street-apps"
+      headingLevel={3}
+      title="Δρόμος & Εφαρμογές"
+      summary={`δρόμος ${formatInteger(totals.streetTrips)} από ${formatInteger(totals.trips)} διαδρομές · κρατήσεις ${formatEuro(totals.appCommissionCents)}`}
+      badge={totals.streetTrips < 0 ? <Badge tone="warn">έλεγχος</Badge> : null}
+    >
       <p className="text-xs text-muted">Οι κούρσες των εφαρμογών είναι μέσα στα Ζ· οι υπόλοιπες είναι από τον δρόμο.</p>
-      <div className="-mx-4 mt-3 overflow-x-auto px-4">
+      <div className="-mx-4 mt-3 overflow-x-auto px-4 sm:-mx-5 sm:px-5">
         <table className="w-full min-w-[19rem] text-sm tabular-nums">
           <thead className="text-left text-xs text-muted">
             <tr>
@@ -226,16 +260,42 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
         Τζίρος δρόμου = μικτή είσπραξη των Ζ − έσοδα εφαρμογών. «Προσωρινή» κράτηση: από τις εβδομάδες, μέχρι να
         καταχωρηθεί το τιμολόγιο του μήνα.
       </p>
-    </div>
+    </Panel>
   );
 }
 
-function Stat({ label, value, sub, emphasis }: { label: string; value: string; sub?: string; emphasis?: boolean }) {
+/** Μία γραμμή στις «λεπτομέρειες»: τίτλος (με εξήγηση) και τιμή. */
+function Detail({ label, sub, value }: { label: string; sub?: string; value: string }) {
+  return (
+    <>
+      <dt>
+        {label}
+        {sub && <span className="block text-xs text-muted">{sub}</span>}
+      </dt>
+      <dd className="text-right font-semibold">{value}</dd>
+    </>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  sub,
+  emphasis,
+  className,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  emphasis?: boolean;
+  className?: string;
+}) {
   return (
     <div
       className={cx(
         '@container rounded-2xl border p-3 shadow-sm',
         emphasis ? 'border-accent-strong bg-accent text-on-accent' : 'border-line bg-card',
+        className,
       )}
     >
       <p className={cx('text-xs font-medium', emphasis ? 'text-on-accent/80' : 'text-muted')}>{label}</p>
@@ -347,9 +407,13 @@ function PerDriver({
   if (rows.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-line bg-card p-4 shadow-sm">
-      <h3 className="mb-3 font-semibold">Ανά οδηγό</h3>
-      <div className="-mx-4 overflow-x-auto px-4">
+    <Panel
+      id="per-driver"
+      headingLevel={3}
+      title="Ανά οδηγό"
+      summary={`${rows.length === 1 ? '1 οδηγός' : `${rows.length} οδηγοί`} · καθαρά, ΦΠΑ, ταμείο`}
+    >
+      <div className="-mx-4 overflow-x-auto px-4 sm:-mx-5 sm:px-5">
         <table className="w-full min-w-[34rem] text-sm tabular-nums">
           <thead className="text-left text-xs text-muted">
             <tr>
@@ -385,6 +449,6 @@ function PerDriver({
         </table>
       </div>
       <p className="mt-2 text-xs text-muted">Χ = Χρεωστικό, Π = Πιστωτικό. Πατήστε ένα όνομα για φιλτράρισμα.</p>
-    </div>
+    </Panel>
   );
 }
