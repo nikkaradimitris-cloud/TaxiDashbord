@@ -43,6 +43,16 @@ export function formatInteger(value: number): string {
   return integer.format(value);
 }
 
+/** Αριθμός με έως 1 δεκαδικό: 12.34 → "12,3" */
+export function formatDecimal(value: number): string {
+  return decimal1.format(value);
+}
+
+/** Ποσό για άξονα γραφήματος, χωρίς περιττά δεκαδικά: 100000 λεπτά → "1.000 €", 250 → "2,50 €" */
+export function formatEuroTick(cents: number): string {
+  return cents % 100 === 0 ? `${integer.format(cents / 100)}\u00a0€` : formatEuro(cents);
+}
+
 /** Ποσό για CSV/Excel: 123456 λεπτά → "1234,56" (χωρίς χιλιάδες, ελληνική υποδιαστολή). */
 export function formatCentsPlain(cents: number): string {
   const sign = cents < 0 ? '-' : '';

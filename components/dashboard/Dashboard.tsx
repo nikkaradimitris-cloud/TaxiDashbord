@@ -359,6 +359,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 driversById={driversById}
                 showPerDriver={isAdmin && driverFilter === 'all'}
                 onSelectDriver={(id) => setPrefs({ driverFilter: id })}
+                chartMetric={prefs.chartMetric}
+                onChartMetricChange={(chartMetric) => setPrefs({ chartMetric })}
               />
             </div>
 

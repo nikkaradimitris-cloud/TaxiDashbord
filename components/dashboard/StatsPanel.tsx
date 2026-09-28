@@ -3,10 +3,12 @@
 import { useMemo, type ReactNode } from 'react';
 import { cx } from '@/components/ui';
 import { summarize, vatStatus, type ShiftFigures, type Totals } from '@/lib/accounting';
+import type { ChartMetric } from '@/lib/chart';
 import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
 import type { DriverRow, ShiftRow } from '@/lib/types';
 import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
+import { TrendChart } from './TrendChart';
 
 const STATUS_TEXT = {
   debit: 'Χρεωστικό — προς πληρωμή',
@@ -25,6 +27,8 @@ export function StatsPanel({
   driversById,
   showPerDriver,
   onSelectDriver,
+  chartMetric,
+  onChartMetricChange,
 }: {
   totals: Totals;
   loading: boolean;
@@ -36,6 +40,8 @@ export function StatsPanel({
   driversById: Map<string, DriverRow>;
   showPerDriver: boolean;
   onSelectDriver: (driverId: string) => void;
+  chartMetric: ChartMetric;
+  onChartMetricChange: (metric: ChartMetric) => void;
 }) {
   const status = vatStatus(totals.vatBalanceCents);
 
@@ -105,6 +111,15 @@ export function StatsPanel({
         <Stat label="Έσοδο ανά χλμ" value={formatEuroPerKm(totals.revenuePerKm)} sub="Καθαρά / Συνολικά χλμ" />
         <Stat label="Διαδρομές" value={formatInteger(totals.trips)} sub={`${totals.shifts} βάρδιες`} />
       </div>
+
+      <TrendChart
+        items={items}
+        driversById={driversById}
+        year={year}
+        month={month}
+        metric={chartMetric}
+        onMetricChange={onChartMetricChange}
+      />
 
       {showPerDriver && <PerDriver items={items} driversById={driversById} onSelectDriver={onSelectDriver} />}
     </section>
