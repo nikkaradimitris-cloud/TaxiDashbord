@@ -131,12 +131,12 @@ export function Notice({ tone = 'info', children, className }: { tone?: NoticeTo
   );
 }
 
-export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'good' | 'bad' | 'accent' | 'warn' }) {
+/** Σήμανση (δεν πατιέται, γι' αυτό ποτέ κίτρινη). */
+export function Badge({ children, tone = 'neutral' }: { children: ReactNode; tone?: 'neutral' | 'good' | 'bad' | 'warn' }) {
   const styles = {
     neutral: 'bg-bg text-muted border-line',
     good: 'bg-good-soft text-good border-good/30',
     bad: 'bg-bad-soft text-bad border-bad/30',
-    accent: 'bg-accent text-on-accent border-accent-strong',
     warn: 'bg-warn-soft text-warn border-warn/30',
   }[tone];
   return <span className={cx('inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium', styles)}>{children}</span>;

@@ -78,7 +78,7 @@ export function StatsPanel({
         <Stat
           label="Καθαρό Ταμείο (Τσέπη)"
           value={formatEuro(totals.netCashCents)}
-          emphasis
+          tone={totals.netCashCents > 0 ? 'good' : totals.netCashCents < 0 ? 'bad' : undefined}
           className="col-span-2 xl:col-span-1"
         />
       </div>
@@ -281,32 +281,37 @@ function Stat({
   label,
   value,
   sub,
-  emphasis,
+  tone,
   className,
 }: {
   label: string;
   value: string;
   sub?: string;
-  emphasis?: boolean;
+  /** Πράσινο για θετικό, κόκκινο για αρνητικό ποσό. Όχι κίτρινο: κίτρινο είναι μόνο ό,τι πατιέται. */
+  tone?: 'good' | 'bad';
   className?: string;
 }) {
   return (
     <div
       className={cx(
         '@container rounded-2xl border p-3 shadow-sm',
-        emphasis ? 'border-accent-strong bg-accent text-on-accent' : 'border-line bg-card',
+        tone === 'good' ? 'border-good/40 bg-good-soft' : tone === 'bad' ? 'border-bad/40 bg-bad-soft' : 'border-line bg-card',
         className,
       )}
     >
-      <p className={cx('text-xs font-medium', emphasis ? 'text-on-accent/80' : 'text-muted')}>{label}</p>
+      <p className="text-xs font-medium text-muted">{label}</p>
       {/* Το ποσό μικραίνει μόνο αν δεν χωράει στην κάρτα (μικρό κινητό, «Α+»). */}
       <p
-        className="fit-number mt-1 leading-tight font-bold tabular-nums [--fit-max:var(--text-xl)] sm:[--fit-max:var(--text-2xl)]"
+        className={cx(
+          'fit-number mt-1 leading-tight font-bold tabular-nums [--fit-max:var(--text-xl)] sm:[--fit-max:var(--text-2xl)]',
+          tone === 'good' && 'text-good',
+          tone === 'bad' && 'text-bad',
+        )}
         style={{ '--chars': value.length } as CSSProperties}
       >
         {value}
       </p>
-      {sub && <p className={cx('mt-1 text-xs', emphasis ? 'text-on-accent/80' : 'text-muted')}>{sub}</p>}
+      {sub && <p className="mt-1 text-xs text-muted">{sub}</p>}
     </div>
   );
 }

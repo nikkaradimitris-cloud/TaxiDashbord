@@ -603,7 +603,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               <span className="hidden text-sm text-muted lg:inline">{session.email}</span>
               {/* Στο κινητό ο ρόλος φαίνεται ήδη κάτω από τον τίτλο. */}
               <span className="hidden sm:inline-flex">
-                <Badge tone={isAdmin ? 'accent' : 'neutral'}>{isAdmin ? 'Admin' : 'Οδηγός'}</Badge>
+                <Badge>{isAdmin ? 'Admin' : 'Οδηγός'}</Badge>
               </span>
               <TextSizeToggle />
               <SignOutButton className="px-3" />
