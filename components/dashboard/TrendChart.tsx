@@ -1,6 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type PointerEvent } from 'react';
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type CSSProperties,
+  type KeyboardEvent,
+  type PointerEvent,
+} from 'react';
 import { cx } from '@/components/ui';
 import type { ShiftFigures } from '@/lib/accounting';
 import {
@@ -15,6 +24,7 @@ import {
 } from '@/lib/chart';
 import { formatDecimal, formatEuro, formatEuroTick, formatInteger } from '@/lib/format';
 import type { MonthFilter } from '@/lib/period';
+import { getTextSize, subscribeStorage, type TextSize } from '@/lib/storage';
 import type { DriverRow, ShiftRow } from '@/lib/types';
 
 const METRIC_TITLE: Record<ChartMetric, string> = {
@@ -49,6 +59,7 @@ function pointDetail(data: ChartData, series: ChartSeries, point: ChartPoint): s
   return parts.join(' · ');
 }
 
+/** Το γράφημα της κάρτας «Αναλυτικά» (κουμπιά μεγέθους, υπόμνημα, SVG). */
 export function TrendChart({
   items,
   driversById,
@@ -69,31 +80,18 @@ export function TrendChart({
     () => buildChartData(items, { metric, year, month, drivers }),
     [items, metric, year, month, drivers],
   );
-  const [showTable, setShowTable] = useState(false);
 
   const title = `${METRIC_TITLE[metric]} ανά ${data.mode === 'shifts' ? 'βάρδια' : 'μήνα'}`;
-  const who = data.series.length === 1 ? data.series[0].name : data.series.length > 1 ? 'Ένα χρώμα ανά οδηγό' : null;
-  const subtitle = [who, data.mode === 'shifts' ? 'σειρά αριθμού Ζ' : `έτος ${year}`].filter(Boolean).join(' · ');
+  const subtitle = [
+    data.series.length > 1 ? 'Ένα χρώμα ανά οδηγό' : null,
+    data.mode === 'shifts' ? 'σειρά αριθμού Ζ' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
   const hasValues = data.series.some((series) => series.points.some((point) => point.value !== null));
 
   return (
-    <div className="rounded-2xl border border-line bg-card p-4 shadow-sm" data-testid="trend-chart">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
-          <h3 className="font-semibold">{title}</h3>
-          <p className="text-xs text-muted">{subtitle}</p>
-        </div>
-        {data.average !== null && (
-          <div className="shrink-0 text-right">
-            <p className="flex items-center justify-end gap-1.5 text-xs text-muted">
-              <AverageKey />
-              {data.averageLabel}
-            </p>
-            <p className="font-semibold">{formatValue(metric, data.average)}</p>
-          </div>
-        )}
-      </div>
-
+    <>
       <div role="group" aria-label="Τι δείχνει το γράφημα" className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-bg p-1">
         {CHART_METRICS.map(({ id, label }) => (
           <button
@@ -113,6 +111,22 @@ export function TrendChart({
       </div>
       <p className="mt-2 text-xs text-muted">{METRIC_NOTE[metric]}</p>
 
+      <div className="mt-3 flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <h4 className="font-semibold">{title}</h4>
+          {subtitle && <p className="text-xs text-muted">{subtitle}</p>}
+        </div>
+        {data.average !== null && (
+          <div className="shrink-0 text-right">
+            <p className="flex items-center justify-end gap-1.5 text-xs text-muted">
+              <AverageKey />
+              {data.averageLabel}
+            </p>
+            <p className="font-semibold">{formatValue(metric, data.average)}</p>
+          </div>
+        )}
+      </div>
+
       {data.series.length > 1 && (
         <ul className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs" aria-label="Οδηγοί">
           {data.series.map((series) => (
@@ -124,34 +138,23 @@ export function TrendChart({
         </ul>
       )}
 
-      {!hasValues ? (
+      {hasValues ? (
+        <Plot data={data} title={title} />
+      ) : (
         <p className="mt-3 flex h-56 items-center justify-center rounded-xl bg-bg px-4 text-center text-sm text-muted">
           {items.length === 0
             ? 'Δεν υπάρχουν βάρδιες για αυτή την περίοδο.'
             : 'Δεν υπάρχουν διαδρομές για τον υπολογισμό της μέσης αξίας.'}
         </p>
-      ) : showTable ? (
-        <ChartTable data={data} />
-      ) : (
-        <Plot data={data} title={title} />
       )}
 
-      <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">
-          {data.hiddenDrivers > 0 &&
-            `Εμφανίζονται οι ${MAX_SERIES} οδηγοί με τον μεγαλύτερο τζίρο· για τους άλλους ${data.hiddenDrivers} επιλέξτε οδηγό στο φίλτρο.`}
+      {data.hiddenDrivers > 0 && (
+        <p className="mt-2 text-xs text-muted">
+          Εμφανίζονται οι {MAX_SERIES} οδηγοί με τον μεγαλύτερο τζίρο· για τους άλλους {data.hiddenDrivers} επιλέξτε
+          οδηγό στο φίλτρο.
         </p>
-        {hasValues && (
-          <button
-            type="button"
-            onClick={() => setShowTable((value) => !value)}
-            className="min-h-8 rounded-lg px-2 text-xs font-medium text-muted underline hover:text-fg focus-visible:outline-2 focus-visible:outline-accent-strong"
-          >
-            {showTable ? 'Προβολή γραφήματος' : 'Προβολή πίνακα'}
-          </button>
-        )}
-      </div>
-    </div>
+      )}
+    </>
   );
 }
 
@@ -167,10 +170,11 @@ function AverageKey() {
 // Γράφημα (SVG)
 // ---------------------------------------------------------------------------
 
-const PLOT_TOP = 18; // χώρος για την ετικέτα της τελευταίας τιμής
-const AXIS_BAND = 24; // ετικέτες του άξονα Χ
 const RIGHT_PAD = 8;
-const TICK_FONT = 11;
+/** Γράμματα αξόνων σε px (όπως το text-xs της εφαρμογής: 13px, ×1.125 με το «Α+»). */
+const AXIS_FONT = 13;
+/** Μέσο πλάτος χαρακτήρα ως κλάσμα του μεγέθους γραμμάτων (για τα περιθώρια). */
+const CHAR_WIDTH = 0.62;
 
 /** Θέση του τελευταίου σημείου με τιμή (-1 αν δεν υπάρχει). */
 function lastValueIndex(points: ChartPoint[]): number {
@@ -194,10 +198,16 @@ function runs(points: ChartPoint[]): number[][] {
   return result;
 }
 
+const NORMAL_TEXT: TextSize = 'normal';
+
 function Plot({ data, title }: { data: ChartData; title: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
   const [active, setActive] = useState<number | null>(null);
+  const large = useSyncExternalStore(subscribeStorage, getTextSize, () => NORMAL_TEXT) === 'large';
+  const font = AXIS_FONT * (large ? 1.125 : 1);
+  const PLOT_TOP = Math.round(font + 7); // χώρος για την ετικέτα της τελευταίας τιμής
+  const AXIS_BAND = Math.round(font + 13); // ετικέτες του άξονα Χ
 
   useEffect(() => {
     const element = box.current;
@@ -221,7 +231,7 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
   const ticks = niceTicks(Math.max(data.maxValue * 1.05, integer ? 1 : 100), { integer });
   const yMax = ticks[ticks.length - 1];
   const tickText = (value: number) => (integer ? formatInteger(value) : formatEuroTick(value));
-  const left = Math.max(...ticks.map((tick) => tickText(tick).length)) * 6.5 + 10;
+  const left = Math.max(...ticks.map((tick) => tickText(tick).length)) * font * CHAR_WIDTH + 10;
   const plotWidth = Math.max(0, width - left - RIGHT_PAD);
   const slot = count > 0 ? plotWidth / count : 0;
   const x = (index: number) => left + (index + 0.5) * slot;
@@ -229,7 +239,7 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
 
   // Άξονας Χ: αραίωση ετικετών ώστε να μην πέφτουν η μία πάνω στην άλλη.
   const labelChars = Math.max(1, ...data.xLabels.map((label) => label.length));
-  const labelEvery = Math.max(1, Math.ceil((labelChars * 7 + 10) / Math.max(slot, 1)));
+  const labelEvery = Math.max(1, Math.ceil((labelChars * font * CHAR_WIDTH + 12) / Math.max(slot, 1)));
 
   const lastWithData = Math.max(-1, ...series.map((s) => lastValueIndex(s.points)));
 
@@ -324,7 +334,7 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
                 strokeWidth={1}
                 shapeRendering="crispEdges"
               />
-              <text x={left - 8} y={y(tick)} dy="0.32em" textAnchor="end" fontSize={TICK_FONT} fill="var(--muted)">
+              <text x={left - 8} y={y(tick)} dy="0.32em" textAnchor="end" fontSize={font} fill="var(--muted)">
                 {tickText(tick)}
               </text>
             </g>
@@ -336,9 +346,9 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
               <text
                 key={index}
                 x={x(index)}
-                y={bottom + 16}
+                y={bottom + font + 4}
                 textAnchor="middle"
-                fontSize={TICK_FONT}
+                fontSize={font}
                 fill={index === current ? 'var(--fg)' : 'var(--muted)'}
               >
                 {label}
@@ -435,7 +445,7 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
               const text = formatValue(metric, value);
               const px = x(index);
               const py = y(value);
-              const beside = px + 10 + text.length * 6.6 <= left + plotWidth;
+              const beside = px + 10 + text.length * font * CHAR_WIDTH <= left + plotWidth;
               const anchor = beside ? 'start' : px > left + plotWidth - 44 ? 'end' : px < left + 44 ? 'start' : 'middle';
               return (
                 <text
@@ -443,7 +453,7 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
                   y={beside ? py : py - 10 < PLOT_TOP ? py + 20 : py - 10}
                   dy={beside ? '0.32em' : undefined}
                   textAnchor={anchor}
-                  fontSize={TICK_FONT}
+                  fontSize={font}
                   fontWeight={600}
                   fill="var(--fg)"
                   stroke="var(--card)"
@@ -489,60 +499,6 @@ function Plot({ data, title }: { data: ChartData; title: string }) {
       <p className="sr-only" aria-live="polite">
         {description}
       </p>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Πίνακας (οι ίδιες τιμές χωρίς γράφημα)
-// ---------------------------------------------------------------------------
-
-function ChartTable({ data }: { data: ChartData }) {
-  const multi = data.series.length > 1;
-  const rows = data.xTitles
-    .map((title, index) => ({ index, title, points: data.series.map((series) => series.points[index]) }))
-    .filter((row) => row.points.some((point) => point.shifts > 0));
-
-  return (
-    <div className="-mx-4 mt-3 overflow-x-auto px-4">
-      <table className="w-full text-sm tabular-nums">
-        <thead className="text-left text-xs text-muted">
-          <tr>
-            <th className="py-1 pr-3 font-medium">{data.mode === 'months' ? 'Μήνας' : 'Βάρδια'}</th>
-            {data.series.map((series) => (
-              <th key={series.driverId} className="py-1 pr-3 text-right font-medium last:pr-0">
-                {multi ? series.name : METRIC_TITLE[data.metric]}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.index} className="border-t border-line">
-              <td className="py-1.5 pr-3 whitespace-nowrap">{row.title}</td>
-              {row.points.map((point, index) => {
-                const detail = point.value === null ? '' : pointDetail(data, data.series[index], point);
-                return (
-                  <td key={data.series[index].driverId} className="py-1.5 pr-3 text-right whitespace-nowrap last:pr-0">
-                    {point.value === null ? '—' : formatValue(data.metric, point.value)}
-                    {detail && <span className="block text-xs text-muted">{detail}</span>}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
-        </tbody>
-        {data.average !== null && (
-          <tfoot>
-            <tr className="border-t border-line font-semibold">
-              <td className="py-1.5 pr-3">{data.averageLabel}</td>
-              <td colSpan={data.series.length} className="py-1.5 text-right">
-                {formatValue(data.metric, data.average)}
-              </td>
-            </tr>
-          </tfoot>
-        )}
-      </table>
     </div>
   );
 }

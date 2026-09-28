@@ -4,7 +4,7 @@
   --bg: #f3f4f6;
   --card: #ffffff;
   --fg: #111827;
-  --muted: #6b7280;
+  --muted: #565e6b;
   --line: #e5e7eb;
   --field: #ffffff;
   --accent: #facc15; /* κίτρινο ταξί */
@@ -31,6 +31,12 @@
   --chart-7: #1baf7a;
   --chart-8: #e34948;
   --chart-other: #8b8f97;
+  /* Μέγεθος γραμμάτων: 1 = κανονικό, 1.125 με το κουμπί «Α+» (βλ. @theme πιο κάτω). */
+  --font-scale: 1;
+}
+
+:root[data-text-size='large'] {
+  --font-scale: 1.125;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -38,7 +44,7 @@
     --bg: #0b0f19;
     --card: #151b2b;
     --fg: #e5e7eb;
-    --muted: #9ca3af;
+    --muted: #a8afbb;
     --line: #263041;
     --field: #0f1522;
     --accent: #facc15;
@@ -63,6 +69,28 @@
   }
 }
 
+/*
+ * Μεγαλύτερα γράμματα για ευκολότερη ανάγνωση: κάθε μέγεθος +2px από τα
+ * προεπιλεγμένα του Tailwind (12→14, 14→16, 16→18px…) και ×1.125 με το «Α+».
+ * Τα κενά/περιθώρια δεν αλλάζουν, ώστε η διάταξη να μένει ίδια.
+ */
+@theme {
+  --text-xs: calc(0.875rem * var(--font-scale));
+  --text-xs--line-height: 1.45;
+  --text-sm: calc(1rem * var(--font-scale));
+  --text-sm--line-height: 1.45;
+  --text-base: calc(1.125rem * var(--font-scale));
+  --text-base--line-height: 1.5;
+  --text-lg: calc(1.25rem * var(--font-scale));
+  --text-lg--line-height: 1.45;
+  --text-xl: calc(1.375rem * var(--font-scale));
+  --text-xl--line-height: 1.35;
+  --text-2xl: calc(1.625rem * var(--font-scale));
+  --text-2xl--line-height: 1.25;
+  --text-3xl: calc(2rem * var(--font-scale));
+  --text-3xl--line-height: 1.2;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-card: var(--card);
@@ -83,6 +111,16 @@
   --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", "Helvetica Neue", Arial, sans-serif;
 }
 
+/*
+ * Μεγάλα ποσά στις κάρτες: έως --fit-max, αλλά ποτέ πιο φαρδιά από την κάρτα
+ * (π.χ. «123.456,78 €» σε μικρό κινητό ή με «Α+»). Το --chars είναι το πλήθος
+ * χαρακτήρων και το 0.62em ένα άνετο μέσο πλάτος χαρακτήρα για έντονα ψηφία.
+ */
+@utility fit-number {
+  font-size: var(--fit-max);
+  font-size: min(var(--fit-max), calc(100cqw / (var(--chars) * 0.62)));
+}
+
 html {
   color-scheme: light dark;
   -webkit-text-size-adjust: 100%;
@@ -92,4 +130,6 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: var(--text-base--line-height);
 }

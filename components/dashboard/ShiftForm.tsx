@@ -178,7 +178,7 @@ export function ShiftForm({
       className={cx(isEditing && 'ring-2 ring-accent-strong')}
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-3">
           <Field label="Μήνας">
             <Select value={month} onChange={(e) => setMonth(Number(e.target.value))}>
               {GREEK_MONTHS.map((name, index) => (
@@ -258,7 +258,16 @@ export function ShiftForm({
 
         <Group title="Έσοδα">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Αποφορολογημένα Έσοδα (€)" error={errors.netRevenue}>
+            {/* <wbr>: η μεγάλη λέξη σπάει σε στενές οθόνες αντί να πέφτει πάνω στο διπλανό πεδίο. */}
+            <Field
+              label={
+                <>
+                  Αποφορολογη<wbr />
+                  μένα Έσοδα (€)
+                </>
+              }
+              error={errors.netRevenue}
+            >
               <Input inputMode="decimal" autoComplete="off" placeholder="0,00" {...set('netRevenue')} />
             </Field>
             <Field label="ΦΠΑ 13% (αυτόματα)" hint="Καθαρά × 0,129933">

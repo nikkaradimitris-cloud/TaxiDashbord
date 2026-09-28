@@ -1,4 +1,6 @@
 import type { Metadata, Viewport } from 'next';
+import Script from 'next/script';
+import { TEXT_SIZE_KEY } from '@/lib/storage';
 import './globals.css';
 
 export const metadata: Metadata = {
@@ -16,10 +18,18 @@ export const viewport: Viewport = {
   ],
 };
 
+// Τα μεγάλα γράμματα («Α+») εφαρμόζονται πριν εμφανιστεί η σελίδα, ώστε να μη «πηδάει».
+const textSizeScript = `try{if(JSON.parse(localStorage.getItem(${JSON.stringify(TEXT_SIZE_KEY)}))==='large')document.documentElement.dataset.textSize='large'}catch(e){}`;
+
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
-    <html lang="el">
-      <body className="min-h-dvh antialiased">{children}</body>
+    <html lang="el" suppressHydrationWarning>
+      <body className="min-h-dvh antialiased">
+        <Script id="text-size" strategy="beforeInteractive">
+          {textSizeScript}
+        </Script>
+        {children}
+      </body>
     </html>
   );
 }

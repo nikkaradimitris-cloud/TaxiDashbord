@@ -80,7 +80,7 @@ export function Field({
 }) {
   return (
     <label className={cx('block', className)}>
-      <span className="mb-1 block text-sm font-medium">{label}</span>
+      <span className="mb-1 block text-sm font-medium [overflow-wrap:anywhere]">{label}</span>
       {children}
       {error ? (
         <span className="mt-1 block text-sm text-bad">{error}</span>

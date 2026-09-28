@@ -110,8 +110,11 @@ function metricValue(metric: ChartMetric, point: Omit<ChartPoint, 'value' | 'zNu
   return point.trips > 0 ? point.fareCents / point.trips : null;
 }
 
-/** Σταθερή σειρά χρωμάτων: οι οδηγοί με τη σειρά που μπήκαν στον στόλο. */
-function colorRanks(drivers: readonly ChartDriver[], driverIds: Iterable<string>): Map<string, number> {
+/**
+ * Σταθερή σειρά οδηγών (χρώματα γραφήματος, σειρά στον πίνακα): με τη σειρά
+ * που μπήκαν στον στόλο.
+ */
+export function driverRanks(drivers: readonly ChartDriver[], driverIds: Iterable<string>): Map<string, number> {
   const known = [...drivers].sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id));
   const ranks = new Map(known.map((driver, index) => [driver.id, index]));
   // Οδηγοί που δεν έχουν φορτωθεί ακόμη: μετά τους γνωστούς.
@@ -132,7 +135,7 @@ export function buildChartData(
     list.push(item);
     groups.set(item.row.driver_id, list);
   }
-  const ranks = colorRanks(drivers, groups.keys());
+  const ranks = driverRanks(drivers, groups.keys());
   const names = new Map(drivers.map((driver) => [driver.id, driver.name]));
 
   // Πάνω από MAX_SERIES οδηγούς: κρατάμε όσους έχουν τον μεγαλύτερο τζίρο.

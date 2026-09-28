@@ -27,7 +27,7 @@ export function PeriodBar({
 
   return (
     <section id="filters" className="rounded-2xl border border-line bg-card p-3 shadow-sm sm:p-4">
-      <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end">
+      <div className="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3 sm:flex sm:flex-wrap sm:items-end">
         <Field label="Έτος" className="sm:w-32">
           <Select value={prefs.year} onChange={(e) => onChange({ year: Number(e.target.value) })}>
             {years.map((y) => (

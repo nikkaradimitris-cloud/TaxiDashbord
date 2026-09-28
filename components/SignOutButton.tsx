@@ -18,7 +18,15 @@ export function SignOutButton({ className }: { className?: string }) {
 
   return (
     <Button variant="ghost" onClick={signOut} disabled={busy} className={className}>
-      {busy ? 'Έξοδος…' : 'Αποσύνδεση'}
+      {busy ? (
+        'Έξοδος…'
+      ) : (
+        <>
+          {/* Στο κινητό πιο σύντομο, ώστε να χωράει ο τίτλος με μεγάλα γράμματα. */}
+          <span className="sm:hidden">Έξοδος</span>
+          <span className="hidden sm:inline">Αποσύνδεση</span>
+        </>
+      )}
     </Button>
   );
 }

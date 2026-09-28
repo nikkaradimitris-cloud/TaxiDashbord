@@ -1,6 +1,7 @@
 /**
  * Μνήμη της συσκευής (localStorage), ως "stores" για το useSyncExternalStore:
- *  - η επιλεγμένη περίοδος (Έτος/Μήνας), το φίλτρο οδηγού και τι δείχνει το γράφημα,
+ *  - η επιλεγμένη περίοδος (Έτος/Μήνας), το φίλτρο οδηγού και η προβολή πίνακα/γραφήματος,
+ *  - το μέγεθος των γραμμάτων (κουμπί «Α+»),
  *  - οι βάρδιες που περιμένουν αποστολή όταν δεν υπάρχει σήμα,
  *  - δεδομένα της παλιάς τοπικής έκδοσης (για μεταφορά στο Supabase).
  * Όλες οι προσβάσεις είναι προστατευμένες: σε ιδιωτική περιήγηση απλώς δεν
@@ -61,11 +62,18 @@ function cached<T>(key: string, compute: () => T): T {
 // Περίοδος (Έτος/Μήνας) και φίλτρο οδηγού
 // ---------------------------------------------------------------------
 
+export type StatsView = 'table' | 'chart';
+export type TableGroup = 'shifts' | 'months';
+
 export interface Preferences {
   year: number;
   month: MonthFilter;
   /** 'all' ή id οδηγού. */
   driverFilter: string;
+  /** Πίνακας ή γράφημα στην κάρτα «Αναλυτικά». */
+  statsView: StatsView;
+  /** Γραμμές του πίνακα: μία ανά βάρδια ή μία ανά μήνα του έτους. */
+  tableGroup: TableGroup;
   /** Τι δείχνει το γράφημα (Τζίρος / Διαδρομές / Μέση αξία διαδρομής). */
   chartMetric: ChartMetric;
   /** Ο τρέχων μήνας τη στιγμή που άνοιξε η σελίδα (για προειδοποιήσεις). */
@@ -83,6 +91,8 @@ export function getPreferences(userId: string): Preferences {
       year: isValidYear(stored.year) ? stored.year : today.year,
       month: stored.month === 'all' || isValidMonth(stored.month) ? stored.month : today.month,
       driverFilter: typeof stored.driverFilter === 'string' ? stored.driverFilter : 'all',
+      statsView: stored.statsView === 'chart' ? 'chart' : 'table',
+      tableGroup: stored.tableGroup === 'months' ? 'months' : 'shifts',
       chartMetric: isChartMetric(stored.chartMetric) ? stored.chartMetric : 'gross',
       today,
     };
@@ -96,9 +106,37 @@ export function updatePreferences(userId: string, changes: Partial<Omit<Preferen
     year: next.year,
     month: next.month,
     driverFilter: next.driverFilter,
+    statsView: next.statsView,
+    tableGroup: next.tableGroup,
     chartMetric: next.chartMetric,
   });
   notify();
+}
+
+// ---------------------------------------------------------------------
+// Μέγεθος γραμμάτων (ίδιο για όλους τους χρήστες της συσκευής)
+// ---------------------------------------------------------------------
+
+export type TextSize = 'normal' | 'large';
+
+/** Το ίδιο κλειδί διαβάζει και το script του app/layout.tsx πριν εμφανιστεί η σελίδα. */
+export const TEXT_SIZE_KEY = 'taxi-tracker:text-size';
+
+export function getTextSize(): TextSize {
+  return cached(TEXT_SIZE_KEY, () => (read(TEXT_SIZE_KEY) === 'large' ? 'large' : 'normal'));
+}
+
+export function setTextSize(size: TextSize) {
+  snapshots.set(TEXT_SIZE_KEY, size);
+  write(TEXT_SIZE_KEY, size === 'large' ? size : null);
+  applyTextSize(size);
+  notify();
+}
+
+/** Εφαρμογή στο <html>: το globals.css μεγαλώνει όλα τα γράμματα με `data-text-size="large"`. */
+export function applyTextSize(size: TextSize) {
+  if (size === 'large') document.documentElement.dataset.textSize = 'large';
+  else delete document.documentElement.dataset.textSize;
 }
 
 // ---------------------------------------------------------------------

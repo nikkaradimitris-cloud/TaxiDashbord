@@ -6,6 +6,7 @@
 import type { MonthFilter } from './period';
 import type { BrowserSupabase } from './supabase/client';
 import type { TablesUpdate } from './database.types';
+import type { MonthSummaryRow } from './table';
 import type { DriverRow, ProfileRow, ShiftInsert, ShiftRow } from './types';
 
 const PAGE_SIZE = 1000;
@@ -38,6 +39,24 @@ export async function fetchShifts(supabase: BrowserSupabase, query: ShiftQuery):
     if (data.length === 0) break;
   }
   return rows;
+}
+
+/**
+ * Σύνολα ανά οδηγό και μήνα για όλο το έτος (προβολή `monthly_summary` της βάσης),
+ * για τον πίνακα «Ανά μήνα» όταν στη σελίδα είναι ανοιχτός ένας μόνο μήνας.
+ */
+export async function fetchMonthlySummary(
+  supabase: BrowserSupabase,
+  query: { year: number; driverId?: string | null },
+): Promise<MonthSummaryRow[]> {
+  let request = supabase
+    .from('monthly_summary')
+    .select('month, shifts, trips, net_revenue, vat, gross_receipts')
+    .eq('year', query.year);
+  if (query.driverId) request = request.eq('driver_id', query.driverId);
+  const { data, error } = await request.order('month');
+  if (error) throw error;
+  return data;
 }
 
 /**

@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Logo } from '@/components/Logo';
 import { SignOutButton } from '@/components/SignOutButton';
+import { TextSizeToggle } from '@/components/TextSizeToggle';
 import { Badge, Notice } from '@/components/ui';
 import { figuresFromStored, summarize } from '@/lib/accounting';
 import { buildShiftsCsv, csvFileName } from '@/lib/csv';
-import { deleteShift, fetchDrivers, fetchShifts, insertShift } from '@/lib/data';
+import { deleteShift, fetchDrivers, fetchMonthlySummary, fetchShifts, insertShift } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
 import { periodLabel } from '@/lib/period';
 import {
@@ -20,7 +21,9 @@ import {
   type Preferences,
 } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/client';
+import type { MonthSummaryRow } from '@/lib/table';
 import type { DriverRow, SessionInfo, ShiftRow } from '@/lib/types';
+import { AnalysisCard } from './AnalysisCard';
 import { EditShiftDialog } from './EditShiftDialog';
 import { FleetPanel } from './FleetPanel';
 import { LegacyImport } from './LegacyImport';
@@ -125,6 +128,44 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
   const loading = !shiftsState || shiftsState.key !== queryKey;
   const shifts = useMemo(() => shiftsState?.rows ?? [], [shiftsState]);
+
+  // ------------------------------------------------------------------
+  // Σύνολα όλων των μηνών του έτους (πίνακας «Ανά μήνα» με ανοιχτό έναν μήνα).
+  // Ξαναφορτώνονται μετά από κάθε καταχώρηση/διόρθωση/διαγραφή.
+  // ------------------------------------------------------------------
+  const [summaryVersion, setSummaryVersion] = useState(0);
+  const [summaryState, setSummaryState] = useState<{
+    key: string;
+    rows: MonthSummaryRow[];
+    error: string | null;
+  } | null>(null);
+  const needsYearSummary =
+    prefs?.statsView === 'table' && prefs.tableGroup === 'months' && prefs.month !== 'all';
+  const summaryKey = needsYearSummary ? `${year}|${driverFilter}|${shiftsVersion}|${summaryVersion}` : null;
+
+  useEffect(() => {
+    if (summaryKey === null || year === undefined) return;
+    let cancelled = false;
+    fetchMonthlySummary(supabase, { year, driverId: driverFilter === 'all' ? null : driverFilter }).then(
+      (rows) => {
+        if (!cancelled) setSummaryState({ key: summaryKey, rows, error: null });
+      },
+      (error) => {
+        if (!cancelled) setSummaryState({ key: summaryKey, rows: [], error: dataErrorMessage(error) });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, summaryKey, year, driverFilter]);
+
+  const yearSummary = summaryKey
+    ? {
+        rows: summaryState?.rows ?? [],
+        loading: summaryState?.key !== summaryKey,
+        error: summaryState?.key === summaryKey ? summaryState.error : null,
+      }
+    : null;
   const items = useMemo(() => shifts.map((row) => ({ row, figures: figuresFromStored(row) })), [shifts]);
   const totals = useMemo(() => summarize(items.map((item) => item.figures)), [items]);
 
@@ -138,6 +179,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     (driverFilter === 'all' || row.driver_id === driverFilter);
 
   function handleSaved(row: ShiftRow) {
+    setSummaryVersion((v) => v + 1);
     if (!matchesView(row)) return;
     setShiftsState((prev) =>
       prev && prev.key === queryKey && !prev.rows.some((r) => r.id === row.id)
@@ -152,6 +194,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   }
 
   function handleUpdated(row: ShiftRow) {
+    setSummaryVersion((v) => v + 1);
     setShiftsState((prev) =>
       prev
         ? {
@@ -183,6 +226,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
         return;
       }
       setShiftsState((prev) => (prev ? { ...prev, rows: prev.rows.filter((r) => r.id !== row.id) } : prev));
+      setSummaryVersion((v) => v + 1);
       if (editing?.id === row.id) setEditing(null);
       setMessage({ tone: 'success', text: `Η βάρδια Ζ ${row.z_number} διαγράφηκε.` });
     } catch (error) {
@@ -271,10 +315,14 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="hidden text-sm text-muted md:inline">{session.email}</span>
-            <Badge tone={isAdmin ? 'accent' : 'neutral'}>{isAdmin ? 'Admin' : 'Οδηγός'}</Badge>
-            <SignOutButton />
+          <div className="flex shrink-0 items-center gap-2">
+            <span className="hidden text-sm text-muted lg:inline">{session.email}</span>
+            {/* Στο κινητό ο ρόλος φαίνεται ήδη κάτω από τον τίτλο. */}
+            <span className="hidden sm:inline-flex">
+              <Badge tone={isAdmin ? 'accent' : 'neutral'}>{isAdmin ? 'Admin' : 'Οδηγός'}</Badge>
+            </span>
+            <TextSizeToggle />
+            <SignOutButton className="px-3" />
           </div>
         </div>
       </header>
@@ -359,8 +407,24 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 driversById={driversById}
                 showPerDriver={isAdmin && driverFilter === 'all'}
                 onSelectDriver={(id) => setPrefs({ driverFilter: id })}
-                chartMetric={prefs.chartMetric}
-                onChartMetricChange={(chartMetric) => setPrefs({ chartMetric })}
+                analysis={
+                  <AnalysisCard
+                    items={items}
+                    driversById={driversById}
+                    isAdmin={isAdmin}
+                    selectedDriver={selectedDriver}
+                    year={prefs.year}
+                    month={prefs.month}
+                    view={prefs.statsView}
+                    onViewChange={(statsView) => setPrefs({ statsView })}
+                    tableGroup={prefs.tableGroup}
+                    onTableGroupChange={(tableGroup) => setPrefs({ tableGroup })}
+                    chartMetric={prefs.chartMetric}
+                    onChartMetricChange={(chartMetric) => setPrefs({ chartMetric })}
+                    yearSummary={yearSummary}
+                    onSelectMonth={(month) => setPrefs({ month, tableGroup: 'shifts' })}
+                  />
+                }
               />
             </div>
 

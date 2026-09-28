@@ -1,14 +1,12 @@
 'use client';
 
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, type CSSProperties, type ReactNode } from 'react';
 import { cx } from '@/components/ui';
 import { summarize, vatStatus, type ShiftFigures, type Totals } from '@/lib/accounting';
-import type { ChartMetric } from '@/lib/chart';
 import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
 import type { DriverRow, ShiftRow } from '@/lib/types';
 import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
-import { TrendChart } from './TrendChart';
 
 const STATUS_TEXT = {
   debit: 'Χρεωστικό — προς πληρωμή',
@@ -27,8 +25,7 @@ export function StatsPanel({
   driversById,
   showPerDriver,
   onSelectDriver,
-  chartMetric,
-  onChartMetricChange,
+  analysis,
 }: {
   totals: Totals;
   loading: boolean;
@@ -40,8 +37,8 @@ export function StatsPanel({
   driversById: Map<string, DriverRow>;
   showPerDriver: boolean;
   onSelectDriver: (driverId: string) => void;
-  chartMetric: ChartMetric;
-  onChartMetricChange: (metric: ChartMetric) => void;
+  /** Η κάρτα «Αναλυτικά» (πίνακας/γράφημα), κάτω από τις κάρτες απόδοσης. */
+  analysis: ReactNode;
 }) {
   const status = vatStatus(totals.vatBalanceCents);
 
@@ -112,30 +109,29 @@ export function StatsPanel({
         <Stat label="Διαδρομές" value={formatInteger(totals.trips)} sub={`${totals.shifts} βάρδιες`} />
       </div>
 
-      <TrendChart
-        items={items}
-        driversById={driversById}
-        year={year}
-        month={month}
-        metric={chartMetric}
-        onMetricChange={onChartMetricChange}
-      />
+      {analysis}
 
       {showPerDriver && <PerDriver items={items} driversById={driversById} onSelectDriver={onSelectDriver} />}
     </section>
   );
 }
 
-function Stat({ label, value, sub, emphasis }: { label: string; value: ReactNode; sub?: string; emphasis?: boolean }) {
+function Stat({ label, value, sub, emphasis }: { label: string; value: string; sub?: string; emphasis?: boolean }) {
   return (
     <div
       className={cx(
-        'rounded-2xl border p-3 shadow-sm',
+        '@container rounded-2xl border p-3 shadow-sm',
         emphasis ? 'border-accent-strong bg-accent text-on-accent' : 'border-line bg-card',
       )}
     >
       <p className={cx('text-xs font-medium', emphasis ? 'text-on-accent/80' : 'text-muted')}>{label}</p>
-      <p className="mt-1 text-xl font-bold tabular-nums sm:text-2xl">{value}</p>
+      {/* Το ποσό μικραίνει μόνο αν δεν χωράει στην κάρτα (μικρό κινητό, «Α+»). */}
+      <p
+        className="fit-number mt-1 leading-tight font-bold tabular-nums [--fit-max:var(--text-xl)] sm:[--fit-max:var(--text-2xl)]"
+        style={{ '--chars': value.length } as CSSProperties}
+      >
+        {value}
+      </p>
       {sub && <p className={cx('mt-1 text-xs', emphasis ? 'text-on-accent/80' : 'text-muted')}>{sub}</p>}
     </div>
   );
