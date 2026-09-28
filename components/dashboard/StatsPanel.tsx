@@ -5,13 +5,7 @@ import { cx, Notice } from '@/components/ui';
 import { summarize, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
 import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
-import {
-  commissionRatePct,
-  platformLabel,
-  totalsByPlatform,
-  type PlatformMonth,
-  type PlatformTotals,
-} from '@/lib/platforms';
+import { platformLabel, totalsByPlatform, type PlatformMonth } from '@/lib/platforms';
 import type { DriverRow, ExpenseRow, ShiftRow } from '@/lib/types';
 import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
 
@@ -54,9 +48,9 @@ export function StatsPanel({
   analysis: ReactNode;
 }) {
   const status = vatStatus(totals.vatBalanceCents);
-  const uberCommissionCents = platformMonths
-    .filter((group) => group.platform === 'uber')
-    .reduce((sum, group) => sum + group.commissionCents, 0);
+  // Κρατήσεις χωρίς ΦΠΑ (ενδοκοινοτικά τιμολόγια, π.χ. Uber): στα έξοδα, αλλά όχι στον συμψηφισμό.
+  const noVatPlatforms = totalsByPlatform(platformMonths).filter((platform) => platform.commissionNoVatCents > 0);
+  const noVatCents = noVatPlatforms.reduce((sum, platform) => sum + platform.commissionNoVatCents, 0);
   const expenseParts = [
     `Καύσιμα ${formatEuro(totals.fuelCents)}`,
     `Έξοδα οχήματος ${formatEuro(totals.vehicleExpensesCents)}`,
@@ -117,9 +111,10 @@ export function StatsPanel({
           <dt>ΦΠΑ εξόδων 24% (εμπεριεχόμενος)</dt>
           <dd className="text-right">− {formatEuro(totals.expensesVatCents)}</dd>
         </dl>
-        {uberCommissionCents > 0 && (
+        {noVatCents > 0 && (
           <p className="mt-2 text-xs">
-            Οι κρατήσεις Uber ({formatEuro(uberCommissionCents)}) δεν έχουν ΦΠΑ και δεν συμψηφίζονται.
+            Οι κρατήσεις {noVatPlatforms.map((platform) => platformLabel(platform.platform)).join(', ')} (
+            {formatEuro(noVatCents)}) δεν έχουν ΦΠΑ και δεν συμψηφίζονται.
           </p>
         )}
       </div>
@@ -158,17 +153,13 @@ export function StatsPanel({
 
 /**
  * Δρόμος & Εφαρμογές: οι κούρσες των εφαρμογών είναι μέσα στα Ζ, οι υπόλοιπες
- * είναι από τον δρόμο. Κράτηση ανά εφαρμογή, με ποσοστό επί του τζίρου της.
+ * είναι από τον δρόμο. Κράτηση ανά εφαρμογή (τιμολόγιο ή, προσωρινά, εβδομάδες).
  */
 function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMonths: PlatformMonth[] }) {
   const platforms = totalsByPlatform(platformMonths);
   const share = (trips: number) => (totals.trips > 0 ? formatPercent((trips / totals.trips) * 100) : '—');
   const source = (invoiced: number, months: number) =>
     invoiced === months ? 'τιμολόγιο' : invoiced === 0 ? 'προσωρινή' : `τιμολόγια ${invoiced}/${months}`;
-  const rate = (platform: PlatformTotals) => {
-    const pct = commissionRatePct(platform);
-    return pct === null ? null : formatPercent(pct);
-  };
 
   return (
     <div className="rounded-2xl border border-line bg-card p-4 shadow-sm">
@@ -202,12 +193,6 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
               <tr key={platform.platform} className="border-t border-line">
                 <th scope="row" className="py-2 pr-2 text-left font-medium">
                   {platformLabel(platform.platform)}
-                  {/* Στο κινητό το ποσοστό φαίνεται στη λίστα «Εφαρμογές» (ο πίνακας δεν χωράει). */}
-                  {rate(platform) && (
-                    <span className="hidden text-xs font-normal whitespace-nowrap text-muted sm:block">
-                      κράτηση {rate(platform)}
-                    </span>
-                  )}
                 </th>
                 <td className="py-2 pr-2 text-right">
                   {formatInteger(platform.trips)}

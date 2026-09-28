@@ -2,19 +2,21 @@
 
 import { Button, Card, cx } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
-import { formatDateTime, formatEuro, formatInteger, formatPercent, formatSignedEuro } from '@/lib/format';
+import { formatEuro, formatInteger, formatSignedEuro } from '@/lib/format';
 import { monthName, type MonthFilter } from '@/lib/period';
 import {
-  commissionRatePct,
+  findRate,
   formatWeek,
+  isAutoCommission,
   PLATFORMS,
-  platformHasVat,
   platformLabel,
+  rateLabel,
+  toVatRate,
   weekCycles,
   weekState,
   type PlatformMonth,
 } from '@/lib/platforms';
-import type { DriverRow, StatementRow } from '@/lib/types';
+import type { DriverRow, PlatformRateRow, StatementRow } from '@/lib/types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -38,14 +40,28 @@ function entryTitle(row: StatementRow) {
   return `Εβδομάδα ${row.week_start && row.week_end ? formatWeek(row.week_start, row.week_end) : ''}`;
 }
 
+const percent = new Intl.NumberFormat('el-GR', { maximumFractionDigits: 2 });
+
+/** Πώς βγήκε η κράτηση της εβδομάδας: «κράτηση 15%» (αυτόματα) ή «ποσό της κίνησης». */
+function rateNote(row: StatementRow): string {
+  if (row.kind !== 'week') return '';
+  if (row.rate_pct != null && isAutoCommission(row)) return `κράτηση ${percent.format(Number(row.rate_pct))}%`;
+  return 'ποσό της κίνησης';
+}
+
+function vatText(row: StatementRow): string {
+  return toVatRate(row.vat_rate) === 24 ? formatEuro(toCents(Number(row.commission_vat ?? 0))) : 'χωρίς ΦΠΑ';
+}
+
 /**
  * Οι καταχωρήσεις εφαρμογών της περιόδου. Για ένα αυτοκίνητο και έναν μήνα
- * δείχνει ανά εφαρμογή ποιες εβδομάδες έχουν μπει, ποιες λείπουν και αν
- * υπάρχει το τιμολόγιο του μήνα.
+ * δείχνει ανά εφαρμογή το ποσοστό, ποιες εβδομάδες έχουν μπει, ποιες λείπουν
+ * και αν υπάρχει το τιμολόγιο του μήνα.
  */
 export function PlatformList({
   statements,
   months,
+  rates,
   loading,
   driversById,
   isAdmin,
@@ -63,6 +79,7 @@ export function PlatformList({
   statements: StatementRow[];
   /** Ανά αυτοκίνητο, μήνα και εφαρμογή (κράτηση: τιμολόγιο ή εβδομάδες). */
   months: PlatformMonth[];
+  rates: readonly PlatformRateRow[];
   loading: boolean;
   driversById: Map<string, DriverRow>;
   isAdmin: boolean;
@@ -86,12 +103,22 @@ export function PlatformList({
     (sum, group) => ({
       trips: sum.trips + group.trips,
       turnoverCents: sum.turnoverCents + group.turnoverCents,
+      tipsCents: sum.tipsCents + group.tipsCents,
       commissionCents: sum.commissionCents + group.commissionCents,
       commissionVatCents: sum.commissionVatCents + group.commissionVatCents,
+      commissionNoVatCents: sum.commissionNoVatCents + group.commissionNoVatCents,
     }),
-    { trips: 0, turnoverCents: 0, commissionCents: 0, commissionVatCents: 0 },
+    { trips: 0, turnoverCents: 0, tipsCents: 0, commissionCents: 0, commissionVatCents: 0, commissionNoVatCents: 0 },
   );
   const checklist = month !== 'all' && carId !== null;
+  // Μόνο οι εφαρμογές που χρησιμοποιεί το αυτοκίνητο: με ποσοστό ή με καταχωρήσεις στον μήνα.
+  const usedPlatforms = checklist
+    ? PLATFORMS.filter(
+        ({ id }) =>
+          findRate(rates, carId, id) !== null ||
+          statements.some((row) => row.driver_id === carId && row.month === month && row.platform === id),
+      )
+    : [];
 
   const vehicle = (row: StatementRow) => {
     const driver = driversById.get(row.driver_id);
@@ -110,19 +137,29 @@ export function PlatformList({
       className={cx(loading && 'opacity-60')}
     >
       {checklist ? (
-        <div className="mb-4 grid gap-3 md:grid-cols-2">
-          {PLATFORMS.map(({ id }) => (
-            <PlatformMonthCard
-              key={id}
-              platform={id}
-              year={year}
-              month={month}
-              today={today}
-              rows={statements.filter((row) => row.driver_id === carId && row.month === month && row.platform === id)}
-              group={months.find((group) => group.driverId === carId && group.month === month && group.platform === id) ?? null}
-            />
-          ))}
-        </div>
+        usedPlatforms.length > 0 ? (
+          <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {usedPlatforms.map(({ id }) => (
+              <PlatformMonthCard
+                key={id}
+                platform={id}
+                year={year}
+                month={month}
+                today={today}
+                rateText={(() => {
+                  const rate = findRate(rates, carId, id);
+                  return rate ? rateLabel(rate) : null;
+                })()}
+                rows={statements.filter((row) => row.driver_id === carId && row.month === month && row.platform === id)}
+                group={months.find((group) => group.driverId === carId && group.month === month && group.platform === id) ?? null}
+              />
+            ))}
+          </div>
+        ) : (
+          <p className="mb-3 text-sm text-muted">
+            Για να ξεκινήσετε, πατήστε «Εφαρμογή» στη φόρμα και ορίστε το ποσοστό της Uber, της FreeNow ή της Bolt.
+          </p>
+        )
       ) : (
         <p className="mb-3 text-sm text-muted">
           {month === 'all'
@@ -141,6 +178,7 @@ export function PlatformList({
           <ul className="space-y-3 md:hidden">
             {sorted.map((row) => {
               const { plate, name } = vehicle(row);
+              const tipsCents = toCents(Number(row.tips));
               return (
                 <li
                   key={row.id}
@@ -154,17 +192,24 @@ export function PlatformList({
                         <p className="text-sm">
                           <span className="whitespace-nowrap">{formatInteger(row.trips)} διαδρομές</span> ·{' '}
                           <span className="whitespace-nowrap">τζίρος {formatEuro(toCents(Number(row.turnover)))}</span>
+                          {tipsCents > 0 && (
+                            <>
+                              {' · '}
+                              <span className="whitespace-nowrap">φιλοδωρήματα {formatEuro(tipsCents)}</span>
+                            </>
+                          )}
                         </p>
                       )}
                       <p className="text-xs text-muted">
                         {monthName(row.month)} {row.year} · {plate ? `${plate} · ` : ''}
                         {name}
+                        {rateNote(row) && ` · ${rateNote(row)}`}
                       </p>
                     </div>
                     <p className="shrink-0 text-right font-bold tabular-nums">
                       {formatEuro(toCents(Number(row.commission)))}
                       <span className="block text-xs font-normal text-muted">
-                        {platformHasVat(row.platform) ? `ΦΠΑ ${formatEuro(toCents(Number(row.commission_vat ?? 0)))}` : 'χωρίς ΦΠΑ'}
+                        {toVatRate(row.vat_rate) === 24 ? `ΦΠΑ ${vatText(row)}` : vatText(row)}
                       </span>
                     </p>
                   </div>
@@ -185,7 +230,7 @@ export function PlatformList({
 
           {/* Υπολογιστής/tablet: πίνακας */}
           <div className="-mx-5 hidden overflow-x-auto px-5 md:block">
-            <table className="w-full min-w-[48rem] text-sm tabular-nums">
+            <table className="w-full min-w-[52rem] text-sm tabular-nums">
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Περίοδος</th>
@@ -194,9 +239,9 @@ export function PlatformList({
                   <th className="py-2 pr-3 font-medium">Καταχώρηση</th>
                   <th className="py-2 pr-3 text-right font-medium">Διαδρομές</th>
                   <th className="py-2 pr-3 text-right font-medium">Τζίρος</th>
+                  <th className="py-2 pr-3 text-right font-medium">Φιλοδ.</th>
                   <th className="py-2 pr-3 text-right font-medium">Κράτηση</th>
                   <th className="py-2 pr-3 text-right font-medium">ΦΠΑ 24%</th>
-                  <th className="py-2 pr-3 font-medium">Καταχωρήθηκε</th>
                   <th className="py-2" />
                 </tr>
               </thead>
@@ -220,13 +265,14 @@ export function PlatformList({
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
                         {isWeek ? formatEuro(toCents(Number(row.turnover))) : '—'}
                       </td>
-                      <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">
-                        {formatEuro(toCents(Number(row.commission)))}
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">
+                        {isWeek ? formatEuro(toCents(Number(row.tips))) : '—'}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
-                        {platformHasVat(row.platform) ? formatEuro(toCents(Number(row.commission_vat ?? 0))) : 'χωρίς ΦΠΑ'}
+                        <span className="font-semibold">{formatEuro(toCents(Number(row.commission)))}</span>
+                        {rateNote(row) && <span className="block text-xs text-muted">{rateNote(row)}</span>}
                       </td>
-                      <td className="py-2 pr-3 text-xs whitespace-nowrap text-muted">{formatDateTime(row.created_at)}</td>
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">{vatText(row)}</td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {canModify(row) && (
                           <>
@@ -259,15 +305,21 @@ export function PlatformList({
           <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 border-t-2 border-line pt-2 text-sm tabular-nums">
             <dt>Διαδρομές εφαρμογών</dt>
             <dd className="text-right">{formatInteger(totals.trips)}</dd>
-            <dt>Τζίρος εφαρμογών</dt>
+            <dt>Τζίρος εφαρμογών (με φιλοδωρήματα)</dt>
             <dd className="text-right">{formatEuro(totals.turnoverCents)}</dd>
             <dt className="font-semibold">Κρατήσεις που μετράνε στα έξοδα</dt>
             <dd className="text-right font-semibold">{formatEuro(totals.commissionCents)}</dd>
             <dt className="text-muted">ΦΠΑ κρατήσεων 24% (συμψηφίζεται)</dt>
             <dd className="text-right text-muted">{formatEuro(totals.commissionVatCents)}</dd>
+            {totals.commissionNoVatCents > 0 && (
+              <>
+                <dt className="text-muted">Κρατήσεις χωρίς ΦΠΑ (δεν συμψηφίζονται)</dt>
+                <dd className="text-right text-muted">{formatEuro(totals.commissionNoVatCents)}</dd>
+              </>
+            )}
           </dl>
           <p className="mt-2 text-xs text-muted">
-            Όπου υπάρχει τιμολόγιο μήνα μετράει το τιμολόγιο, αλλιώς οι εβδομάδες. Η Uber τιμολογεί χωρίς ΦΠΑ.
+            Όπου υπάρχει τιμολόγιο μήνα μετράει το τιμολόγιο, αλλιώς οι εβδομάδες.
           </p>
         </>
       )}
@@ -281,12 +333,13 @@ const WEEK_STYLE = {
   open: 'border-line bg-bg text-muted',
 } as const;
 
-/** Μία εφαρμογή για ένα αυτοκίνητο και έναν μήνα: εβδομάδες και τιμολόγιο. */
+/** Μία εφαρμογή για ένα αυτοκίνητο και έναν μήνα: ποσοστό, εβδομάδες και τιμολόγιο. */
 function PlatformMonthCard({
   platform,
   year,
   month,
   today,
+  rateText,
   rows,
   group,
 }: {
@@ -294,13 +347,14 @@ function PlatformMonthCard({
   year: number;
   month: number;
   today: string;
+  /** Η ρύθμιση του αυτοκινήτου, π.χ. «15% + ΦΠΑ 24%». */
+  rateText: string | null;
   rows: StatementRow[];
   group: PlatformMonth | null;
 }) {
   const entered = new Set(rows.flatMap((row) => (row.kind === 'week' && row.week_start ? [row.week_start] : [])));
   const weeks = weekCycles(year, month);
   const invoice = group?.invoice ?? null;
-  const ratePct = group ? commissionRatePct(group) : null;
 
   return (
     <section className="rounded-xl border border-line p-3" aria-label={`${platformLabel(platform)}: εβδομάδες και τιμολόγιο`}>
@@ -310,15 +364,10 @@ function PlatformMonthCard({
           Κράτηση <b>{formatEuro(group?.commissionCents ?? 0)}</b>
         </p>
       </div>
+      <p className="text-xs text-muted">Ποσοστό: {rateText ?? 'δεν έχει οριστεί'}</p>
       <p className="text-xs text-muted tabular-nums">
         <span className="whitespace-nowrap">{formatInteger(group?.trips ?? 0)} διαδρομές</span> ·{' '}
         <span className="whitespace-nowrap">τζίρος {formatEuro(group?.turnoverCents ?? 0)}</span>
-        {ratePct !== null && (
-          <>
-            {' · '}
-            <span className="whitespace-nowrap">κράτηση {formatPercent(ratePct)}</span>
-          </>
-        )}
       </p>
       <ul className="mt-2 flex flex-wrap gap-1.5">
         {weeks.map((week) => {

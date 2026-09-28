@@ -56,6 +56,41 @@ export type Database = {
         };
         Relationships: [];
       };
+      platform_rates: {
+        Row: {
+          driver_id: string;
+          platform: string;
+          rate_pct: number;
+          updated_at: string;
+          updated_by: string | null;
+          vat_rate: number;
+        };
+        Insert: {
+          driver_id: string;
+          platform: string;
+          rate_pct: number;
+          updated_at?: string;
+          updated_by?: string | null;
+          vat_rate: number;
+        };
+        Update: {
+          driver_id?: string;
+          platform?: string;
+          rate_pct?: number;
+          updated_at?: string;
+          updated_by?: string | null;
+          vat_rate?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "platform_rates_driver_id_fkey";
+            columns: ["driver_id"];
+            isOneToOne: false;
+            referencedRelation: "drivers";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       platform_statements: {
         Row: {
           commission: number;
@@ -67,10 +102,13 @@ export type Database = {
           kind: string;
           month: number;
           platform: string;
+          rate_pct: number | null;
           reference: string;
+          tips: number;
           trips: number;
           turnover: number;
           updated_at: string;
+          vat_rate: number;
           week_end: string | null;
           week_start: string | null;
           year: number;
@@ -85,10 +123,13 @@ export type Database = {
           kind: string;
           month: number;
           platform: string;
+          rate_pct?: number | null;
           reference?: string;
+          tips?: number;
           trips?: number;
           turnover?: number;
           updated_at?: string;
+          vat_rate: number;
           week_end?: never;
           week_start?: string | null;
           year: number;
@@ -103,10 +144,13 @@ export type Database = {
           kind?: string;
           month?: number;
           platform?: string;
+          rate_pct?: number | null;
           reference?: string;
+          tips?: number;
           trips?: number;
           turnover?: number;
           updated_at?: string;
+          vat_rate?: number;
           week_end?: never;
           week_start?: string | null;
           year?: number;

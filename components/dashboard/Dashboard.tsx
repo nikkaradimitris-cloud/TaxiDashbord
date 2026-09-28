@@ -14,6 +14,7 @@ import {
   fetchDrivers,
   fetchExpenses,
   fetchMonthlySummary,
+  fetchPlatformRates,
   fetchShifts,
   fetchStatements,
   insertShift,
@@ -25,10 +26,12 @@ import { periodLabel } from '@/lib/period';
 import {
   formatWeek,
   groupStatements,
-  platformHasVat,
+  isAutoCommission,
   platformLabel,
+  rateLabel,
   statementTitle,
   todayIso,
+  toVatRate,
 } from '@/lib/platforms';
 import {
   emptyOutbox,
@@ -42,7 +45,7 @@ import {
 } from '@/lib/storage';
 import { createClient } from '@/lib/supabase/client';
 import type { MonthSummaryRow } from '@/lib/table';
-import type { DriverRow, ExpenseRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
+import type { DriverRow, ExpenseRow, PlatformRateRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
 import { AnalysisCard } from './AnalysisCard';
 import { EditShiftDialog } from './EditShiftDialog';
 import { EntryKindSwitch, type EntryKind } from './EntryFields';
@@ -208,6 +211,39 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
   const statementsLoading = !statementsState || statementsState.key !== queryKey;
   const statements = useMemo(() => statementsState?.rows ?? [], [statementsState]);
+
+  // Ποσοστά κράτησης των εφαρμογών ανά αυτοκίνητο (admin: όλα — οδηγός: του δικού του).
+  const [ratesVersion, setRatesVersion] = useState(0);
+  const [ratesState, setRatesState] = useState<{ rows: PlatformRateRow[]; error: string | null } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlatformRates(supabase).then(
+      (rows) => {
+        if (!cancelled) setRatesState({ rows, error: null });
+      },
+      (error) => {
+        if (!cancelled) setRatesState((prev) => ({ rows: prev?.rows ?? [], error: dataErrorMessage(error) }));
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, ratesVersion]);
+
+  const rates = useMemo(() => ratesState?.rows ?? [], [ratesState]);
+  /** Φορτώθηκαν χωρίς σφάλμα: μόνο τότε η φόρμα ζητά ποσοστό για εφαρμογή χωρίς ρύθμιση. */
+  const ratesLoaded = ratesState !== null && ratesState.error === null;
+
+  function handleRateSaved(row: PlatformRateRow) {
+    setRatesState((prev) => ({
+      rows: [
+        ...(prev?.rows ?? []).filter((r) => !(r.driver_id === row.driver_id && r.platform === row.platform)),
+        row,
+      ],
+      error: null,
+    }));
+  }
   /** Ανά αυτοκίνητο, μήνα και εφαρμογή: η κράτηση από το τιμολόγιο, αλλιώς από τις εβδομάδες. */
   const platformMonths = useMemo(() => groupStatements(statements), [statements]);
   /** Η μέρα της τελευταίας φόρτωσης: ποιες εβδομάδες έχουν τελειώσει. */
@@ -516,9 +552,15 @@ export function Dashboard({ session }: { session: SessionInfo }) {
           isWeek,
           trips: row.trips,
           turnoverCents: toCents(Number(row.turnover)),
+          tipsCents: toCents(Number(row.tips)),
+          rate: !isWeek
+            ? ''
+            : row.rate_pct != null && isAutoCommission(row)
+              ? rateLabel({ ratePct: Number(row.rate_pct), vatRate: toVatRate(row.vat_rate) })
+              : 'ποσό κίνησης',
           commissionCents: toCents(Number(row.commission)),
           vatCents: toCents(Number(row.commission_vat ?? 0)),
-          hasVat: platformHasVat(row.platform),
+          hasVat: toVatRate(row.vat_rate) === 24,
           createdAt: row.created_at,
         };
       }),
@@ -632,6 +674,16 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 </div>
               </Notice>
             )}
+            {ratesState?.error && (
+              <Notice tone="error">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>Τα ποσοστά των εφαρμογών δεν φορτώθηκαν. {ratesState.error}</span>
+                  <button type="button" className="font-semibold underline" onClick={() => setRatesVersion((v) => v + 1)}>
+                    Δοκιμή ξανά
+                  </button>
+                </div>
+              </Notice>
+            )}
             {driversState?.error && <Notice tone="error">{driversState.error}</Notice>}
 
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
@@ -676,6 +728,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   driverFilter={driverFilter}
                   onPrefsChange={setPrefs}
                   statements={statements}
+                  rates={rates}
+                  ratesLoaded={ratesLoaded}
+                  onRateSaved={handleRateSaved}
                   today={today}
                   onSaved={handleStatementSaved}
                   editing={null}
@@ -786,6 +841,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
             <PlatformList
               statements={statements}
               months={platformMonths}
+              rates={rates}
               loading={statementsLoading}
               driversById={driversById}
               isAdmin={isAdmin}
@@ -813,6 +869,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   driverFilter={driverFilter}
                   onPrefsChange={setPrefs}
                   statements={statements}
+                  rates={rates}
+                  ratesLoaded={ratesLoaded}
+                  onRateSaved={handleRateSaved}
                   today={today}
                   onSaved={handleStatementSaved}
                   editing={editingStatement}

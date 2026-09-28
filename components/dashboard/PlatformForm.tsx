@@ -1,31 +1,41 @@
 'use client';
 
-import { useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
 import { Button, Card, cx, Field, FieldRow, Input, Notice, Select } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
-import { insertStatement, updateStatement } from '@/lib/data';
+import { insertStatement, savePlatformRate, updateStatement } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
-import { formatEuro, formatPercent, formatSignedEuro } from '@/lib/format';
+import { formatEuro, formatSignedEuro } from '@/lib/format';
 import { periodLabel } from '@/lib/period';
 import {
   EMPTY_STATEMENT_FORM,
+  findRate,
+  fixedVatRate,
   formatWeek,
+  isPlatform,
   MAX_REFERENCE,
+  parseRateForm,
   parseStatementForm,
   PLATFORMS,
-  platformHasVat,
   platformLabel,
+  rateFromRow,
+  rateLabel,
+  rateToFormValues,
   statementTitle,
   statementToFormValues,
   suggestedWeek,
+  toRateValues,
   toStatementValues,
+  toVatRate,
   weekCycles,
+  type EntryRate,
+  type RateFormValues,
   type StatementFormValues,
   type StatementKind,
 } from '@/lib/platforms';
 import type { Preferences } from '@/lib/storage';
 import type { BrowserSupabase } from '@/lib/supabase/client';
-import type { DriverRow, StatementRow } from '@/lib/types';
+import type { DriverRow, PlatformRateRow, StatementRow } from '@/lib/types';
 import { DriverField, PeriodFields, SegmentedField, useEntryTarget, vehicleOptionLabel } from './EntryFields';
 
 type Message = { tone: 'success' | 'error'; text: string };
@@ -35,14 +45,29 @@ const KINDS: readonly { id: StatementKind; label: string }[] = [
   { id: 'invoice', label: 'Τιμολόγιο μήνα' },
 ];
 
+const VAT_CHOICES: readonly { id: '24' | '0'; label: string }[] = [
+  { id: '24', label: 'Με ΦΠΑ 24%' },
+  { id: '0', label: 'Χωρίς ΦΠΑ (ενδοκοινοτικό)' },
+];
+
+const percent = new Intl.NumberFormat('el-GR', { maximumFractionDigits: 2 });
+
 /** Επιτρέπει μόνο ψηφία, κόμμα και τελεία (ποσά). */
 function sanitizeAmount(value: string) {
   return value.replace(/[^\d.,]/g, '');
 }
 
+/** Το ποσοστό/ΦΠΑ με το οποίο γίνεται η καταχώρηση, σε λέξεις. */
+function entryRateText(rate: EntryRate): string {
+  if (rate.ratePct !== null) return rateLabel({ ratePct: rate.ratePct, vatRate: rate.vatRate });
+  return rate.vatRate === 24 ? 'τιμολόγιο με ΦΠΑ 24%' : 'τιμολόγιο χωρίς ΦΠΑ';
+}
+
 /**
- * Εφαρμογή (Uber / FreeNow) για το συγκεκριμένο αυτοκίνητο: η εβδομαδιαία
- * κίνηση (διαδρομές, τζίρος, κράτηση) ή το μηνιαίο τιμολόγιο κρατήσεων.
+ * Εφαρμογή (Uber / FreeNow / Bolt) για το συγκεκριμένο αυτοκίνητο: η
+ * εβδομαδιαία κίνηση (διαδρομές, τζίρος, φιλοδωρήματα — η κράτηση βγαίνει
+ * από το ποσοστό) ή το μηνιαίο τιμολόγιο κρατήσεων. Το ποσοστό κάθε
+ * εφαρμογής ορίζεται μία φορά ανά αυτοκίνητο και αλλάζει όταν χρειαστεί.
  */
 export function PlatformForm({
   supabase,
@@ -53,6 +78,9 @@ export function PlatformForm({
   driverFilter,
   onPrefsChange,
   statements,
+  rates,
+  ratesLoaded,
+  onRateSaved,
   today,
   onSaved,
   editing,
@@ -69,6 +97,10 @@ export function PlatformForm({
   onPrefsChange: (changes: Partial<Omit<Preferences, 'today'>>) => void;
   /** Οι καταχωρήσεις της προβολής: ποιες εβδομάδες / ποιο τιμολόγιο υπάρχουν ήδη. */
   statements: readonly StatementRow[];
+  /** Τα ποσοστά των εφαρμογών ανά αυτοκίνητο. */
+  rates: readonly PlatformRateRow[];
+  ratesLoaded: boolean;
+  onRateSaved: (row: PlatformRateRow) => void;
   /** Σημερινή ημερομηνία 'YYYY-MM-DD' (για την προτεινόμενη εβδομάδα). */
   today: string;
   onSaved: (row: StatementRow) => void;
@@ -90,10 +122,81 @@ export function PlatformForm({
   const target = useEntryTarget({ isAdmin, drivers, prefs, driverFilter, onPrefsChange, editing });
   const { isEditing, year, month, driver, inactiveSelf } = target;
   const isWeek = values.kind === 'week';
-  const hasVat = platformHasVat(values.platform);
   const platformName = platformLabel(values.platform);
 
+  // ------------------------------------------------------------------
+  // Ποσοστό: η ρύθμιση του αυτοκινήτου· σε διόρθωση, αυτό με το οποίο έγινε η καταχώρηση.
+  // ------------------------------------------------------------------
+  const setting = findRate(rates, driver?.id, values.platform);
+  const usesEntryRate = editing !== null && editing.driver_id === driver?.id && editing.platform === values.platform;
+  const rate: EntryRate | null = usesEntryRate
+    ? { ratePct: editing.rate_pct ?? setting?.ratePct ?? null, vatRate: toVatRate(editing.vat_rate) }
+    : setting;
+  const hasVat = rate?.vatRate === 24;
+
+  const rateKey = `${driver?.id ?? ''}|${values.platform}`;
+  const [rateDraft, setRateDraft] = useState<(RateFormValues & { key: string }) | null>(null);
+  const [rateErrors, setRateErrors] = useState<{ key: string; rate?: string; vat?: string } | null>(null);
+  const [rateNotice, setRateNotice] = useState<(Message & { key: string }) | null>(null);
+  const [rateBusy, setRateBusy] = useState(false);
+  /** Χωρίς ρύθμιση: πρώτα ορίζεται το ποσοστό, μετά εμφανίζεται η υπόλοιπη φόρμα. */
+  const needsRate = ratesLoaded && !usesEntryRate && setting === null;
+  const draft = rateDraft?.key === rateKey ? rateDraft : null;
+  const rateEditorOpen = needsRate || draft !== null;
+  const rateValues = draft ?? rateToFormValues(setting, values.platform);
+  const shownRateErrors: { rate?: string; vat?: string } = rateErrors?.key === rateKey ? rateErrors : {};
+  const shownRateNotice = rateNotice?.key === rateKey ? rateNotice : null;
+
+  function changeRate(changes: Partial<RateFormValues>) {
+    setRateDraft({ ...rateValues, ...changes, key: rateKey });
+    setRateErrors(null);
+  }
+
+  async function saveRate() {
+    if (!driver || !isPlatform(values.platform)) return;
+    const parsedRate = parseRateForm(rateValues, values.platform);
+    if (!parsedRate.rate) {
+      setRateErrors({ key: rateKey, ...parsedRate.errors });
+      return;
+    }
+    setRateBusy(true);
+    try {
+      const row = await savePlatformRate(
+        supabase,
+        toRateValues(parsedRate.rate, { driverId: driver.id, platform: values.platform }),
+      );
+      onRateSaved(row);
+      setRateDraft(null);
+      setRateErrors(null);
+      setRateNotice({
+        key: rateKey,
+        tone: 'success',
+        text: `✓ Αποθηκεύτηκε: ${platformName} ${rateLabel(rateFromRow(row))} για ${vehicleOptionLabel(driver)}.`,
+      });
+    } catch (error) {
+      setRateNotice({
+        key: rateKey,
+        tone: 'error',
+        text: isNetworkError(error)
+          ? 'Χωρίς σύνδεση: το ποσοστό δεν αποθηκεύτηκε. Δοκιμάστε ξανά μόλις έχετε internet.'
+          : dataErrorMessage(error),
+      });
+    } finally {
+      setRateBusy(false);
+    }
+  }
+
+  function saveRateOnEnter(event: KeyboardEvent<HTMLInputElement>) {
+    // Το Enter αποθηκεύει το ποσοστό, όχι την καταχώρηση.
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void saveRate();
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Ό,τι έχει ήδη καταχωρηθεί για το αυτοκίνητο, τον μήνα και την εφαρμογή (εκτός από όσο διορθώνεται).
+  // ------------------------------------------------------------------
   const existing = statements.filter(
     (row) =>
       row.driver_id === driver?.id &&
@@ -117,9 +220,10 @@ export function PlatformForm({
       : suggestedWeek(cycles, enteredWeeks, today);
   const selectedWeek = cycles.find((week) => week.start === weekStart) ?? null;
 
-  const parsed = parseStatementForm({ ...values, weekStart }, { year, month });
+  const parsed = parseStatementForm({ ...values, weekStart }, { year, month }, rate);
   const errors = showErrors ? parsed.errors : {};
   const { preview } = parsed;
+  const auto = preview.auto;
   /** Υπάρχει ήδη: όλες οι εβδομάδες του μήνα ή το τιμολόγιο του μήνα. */
   const alreadyDone = isWeek ? selectedWeek === null : existingInvoice !== null;
 
@@ -155,7 +259,7 @@ export function PlatformForm({
       // Επόμενη καταχώρηση: ίδια εφαρμογή και είδος, η επόμενη εβδομάδα που λείπει.
       setValues((prev) => ({ ...EMPTY_STATEMENT_FORM, platform: prev.platform, kind: prev.kind }));
       setShowErrors(false);
-      setMessage({ tone: 'success', text: `✓ Καταχωρήθηκε: ${label}` });
+      setMessage({ tone: 'success', text: `✓ Καταχωρήθηκε: ${label} · ${formatEuro(toCents(row.commission))}` });
       firstInput.current?.focus();
     } catch (error) {
       setMessage({
@@ -169,34 +273,115 @@ export function PlatformForm({
     }
   }
 
-  const commissionField = (
-    <FieldRow>
-      <Field
-        subgrid
-        label={`${isWeek ? 'Κράτηση' : 'Ποσό τιμολογίου'}${hasVat ? ' με ΦΠΑ' : ''} (€) *`}
-        error={errors.commission}
-      >
+  const vatHint = hasVat
+    ? 'Συμψηφίζεται'
+    : values.platform === 'uber'
+      ? 'Η Uber τιμολογεί χωρίς ΦΠΑ: δεν συμψηφίζεται.'
+      : 'Χωρίς ΦΠΑ (ενδοκοινοτικό): δεν συμψηφίζεται.';
+  const vatField = (
+    <Field subgrid label={hasVat ? 'ΦΠΑ 24% (μέσα)' : 'ΦΠΑ'} hint={vatHint}>
+      <output className="flex min-h-11 items-center rounded-xl border border-dashed border-line bg-bg px-3 text-base font-semibold tabular-nums">
+        {hasVat ? formatEuro(preview.vatCents) : 'Χωρίς ΦΠΑ'}
+      </output>
+    </Field>
+  );
+  const amountInput = (label: string, hint?: string) => (
+    <Field subgrid label={label} hint={hint} error={errors.commission}>
+      <Input
+        ref={isWeek ? undefined : firstInput}
+        inputMode="decimal"
+        autoComplete="off"
+        placeholder="0,00"
+        value={values.commission}
+        aria-invalid={Boolean(errors.commission)}
+        onChange={(e) => update({ commission: sanitizeAmount(e.target.value) })}
+      />
+    </Field>
+  );
+
+  const rateSection = !ratesLoaded ? (
+    <p className="text-sm text-muted">Φόρτωση ποσοστών…</p>
+  ) : rateEditorOpen ? (
+    <fieldset className="space-y-3 rounded-xl border-2 border-accent bg-card p-3" aria-label={`Ποσοστό ${platformName}`}>
+      <legend className="px-1 text-sm font-semibold">
+        {setting ? `Αλλαγή ποσοστού ${platformName}` : `Ποσοστό ${platformName} (μία φορά)`}
+      </legend>
+      {!setting && (
+        <p className="text-sm">
+          Γράψτε το ποσοστό που κρατά η {platformName}
+          {driver ? ` για το ${vehicleOptionLabel(driver)}` : ''}. Μετά η κράτηση υπολογίζεται μόνη της σε κάθε
+          εβδομάδα.
+        </p>
+      )}
+      <Field label="Ποσοστό κράτησης (%)" hint="Πάνω στον τζίρο χωρίς τα φιλοδωρήματα." error={shownRateErrors.rate}>
         <Input
-          ref={isWeek ? undefined : firstInput}
           inputMode="decimal"
           autoComplete="off"
-          placeholder="0,00"
-          value={values.commission}
-          aria-invalid={Boolean(errors.commission)}
-          onChange={(e) => update({ commission: sanitizeAmount(e.target.value) })}
+          placeholder="π.χ. 15"
+          value={rateValues.rate}
+          aria-invalid={Boolean(shownRateErrors.rate)}
+          onChange={(e) => changeRate({ rate: sanitizeAmount(e.target.value) })}
+          onKeyDown={saveRateOnEnter}
         />
       </Field>
-      <Field
-        subgrid
-        label={hasVat ? 'ΦΠΑ 24% (μέσα)' : 'ΦΠΑ'}
-        hint={hasVat ? 'Συμψηφίζεται' : 'Η Uber τιμολογεί χωρίς ΦΠΑ: δεν συμψηφίζεται.'}
-      >
-        <output className="flex min-h-11 items-center rounded-xl border border-dashed border-line bg-bg px-3 text-base font-semibold tabular-nums">
-          {hasVat ? formatEuro(preview.vatCents) : 'Χωρίς ΦΠΑ'}
-        </output>
-      </Field>
-    </FieldRow>
-  );
+      {fixedVatRate(values.platform) === 0 ? (
+        <p className="rounded-xl bg-bg px-3 py-2 text-sm">
+          Τιμολόγιο <b>χωρίς ΦΠΑ</b> (ενδοκοινοτικό) — σταθερό για την Uber.
+        </p>
+      ) : (
+        <SegmentedField
+          legend={`Τιμολόγιο ${platformName}`}
+          name={`platform-vat-${values.platform}`}
+          options={VAT_CHOICES}
+          value={rateValues.vat}
+          onChange={(vat) => changeRate({ vat })}
+          error={shownRateErrors.vat}
+        />
+      )}
+      {setting && (
+        <p className="text-xs text-muted">
+          Η αλλαγή ισχύει για τις επόμενες καταχωρήσεις· όσες έχουν ήδη γίνει δεν αλλάζουν.
+        </p>
+      )}
+      {shownRateNotice?.tone === 'error' && <Notice tone="error">{shownRateNotice.text}</Notice>}
+      <div className="flex flex-wrap gap-2">
+        <Button variant="primary" onClick={() => void saveRate()} disabled={rateBusy || !driver || inactiveSelf}>
+          {rateBusy ? 'Αποθήκευση…' : 'Αποθήκευση ποσοστού'}
+        </Button>
+        {setting && (
+          <Button
+            onClick={() => {
+              setRateDraft(null);
+              setRateErrors(null);
+            }}
+            disabled={rateBusy}
+          >
+            Ακύρωση
+          </Button>
+        )}
+      </div>
+    </fieldset>
+  ) : rate ? (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-bg px-3 py-2 text-sm">
+        <span>
+          {usesEntryRate ? 'Αυτή η καταχώρηση' : `Ποσοστό ${platformName}`}: <b>{entryRateText(rate)}</b>
+        </span>
+        {!usesEntryRate && (
+          <Button
+            className="min-h-9 px-3 py-1"
+            onClick={() => {
+              changeRate(rateToFormValues(setting, values.platform));
+              setRateNotice(null);
+            }}
+          >
+            Αλλαγή
+          </Button>
+        )}
+      </div>
+      {shownRateNotice && <Notice tone={shownRateNotice.tone}>{shownRateNotice.text}</Notice>}
+    </div>
+  ) : null;
 
   return (
     <Card
@@ -226,131 +411,197 @@ export function PlatformForm({
           onChange={(platform) => update({ platform })}
           error={errors.platform}
         />
-        <SegmentedField
-          legend="Τι καταχωρείτε"
-          name="statement-kind"
-          options={KINDS}
-          value={values.kind}
-          onChange={(kind) => update({ kind })}
-          error={errors.kind}
-        />
+        {rateSection}
 
-        {isWeek ? (
+        {rate && !needsRate && (
           <>
-            <Field
-              label="Εβδομάδα (Δευτέρα–Κυριακή)"
-              hint="Στην αλλαγή του μήνα η εβδομάδα κόβεται: κάθε κομμάτι μετράει στον δικό του μήνα."
-              error={errors.weekStart}
+            <SegmentedField
+              legend="Τι καταχωρείτε"
+              name="statement-kind"
+              options={KINDS}
+              value={values.kind}
+              onChange={(kind) => update({ kind })}
+              error={errors.kind}
+            />
+
+            {errors.rate && <Notice tone="error">{errors.rate}</Notice>}
+
+            {isWeek ? (
+              <>
+                <Field
+                  label="Εβδομάδα (Δευτέρα–Κυριακή)"
+                  hint="Στην αλλαγή του μήνα η εβδομάδα κόβεται: κάθε κομμάτι μετράει στον δικό του μήνα."
+                  error={errors.weekStart}
+                >
+                  <Select value={weekStart} onChange={(e) => update({ weekStart: e.target.value })} disabled={!selectedWeek}>
+                    {!selectedWeek && <option value="">— Όλες καταχωρημένες —</option>}
+                    {cycles.map((week) => {
+                      const done = enteredWeeks.has(week.start);
+                      return (
+                        <option key={week.start} value={week.start} disabled={done}>
+                          {formatWeek(week.start, week.end)}
+                          {week.days < 7 ? ` (${week.days} ${week.days === 1 ? 'ημέρα' : 'ημέρες'})` : ''}
+                          {done ? ' ✓ καταχωρημένη' : ''}
+                        </option>
+                      );
+                    })}
+                  </Select>
+                </Field>
+                {alreadyDone && (
+                  <Notice tone="info">
+                    Όλες οι εβδομάδες του μήνα έχουν καταχωρηθεί για {platformName}. Για αλλαγή πατήστε «Επεξεργασία» στη
+                    λίστα «Εφαρμογές».
+                  </Notice>
+                )}
+                <FieldRow>
+                  <Field subgrid label="Διαδρομές *" error={errors.trips}>
+                    <Input
+                      ref={firstInput}
+                      inputMode="numeric"
+                      autoComplete="off"
+                      placeholder="0"
+                      value={values.trips}
+                      aria-invalid={Boolean(errors.trips)}
+                      onChange={(e) => update({ trips: e.target.value.replace(/\D/g, '') })}
+                    />
+                  </Field>
+                  <Field subgrid label="Τζίρος (€) *" hint="Μαζί με τα φιλοδωρήματα." error={errors.turnover}>
+                    <Input
+                      inputMode="decimal"
+                      autoComplete="off"
+                      placeholder="0,00"
+                      value={values.turnover}
+                      aria-invalid={Boolean(errors.turnover)}
+                      onChange={(e) => update({ turnover: sanitizeAmount(e.target.value) })}
+                    />
+                  </Field>
+                </FieldRow>
+                <Field
+                  label="Φιλοδωρήματα (€)"
+                  hint="Όσα είναι μέσα στον τζίρο. Η εφαρμογή δεν κρατά ποσοστό από αυτά."
+                  error={errors.tips}
+                >
+                  <Input
+                    inputMode="decimal"
+                    autoComplete="off"
+                    placeholder="0,00"
+                    value={values.tips}
+                    aria-invalid={Boolean(errors.tips)}
+                    onChange={(e) => update({ tips: sanitizeAmount(e.target.value) })}
+                  />
+                </Field>
+
+                {values.manualCommission ? (
+                  <>
+                    <FieldRow>
+                      {amountInput(`Κράτηση${hasVat ? ' με ΦΠΑ' : ''} (€) *`, 'Όπως τη γράφει η κίνηση.')}
+                      {vatField}
+                    </FieldRow>
+                    <p className="text-sm text-muted">
+                      {auto && <>Με το ποσοστό θα ήταν {formatEuro(auto.totalCents)}. </>}
+                      <button
+                        type="button"
+                        className="font-semibold text-fg underline"
+                        onClick={() => update({ manualCommission: false, commission: '' })}
+                      >
+                        Αυτόματος υπολογισμός
+                      </button>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <FieldRow>
+                      <Field subgrid label="Κράτηση (αυτόματα)">
+                        <output className="flex min-h-11 items-center rounded-xl border border-dashed border-line bg-bg px-3 text-base font-semibold tabular-nums">
+                          {formatEuro(preview.commissionCents)}
+                        </output>
+                      </Field>
+                      {vatField}
+                    </FieldRow>
+                    {auto && rate.ratePct !== null && (
+                      <p className="text-sm text-muted tabular-nums">
+                        {percent.format(rate.ratePct)}% × {formatEuro(auto.baseCents)} (τζίρος χωρίς φιλοδωρήματα) ={' '}
+                        {formatEuro(auto.netCents)}
+                        {hasVat && (
+                          <>
+                            {' '}
+                            + ΦΠΑ {formatEuro(auto.vatCents)} = <b className="text-fg">{formatEuro(auto.totalCents)}</b>
+                          </>
+                        )}
+                      </p>
+                    )}
+                    <Button className="w-full" onClick={() => update({ manualCommission: true, commission: '' })}>
+                      Άλλο ποσό (όπως γράφει η κίνηση)
+                    </Button>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                {existingInvoice && (
+                  <Notice tone="info">
+                    Υπάρχει ήδη τιμολόγιο {platformName} για {periodLabel(year, month)}:{' '}
+                    {formatEuro(toCents(Number(existingInvoice.commission)))}. Για αλλαγή πατήστε «Επεξεργασία» στη λίστα
+                    «Εφαρμογές».
+                  </Notice>
+                )}
+                <FieldRow>
+                  {amountInput(`Ποσό τιμολογίου${hasVat ? ' με ΦΠΑ' : ''} (€) *`)}
+                  {vatField}
+                </FieldRow>
+                <Field label="Αριθμός τιμολογίου" hint="Προαιρετικά." error={errors.reference}>
+                  <Input
+                    autoComplete="off"
+                    maxLength={MAX_REFERENCE}
+                    value={values.reference}
+                    aria-invalid={Boolean(errors.reference)}
+                    onChange={(e) => update({ reference: e.target.value })}
+                  />
+                </Field>
+                {enteredWeeks.size > 0 && (
+                  <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl bg-bg p-3 text-sm tabular-nums">
+                    <dt className="text-muted">Κρατήσεις εβδομάδων ({enteredWeeks.size})</dt>
+                    <dd className="text-right">{formatEuro(weeksCommissionCents)}</dd>
+                    <dt className="text-muted">Διαφορά τιμολογίου</dt>
+                    <dd className="text-right">
+                      {values.commission.trim() ? formatSignedEuro(preview.commissionCents - weeksCommissionCents) : '—'}
+                    </dd>
+                  </dl>
+                )}
+                <p className="text-sm text-muted">
+                  Με το τιμολόγιο, στα έξοδα και στον ΦΠΑ μετράει το ποσό του τιμολογίου αντί για τις εβδομάδες.
+                </p>
+              </>
+            )}
+
+            {message && <Notice tone={message.tone}>{message.text}</Notice>}
+
+            <Button
+              type="submit"
+              variant="primary"
+              className="w-full text-base"
+              disabled={busy || !driver || inactiveSelf || alreadyDone}
             >
-              <Select value={weekStart} onChange={(e) => update({ weekStart: e.target.value })} disabled={!selectedWeek}>
-                {!selectedWeek && <option value="">— Όλες καταχωρημένες —</option>}
-                {cycles.map((week) => {
-                  const done = enteredWeeks.has(week.start);
-                  return (
-                    <option key={week.start} value={week.start} disabled={done}>
-                      {formatWeek(week.start, week.end)}
-                      {week.days < 7 ? ` (${week.days} ${week.days === 1 ? 'ημέρα' : 'ημέρες'})` : ''}
-                      {done ? ' ✓ καταχωρημένη' : ''}
-                    </option>
-                  );
-                })}
-              </Select>
-            </Field>
-            {alreadyDone && (
-              <Notice tone="info">
-                Όλες οι εβδομάδες του μήνα έχουν καταχωρηθεί για {platformName}. Για αλλαγή πατήστε «Επεξεργασία» στη λίστα
-                «Εφαρμογές».
-              </Notice>
-            )}
-            <FieldRow>
-              <Field subgrid label="Διαδρομές *" error={errors.trips}>
-                <Input
-                  ref={firstInput}
-                  inputMode="numeric"
-                  autoComplete="off"
-                  placeholder="0"
-                  value={values.trips}
-                  aria-invalid={Boolean(errors.trips)}
-                  onChange={(e) => update({ trips: e.target.value.replace(/\D/g, '') })}
-                />
-              </Field>
-              <Field subgrid label="Τζίρος (€) *" error={errors.turnover}>
-                <Input
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="0,00"
-                  value={values.turnover}
-                  aria-invalid={Boolean(errors.turnover)}
-                  onChange={(e) => update({ turnover: sanitizeAmount(e.target.value) })}
-                />
-              </Field>
-            </FieldRow>
-            {commissionField}
-            {preview.ratePct !== null && (
-              <p className="text-sm text-muted">Η εφαρμογή κρατά το {formatPercent(preview.ratePct)} του τζίρου.</p>
-            )}
-          </>
-        ) : (
-          <>
-            {existingInvoice && (
-              <Notice tone="info">
-                Υπάρχει ήδη τιμολόγιο {platformName} για {periodLabel(year, month)}:{' '}
-                {formatEuro(toCents(Number(existingInvoice.commission)))}. Για αλλαγή πατήστε «Επεξεργασία» στη λίστα
-                «Εφαρμογές».
-              </Notice>
-            )}
-            {commissionField}
-            <Field label="Αριθμός τιμολογίου" hint="Προαιρετικά." error={errors.reference}>
-              <Input
-                autoComplete="off"
-                maxLength={MAX_REFERENCE}
-                value={values.reference}
-                aria-invalid={Boolean(errors.reference)}
-                onChange={(e) => update({ reference: e.target.value })}
-              />
-            </Field>
-            {enteredWeeks.size > 0 && (
-              <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl bg-bg p-3 text-sm tabular-nums">
-                <dt className="text-muted">Κρατήσεις εβδομάδων ({enteredWeeks.size})</dt>
-                <dd className="text-right">{formatEuro(weeksCommissionCents)}</dd>
-                <dt className="text-muted">Διαφορά τιμολογίου</dt>
-                <dd className="text-right">
-                  {values.commission.trim() ? formatSignedEuro(preview.commissionCents - weeksCommissionCents) : '—'}
-                </dd>
-              </dl>
-            )}
-            <p className="text-sm text-muted">
-              Με το τιμολόγιο, στα έξοδα και στον ΦΠΑ μετράει το ποσό του τιμολογίου αντί για τις εβδομάδες.
-            </p>
+              {busy ? (
+                'Αποθήκευση…'
+              ) : isEditing ? (
+                'Αποθήκευση διορθώσεων'
+              ) : isWeek ? (
+                <span>
+                  Καταχώρηση εβδομάδας
+                  {selectedWeek && (
+                    <>
+                      {' · '}
+                      <span className="whitespace-nowrap">{formatWeek(selectedWeek.start, selectedWeek.end)}</span>
+                    </>
+                  )}
+                </span>
+              ) : (
+                `Καταχώρηση τιμολογίου · ${periodLabel(year, month)}`
+              )}
+            </Button>
           </>
         )}
-
-        {message && <Notice tone={message.tone}>{message.text}</Notice>}
-
-        <Button
-          type="submit"
-          variant="primary"
-          className="w-full text-base"
-          disabled={busy || !driver || inactiveSelf || alreadyDone}
-        >
-          {busy ? (
-            'Αποθήκευση…'
-          ) : isEditing ? (
-            'Αποθήκευση διορθώσεων'
-          ) : isWeek ? (
-            <span>
-              Καταχώρηση εβδομάδας
-              {selectedWeek && (
-                <>
-                  {' · '}
-                  <span className="whitespace-nowrap">{formatWeek(selectedWeek.start, selectedWeek.end)}</span>
-                </>
-              )}
-            </span>
-          ) : (
-            `Καταχώρηση τιμολογίου · ${periodLabel(year, month)}`
-          )}
-        </Button>
         {isEditing && (
           <Button className="w-full" onClick={onCancelEdit} disabled={busy}>
             Ακύρωση

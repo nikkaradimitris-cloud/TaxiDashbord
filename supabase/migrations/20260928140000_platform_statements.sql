@@ -1,10 +1,22 @@
 -- =====================================================================
---  Εφαρμογές (Uber / FreeNow): εβδομαδιαία κίνηση & μηνιαίο τιμολόγιο
+--  Εφαρμογές (Uber / FreeNow / Bolt): ποσοστό κράτησης, εβδομαδιαία
+--  κίνηση & μηνιαίο τιμολόγιο
 -- =====================================================================
 --  Οι κούρσες των εφαρμογών περνάνε κι αυτές από το ταξίμετρο (είναι μέσα
 --  στο Ζ). Από την εβδομαδιαία κίνηση της εφαρμογής καταχωρούνται οι
---  διαδρομές, ο τζίρος και η κράτηση (προμήθεια): έτσι φαίνονται οι
---  διαδρομές από τον δρόμο (Ζ − εφαρμογές) και τι κοστίζει κάθε εφαρμογή.
+--  διαδρομές, ο τζίρος (μαζί με τα φιλοδωρήματα), τα φιλοδωρήματα και η
+--  κράτηση: έτσι φαίνονται οι διαδρομές από τον δρόμο (Ζ − εφαρμογές) και
+--  τι κοστίζει κάθε εφαρμογή.
+--
+--  Ποσοστό κράτησης (platform_rates): ανά αυτοκίνητο και εφαρμογή, το ορίζει
+--  ο οδηγός μία φορά και το αλλάζει όταν χρειαστεί· μαζί και αν το τιμολόγιο
+--  της εφαρμογής έχει ΦΠΑ 24%. Η Uber τιμολογεί πάντα χωρίς ΦΠΑ
+--  (ενδοκοινοτικό τιμολόγιο): η βάση δεν δέχεται άλλο.
+--
+--  Η κράτηση της εβδομάδας υπολογίζεται στην εφαρμογή από το ποσοστό, πάνω
+--  στον τζίρο χωρίς τα φιλοδωρήματα (+ ΦΠΑ 24% όπου υπάρχει)· ο οδηγός τη
+--  διορθώνει αν η κίνηση γράφει άλλο ποσό. Κάθε καταχώρηση κρατά το ποσοστό
+--  και τον ΦΠΑ με τα οποία έγινε: μια αλλαγή ισχύει για τις επόμενες.
 --
 --  Εβδομάδα = Δευτέρα–Κυριακή, κομμένη στην αλλαγή του μήνα: ο Οκτώβριος
 --  2026 ξεκινά Πέμπτη, άρα η πρώτη του εβδομάδα είναι 1–4/10 (4 ημέρες) και
@@ -12,18 +24,79 @@
 --
 --  Κρατήσεις στα έξοδα, στον ΦΠΑ και στο ταμείο: όταν υπάρχει το μηνιαίο
 --  τιμολόγιο της εφαρμογής μετράει αυτό, αλλιώς το άθροισμα των εβδομάδων.
---  FreeNow: τιμολόγιο με ΦΠΑ 24% μέσα (συμψηφίζεται).
---  Uber: τιμολόγιο χωρίς ΦΠΑ (δεν συμψηφίζεται).
+--  Ο ΦΠΑ 24% της κράτησης συμψηφίζεται· χωρίς ΦΠΑ (Uber) δεν συμψηφίζεται.
 --
 --  Δικαιώματα όπως στα έξοδα οχήματος: ο admin όλα· ο οδηγός βλέπει και
 --  καταχωρεί για το δικό του αυτοκίνητο και διορθώνει/διαγράφει δικές του
---  καταχωρήσεις μέσα σε 24 ώρες.
+--  καταχωρήσεις μέσα σε 24 ώρες. Το ποσοστό του το αλλάζει όποτε χρειαστεί.
 -- =====================================================================
 
+-- ---------------------------------------------------------------------
+-- Ποσοστό κράτησης ανά αυτοκίνητο και εφαρμογή
+-- ---------------------------------------------------------------------
+create table public.platform_rates (
+  driver_id   uuid not null references public.drivers (id) on delete cascade,
+  platform    text not null check (platform in ('uber', 'freenow', 'bolt')),
+  -- Π.χ. 15 = 15% του τζίρου χωρίς τα φιλοδωρήματα.
+  rate_pct    numeric(5, 2) not null check (rate_pct > 0 and rate_pct <= 100),
+  -- ΦΠΑ του τιμολογίου της εφαρμογής: 24% ή 0 (ενδοκοινοτικό, χωρίς ΦΠΑ).
+  vat_rate    smallint not null check (vat_rate in (0, 24)),
+  updated_by  uuid references auth.users (id) on delete set null,
+  updated_at  timestamptz not null default now(),
+  primary key (driver_id, platform),
+  -- Η Uber τιμολογεί πάντα χωρίς ΦΠΑ: προστασία από λάθος ρύθμιση.
+  constraint platform_rates_uber_no_vat check (platform <> 'uber' or vat_rate = 0)
+);
+comment on table public.platform_rates is
+  'Ποσοστό κράτησης κάθε εφαρμογής ανά αυτοκίνητο και αν το τιμολόγιό της έχει ΦΠΑ 24%.';
+
+create function private.platform_rates_before_write()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+  new.updated_by := auth.uid();
+  new.updated_at := now();
+  return new;
+end;
+$$;
+
+create trigger platform_rates_before_write
+  before insert or update on public.platform_rates
+  for each row execute function private.platform_rates_before_write();
+
+alter table public.platform_rates enable row level security;
+
+create policy "platform_rates_select_admin_or_own" on public.platform_rates
+  for select to authenticated
+  using ((select private.is_admin()) or driver_id = (select private.current_driver_id()));
+
+create policy "platform_rates_insert_admin_or_own" on public.platform_rates
+  for insert to authenticated
+  with check ((select private.is_admin()) or driver_id = (select private.current_active_driver_id()));
+
+create policy "platform_rates_update_admin_or_own" on public.platform_rates
+  for update to authenticated
+  using ((select private.is_admin()) or driver_id = (select private.current_driver_id()))
+  with check ((select private.is_admin()) or driver_id = (select private.current_active_driver_id()));
+
+create policy "platform_rates_delete_admin" on public.platform_rates
+  for delete to authenticated
+  using ((select private.is_admin()));
+
+revoke all on table public.platform_rates from anon, authenticated;
+grant select, insert, update, delete on table public.platform_rates to authenticated;
+revoke all on function private.platform_rates_before_write() from public, anon, authenticated;
+
+
+-- ---------------------------------------------------------------------
+-- Εβδομαδιαία κίνηση & μηνιαίο τιμολόγιο
+-- ---------------------------------------------------------------------
 create table public.platform_statements (
   id             uuid primary key default gen_random_uuid(),
   driver_id      uuid not null references public.drivers (id) on delete restrict,
-  platform       text not null check (platform in ('uber', 'freenow')),
+  platform       text not null check (platform in ('uber', 'freenow', 'bolt')),
   -- 'week': εβδομαδιαία κίνηση · 'invoice': μηνιαίο τιμολόγιο κρατήσεων.
   kind           text not null check (kind in ('week', 'invoice')),
   year           smallint not null check (year between 2000 and 2100),
@@ -38,12 +111,19 @@ create table public.platform_statements (
                    ) end
                  ) stored,
   trips          integer not null default 0 check (trips between 0 and 100000),
+  -- Τζίρος της εφαρμογής, μαζί με τα φιλοδωρήματα (όπως στην κίνηση).
   turnover       numeric(12, 2) not null default 0 check (turnover between 0 and 1000000),
+  -- Φιλοδωρήματα μέσα στον τζίρο: η εφαρμογή δεν κρατά ποσοστό από αυτά.
+  tips           numeric(12, 2) not null default 0 check (tips between 0 and 1000000),
+  -- Το ποσοστό με το οποίο υπολογίστηκε η κράτηση της εβδομάδας.
+  rate_pct       numeric(5, 2) check (rate_pct > 0 and rate_pct <= 100),
+  -- ΦΠΑ του τιμολογίου της εφαρμογής τη στιγμή της καταχώρησης: 24% ή 0.
+  vat_rate       smallint not null check (vat_rate in (0, 24)),
   -- Κράτηση της εφαρμογής, τελικό ποσό (με ΦΠΑ όπου υπάρχει).
   commission     numeric(12, 2) not null check (commission between 0 and 1000000),
-  -- ΦΠΑ 24% μέσα στην κράτηση: μόνο FreeNow (η Uber τιμολογεί χωρίς ΦΠΑ).
+  -- ΦΠΑ μέσα στην κράτηση: ποσό / 1.24 × 0.24 με ΦΠΑ 24%, αλλιώς 0.
   commission_vat numeric(12, 2) generated always as (
-                   case when platform = 'freenow' then round(commission / 1.24 * 0.24, 2) else 0 end
+                   round(commission / (1 + vat_rate / 100.0) * (vat_rate / 100.0), 2)
                  ) stored,
   -- Αριθμός τιμολογίου (προαιρετικά).
   reference      text not null default '' check (char_length(reference) <= 60),
@@ -57,13 +137,16 @@ create table public.platform_statements (
         and extract(year from week_start) = year
         and extract(month from week_start) = month
         and (extract(isodow from week_start) = 1 or extract(day from week_start) = 1)
+        and tips <= turnover
       else
-        week_start is null and trips = 0 and turnover = 0 and commission > 0
+        week_start is null and trips = 0 and turnover = 0 and tips = 0 and rate_pct is null and commission > 0
     end
-  )
+  ),
+  -- Η Uber τιμολογεί πάντα χωρίς ΦΠΑ.
+  constraint platform_statements_uber_no_vat check (platform <> 'uber' or vat_rate = 0)
 );
 comment on table public.platform_statements is
-  'Εφαρμογές (Uber/FreeNow): εβδομαδιαία κίνηση (διαδρομές, τζίρος, κράτηση) και μηνιαίο τιμολόγιο κρατήσεων.';
+  'Εφαρμογές (Uber/FreeNow/Bolt): εβδομαδιαία κίνηση (διαδρομές, τζίρος, φιλοδωρήματα, κράτηση) και μηνιαίο τιμολόγιο κρατήσεων.';
 comment on column public.platform_statements.driver_id is 'Το αυτοκίνητο: εγγραφή στόλου (οδηγός + πινακίδα).';
 
 -- Μία εβδομάδα και ένα τιμολόγιο ανά αυτοκίνητο και εφαρμογή.

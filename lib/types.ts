@@ -7,9 +7,12 @@ export type ShiftInsert = TablesInsert<'shifts'>;
 /** Έξοδο οχήματος εκτός βάρδιας («Επισκευές / Συντήρηση» ή «Άλλα έξοδα»). */
 export type ExpenseRow = Tables<'vehicle_expenses'>;
 export type ExpenseInsert = TablesInsert<'vehicle_expenses'>;
-/** Εφαρμογή (Uber / FreeNow): εβδομαδιαία κίνηση ή μηνιαίο τιμολόγιο. */
+/** Εφαρμογή (Uber / FreeNow / Bolt): εβδομαδιαία κίνηση ή μηνιαίο τιμολόγιο. */
 export type StatementRow = Tables<'platform_statements'>;
 export type StatementInsert = TablesInsert<'platform_statements'>;
+/** Ποσοστό κράτησης μιας εφαρμογής για ένα αυτοκίνητο (και αν το τιμολόγιο έχει ΦΠΑ). */
+export type PlatformRateRow = Tables<'platform_rates'>;
+export type PlatformRateInsert = TablesInsert<'platform_rates'>;
 
 export type Role = 'admin' | 'driver';
 

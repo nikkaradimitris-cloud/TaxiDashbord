@@ -184,7 +184,8 @@ export function SegmentedField<T extends string>({
   legend: string;
   name: string;
   options: readonly { id: T; label: string }[];
-  value: T;
+  /** '' = δεν έχει διαλέξει ακόμη. */
+  value: T | '';
   onChange: (value: T) => void;
   error?: string;
 }) {

@@ -98,6 +98,8 @@ describe('buildShiftsCsv', () => {
       isWeek: true,
       trips: 5,
       turnoverCents: 6000,
+      tipsCents: 0,
+      rate: '15% χωρίς ΦΠΑ',
       commissionCents: 900,
       vatCents: 0,
       hasVat: false,
@@ -110,6 +112,7 @@ describe('buildShiftsCsv', () => {
       isWeek: false,
       trips: 0,
       turnoverCents: 0,
+      rate: '',
       commissionCents: 3720,
       vatCents: 720,
       hasVat: true,
@@ -121,9 +124,11 @@ describe('buildShiftsCsv', () => {
       [],
       [statement, invoice],
     );
-    expect(withApps).toContain('ΕΦΑΡΜΟΓΕΣ (Uber / FreeNow)');
-    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Uber;Εβδομάδα 7–13 Σεπ;5;60,00;9,00;χωρίς ΦΠΑ;');
-    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;FreeNow;Τιμολόγιο FN-1;;;37,20;7,20;');
+    expect(withApps).toContain('ΕΦΑΡΜΟΓΕΣ (Uber / FreeNow / Bolt)');
+    expect(withApps).toContain(
+      '2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Uber;Εβδομάδα 7–13 Σεπ;5;60,00;0,00;15% χωρίς ΦΠΑ;9,00;χωρίς ΦΠΑ;',
+    );
+    expect(withApps).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;FreeNow;Τιμολόγιο FN-1;;;;;37,20;7,20;');
     expect(withApps).toContain('Διαδρομές (Ζ);14');
     expect(withApps).toContain('Διαδρομές Εφαρμογών;5');
     expect(withApps).toContain('Διαδρομές Δρόμου;9');

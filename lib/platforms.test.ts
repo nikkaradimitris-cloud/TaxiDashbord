@@ -1,15 +1,24 @@
 import { describe, expect, it } from 'vitest';
+import { includedExpenseVatCents } from './accounting';
 import {
-  commissionRatePct,
   commissionVatCents,
+  computeCommission,
+  defaultVatRate,
   EMPTY_STATEMENT_FORM,
+  findRate,
+  fixedVatRate,
   formatWeek,
   groupStatements,
+  isAutoCommission,
+  parseRateForm,
   parseStatementForm,
   platformLabel,
+  rateLabel,
+  rateToFormValues,
   statementTitle,
   statementToFormValues,
   suggestedWeek,
+  toRateValues,
   toStatementValues,
   totalsByPlatform,
   weekCycles,
@@ -18,6 +27,8 @@ import {
 } from './platforms';
 
 const september = { year: 2026, month: 9 };
+const freenow = { ratePct: 15, vatRate: 24 as const };
+const uber = { ratePct: 12, vatRate: 0 as const };
 
 describe('weekCycles: Δευτέρα–Κυριακή, κομμένες στον μήνα', () => {
   it('Οκτώβριος 2026 ξεκινά Πέμπτη: πρώτη εβδομάδα 1–4 (4 ημέρες), τελευταία 26–31', () => {
@@ -59,7 +70,7 @@ describe('weekCycles: Δευτέρα–Κυριακή, κομμένες στον
     expect(formatWeek('2026-09-07', '2026-09-13')).toBe('7–13 Σεπ');
     expect(formatWeek('2026-11-01', '2026-11-01')).toBe('1 Νοε');
     const base = { year: 2026, month: 9, week_start: '2026-09-28' };
-    expect(statementTitle({ ...base, platform: 'uber', kind: 'week' })).toBe('Uber · εβδομάδα 28–30 Σεπ');
+    expect(statementTitle({ ...base, platform: 'bolt', kind: 'week' })).toBe('Bolt · εβδομάδα 28–30 Σεπ');
     expect(statementTitle({ ...base, platform: 'freenow', kind: 'invoice', week_start: null })).toBe(
       'FreeNow · τιμολόγιο Σεπτέμβριος 2026',
     );
@@ -85,111 +96,229 @@ describe('προτεινόμενη εβδομάδα και κατάσταση', 
   });
 });
 
-describe('ΦΠΑ κράτησης', () => {
-  it('FreeNow: 24% μέσα στο ποσό · Uber: χωρίς ΦΠΑ', () => {
-    expect(commissionVatCents('freenow', 3100)).toBe(600);
-    expect(commissionVatCents('freenow', 3720)).toBe(720);
-    expect(commissionVatCents('uber', 3100)).toBe(0);
-    expect(platformLabel('freenow')).toBe('FreeNow');
-    expect(platformLabel('uber')).toBe('Uber');
+describe('ποσοστό κράτησης και ΦΠΑ', () => {
+  it('Uber πάντα χωρίς ΦΠΑ· FreeNow προεπιλογή με ΦΠΑ· Bolt το διαλέγει ο οδηγός', () => {
+    expect(fixedVatRate('uber')).toBe(0);
+    expect(fixedVatRate('freenow')).toBeNull();
+    expect(fixedVatRate('bolt')).toBeNull();
+    expect(defaultVatRate('freenow')).toBe(24);
+    expect(defaultVatRate('bolt')).toBeNull();
+    expect(platformLabel('bolt')).toBe('Bolt');
+  });
+
+  it('ετικέτα ρύθμισης', () => {
+    expect(rateLabel(freenow)).toBe('15% + ΦΠΑ 24%');
+    expect(rateLabel(uber)).toBe('12% χωρίς ΦΠΑ');
+    expect(rateLabel({ ratePct: 12.25, vatRate: 0 })).toBe('12,25% χωρίς ΦΠΑ');
+  });
+
+  it('ΦΠΑ μέσα στην κράτηση: 24% ή τίποτα', () => {
+    expect(commissionVatCents(24, 3100)).toBe(600);
+    expect(commissionVatCents(0, 3100)).toBe(0);
+  });
+
+  it('η ρύθμιση βρίσκεται ανά αυτοκίνητο και εφαρμογή', () => {
+    const rows = [
+      { driver_id: 'a', platform: 'uber', rate_pct: 12, vat_rate: 0 },
+      { driver_id: 'b', platform: 'uber', rate_pct: 10, vat_rate: 0 },
+      { driver_id: 'a', platform: 'freenow', rate_pct: 15, vat_rate: 24 },
+    ];
+    expect(findRate(rows, 'a', 'freenow')).toEqual(freenow);
+    expect(findRate(rows, 'b', 'uber')).toEqual({ ratePct: 10, vatRate: 0 });
+    expect(findRate(rows, 'b', 'bolt')).toBeNull();
+    expect(findRate(rows, null, 'uber')).toBeNull();
+  });
+
+  it('φόρμα ρύθμισης: ποσοστό υποχρεωτικό· ΦΠΑ υποχρεωτικός στη Bolt, κλειδωμένος στην Uber', () => {
+    expect(parseRateForm({ rate: '15', vat: '24' }, 'freenow')).toEqual({ rate: freenow, errors: {} });
+    expect(parseRateForm({ rate: '12,5', vat: '' }, 'uber').rate).toEqual({ ratePct: 12.5, vatRate: 0 });
+    // Η Uber μένει χωρίς ΦΠΑ ό,τι κι αν σταλεί.
+    expect(parseRateForm({ rate: '12', vat: '24' }, 'uber').rate).toEqual(uber);
+    expect(parseRateForm({ rate: '20', vat: '' }, 'bolt').errors.vat).toBeDefined();
+    expect(parseRateForm({ rate: '', vat: '0' }, 'bolt').errors.rate).toBeDefined();
+    expect(parseRateForm({ rate: '0', vat: '0' }, 'bolt').errors.rate).toBeDefined();
+    expect(parseRateForm({ rate: '101', vat: '0' }, 'bolt').errors.rate).toBeDefined();
+    expect(parseRateForm({ rate: 'abc', vat: '0' }, 'bolt').errors.rate).toBeDefined();
+  });
+
+  it('τιμές φόρμας ρύθμισης και γραμμή βάσης', () => {
+    expect(rateToFormValues(null, 'freenow')).toEqual({ rate: '', vat: '24' });
+    expect(rateToFormValues(null, 'bolt')).toEqual({ rate: '', vat: '' });
+    expect(rateToFormValues({ ratePct: 12.5, vatRate: 0 }, 'uber')).toEqual({ rate: '12,5', vat: '0' });
+    expect(toRateValues({ ratePct: 12, vatRate: 24 }, { driverId: 'a', platform: 'uber' })).toEqual({
+      driver_id: 'a',
+      platform: 'uber',
+      rate_pct: 12,
+      vat_rate: 0,
+    });
+  });
+});
+
+describe('computeCommission: ποσοστό × (τζίρος − φιλοδωρήματα) + ΦΠΑ', () => {
+  it('FreeNow 15% + ΦΠΑ: τζίρος 150 €, φιλοδωρήματα 10 € → 21,00 + 5,04 = 26,04 €', () => {
+    expect(computeCommission(15000, 1000, freenow)).toEqual({
+      baseCents: 14000,
+      netCents: 2100,
+      vatCents: 504,
+      totalCents: 2604,
+    });
+  });
+
+  it('Uber 12% χωρίς ΦΠΑ: τζίρος 60 €, φιλοδωρήματα 5 € → 6,60 €', () => {
+    expect(computeCommission(6000, 500, uber)).toEqual({ baseCents: 5500, netCents: 660, vatCents: 0, totalCents: 660 });
+  });
+
+  it('στρογγυλοποίηση στο λεπτό (μισό λεπτό προς τα πάνω)', () => {
+    // 12,5% × 0,99 € = 0,12375 → 0,12 €· 15% × 0,03 € = 0,0045 → 0,00 €· 15% × 0,10 € = 0,015 → 0,02 €.
+    expect(computeCommission(99, 0, { ratePct: 12.5, vatRate: 0 }).netCents).toBe(12);
+    expect(computeCommission(3, 0, { ratePct: 15, vatRate: 0 }).netCents).toBe(0);
+    expect(computeCommission(10, 0, { ratePct: 15, vatRate: 0 }).netCents).toBe(2);
+  });
+
+  it('ο ΦΠΑ πάνω στην καθαρή κράτηση ίδιος με τον εμπεριεχόμενο της βάσης (ποσό / 1,24 × 0,24)', () => {
+    for (let base = 0; base <= 60_000; base += 7) {
+      const { vatCents, totalCents } = computeCommission(base, 0, { ratePct: 13.5, vatRate: 24 });
+      expect(includedExpenseVatCents(totalCents)).toBe(vatCents);
+    }
+  });
+
+  it('φιλοδωρήματα περισσότερα από τον τζίρο → καμία κράτηση', () => {
+    expect(computeCommission(1000, 2000, freenow).totalCents).toBe(0);
   });
 });
 
 describe('parseStatementForm', () => {
-  const week = { ...EMPTY_STATEMENT_FORM, weekStart: '2026-09-07', trips: '12', turnover: '240,00', commission: '36' };
+  const week = { ...EMPTY_STATEMENT_FORM, platform: 'freenow' as const, weekStart: '2026-09-07', trips: '6', turnover: '150', tips: '10' };
 
-  it('εβδομάδα: διαδρομές, τζίρος, κράτηση και ποσοστό', () => {
-    const { input, errors, preview } = parseStatementForm(week, september);
+  it('εβδομάδα: η κράτηση βγαίνει αυτόματα από το ποσοστό (χωρίς τα φιλοδωρήματα)', () => {
+    const { input, errors, preview } = parseStatementForm(week, september, freenow);
     expect(errors).toEqual({});
+    expect(preview).toEqual({
+      commissionCents: 2604,
+      vatCents: 504,
+      auto: { baseCents: 14000, netCents: 2100, vatCents: 504, totalCents: 2604 },
+    });
     expect(input).toEqual({
-      platform: 'uber',
+      platform: 'freenow',
       kind: 'week',
       weekStart: '2026-09-07',
-      trips: 12,
-      turnover: 240,
-      commission: 36,
+      trips: 6,
+      turnover: 150,
+      tips: 10,
+      commission: 26.04,
       reference: '',
+      ratePct: 15,
+      vatRate: 24,
     });
-    expect(preview).toEqual({ commissionCents: 3600, vatCents: 0, ratePct: 15 });
   });
 
-  it('FreeNow: ο ΦΠΑ της κράτησης στην προεπισκόπηση', () => {
-    const { preview } = parseStatementForm({ ...week, platform: 'freenow', commission: '31' }, september);
-    expect(preview.vatCents).toBe(600);
+  it('«Άλλο ποσό»: η κράτηση όπως τη γράφει η κίνηση', () => {
+    const manual = { ...week, manualCommission: true, commission: '25,50' };
+    const { input, preview } = parseStatementForm(manual, september, freenow);
+    expect(input?.commission).toBe(25.5);
+    expect(preview.commissionCents).toBe(2550);
+    expect(preview.vatCents).toBe(includedExpenseVatCents(2550));
+    expect(preview.auto?.totalCents).toBe(2604);
+    expect(parseStatementForm({ ...manual, commission: '' }, september, freenow).errors.commission).toBeDefined();
+    expect(parseStatementForm({ ...manual, commission: '151' }, september, freenow).errors.commission).toBeDefined();
   });
 
-  it('εβδομάδα: όλα τα πεδία υποχρεωτικά (το 0 επιτρέπεται)', () => {
-    const empty = parseStatementForm({ ...EMPTY_STATEMENT_FORM, weekStart: '2026-09-07' }, september);
-    expect(Object.keys(empty.errors).sort()).toEqual(['commission', 'trips', 'turnover']);
+  it('χωρίς ρύθμιση ποσοστού δεν γίνεται καταχώρηση', () => {
+    expect(parseStatementForm(week, september, null).errors.rate).toBeDefined();
+    expect(parseStatementForm(week, september, { ratePct: null, vatRate: 24 }).errors.rate).toBeDefined();
+    const invoice = { ...EMPTY_STATEMENT_FORM, kind: 'invoice' as const, commission: '10' };
+    // Για τιμολόγιο αρκεί να είναι γνωστός ο ΦΠΑ.
+    expect(parseStatementForm(invoice, september, { ratePct: null, vatRate: 0 }).errors).toEqual({});
+  });
+
+  it('εβδομάδα: διαδρομές και τζίρος υποχρεωτικά· φιλοδωρήματα προαιρετικά', () => {
+    const empty = parseStatementForm({ ...EMPTY_STATEMENT_FORM, weekStart: '2026-09-07' }, september, uber);
+    expect(Object.keys(empty.errors).sort()).toEqual(['trips', 'turnover']);
     expect(empty.input).toBeNull();
-    const zero = parseStatementForm({ ...week, trips: '0', turnover: '0', commission: '0' }, september);
+    const zero = parseStatementForm({ ...week, trips: '0', turnover: '0', tips: '' }, september, freenow);
     expect(zero.errors).toEqual({});
-    expect(zero.preview.ratePct).toBeNull();
+    expect(zero.input?.commission).toBe(0);
+    expect(parseStatementForm({ ...week, tips: '151' }, september, freenow).errors.tips).toBeDefined();
+    expect(parseStatementForm({ ...week, tips: 'x' }, september, freenow).errors.tips).toBeDefined();
+    expect(parseStatementForm({ ...week, trips: '1,5' }, september, freenow).errors.trips).toBeDefined();
   });
 
   it('εβδομάδα άλλου μήνα ή λάθος αρχή → σφάλμα', () => {
-    expect(parseStatementForm({ ...week, weekStart: '2026-10-05' }, september).errors.weekStart).toBeDefined();
-    expect(parseStatementForm({ ...week, weekStart: '2026-09-09' }, september).errors.weekStart).toBeDefined();
-    expect(parseStatementForm({ ...week, weekStart: '' }, september).errors.weekStart).toBeDefined();
+    expect(parseStatementForm({ ...week, weekStart: '2026-10-05' }, september, freenow).errors.weekStart).toBeDefined();
+    expect(parseStatementForm({ ...week, weekStart: '2026-09-09' }, september, freenow).errors.weekStart).toBeDefined();
+    expect(parseStatementForm({ ...week, weekStart: '' }, september, freenow).errors.weekStart).toBeDefined();
   });
 
-  it('η κράτηση δεν ξεπερνά τον τζίρο', () => {
-    expect(parseStatementForm({ ...week, commission: '240,01' }, september).errors.commission).toBeDefined();
-    expect(parseStatementForm({ ...week, trips: '1,5' }, september).errors.trips).toBeDefined();
-  });
-
-  it('τιμολόγιο: μόνο ποσό (> 0) και προαιρετικός αριθμός', () => {
-    const invoice = { ...EMPTY_STATEMENT_FORM, kind: 'invoice' as const, commission: '37,20', reference: ' FN-123 ' };
-    const { input, errors } = parseStatementForm(invoice, september);
+  it('τιμολόγιο: ποσό (> 0), ΦΠΑ από τη ρύθμιση, προαιρετικός αριθμός', () => {
+    const invoice = { ...EMPTY_STATEMENT_FORM, platform: 'freenow' as const, kind: 'invoice' as const, commission: '37,20', reference: ' FN-123 ' };
+    const { input, errors, preview } = parseStatementForm(invoice, september, freenow);
     expect(errors).toEqual({});
-    expect(input).toMatchObject({ kind: 'invoice', weekStart: null, trips: 0, turnover: 0, commission: 37.2, reference: 'FN-123' });
-    expect(parseStatementForm({ ...invoice, commission: '0' }, september).errors.commission).toBeDefined();
-    expect(parseStatementForm({ ...invoice, reference: 'x'.repeat(61) }, september).errors.reference).toBeDefined();
+    expect(input).toMatchObject({ kind: 'invoice', weekStart: null, trips: 0, turnover: 0, tips: 0, commission: 37.2, reference: 'FN-123', ratePct: null, vatRate: 24 });
+    expect(preview.vatCents).toBe(720);
+    expect(parseStatementForm({ ...invoice, platform: 'uber' }, september, uber).preview.vatCents).toBe(0);
+    expect(parseStatementForm({ ...invoice, commission: '0' }, september, freenow).errors.commission).toBeDefined();
+    expect(parseStatementForm({ ...invoice, reference: 'x'.repeat(61) }, september, freenow).errors.reference).toBeDefined();
   });
 });
 
 describe('toStatementValues / statementToFormValues', () => {
-  it('εβδομάδα → γραμμή της βάσης (χωρίς ΦΠΑ και τέλος εβδομάδας)', () => {
-    const values = { ...EMPTY_STATEMENT_FORM, weekStart: '2026-09-07', trips: '12', turnover: '240,555', commission: '36' };
-    const row = toStatementValues(parseStatementForm(values, september).input!, { driverId: 'd', ...september });
+  it('εβδομάδα → γραμμή της βάσης με ποσοστό και ΦΠΑ (χωρίς ποσό ΦΠΑ και τέλος εβδομάδας)', () => {
+    const values = { ...EMPTY_STATEMENT_FORM, platform: 'freenow' as const, weekStart: '2026-09-07', trips: '6', turnover: '150', tips: '10' };
+    const row = toStatementValues(parseStatementForm(values, september, freenow).input!, { driverId: 'd', ...september });
     expect(row).toEqual({
       driver_id: 'd',
-      platform: 'uber',
+      platform: 'freenow',
       kind: 'week',
       year: 2026,
       month: 9,
       week_start: '2026-09-07',
-      trips: 12,
-      turnover: 240.56,
-      commission: 36,
+      trips: 6,
+      turnover: 150,
+      tips: 10,
+      rate_pct: 15,
+      vat_rate: 24,
+      commission: 26.04,
       reference: '',
     });
     expect(row).not.toHaveProperty('commission_vat');
     expect(row).not.toHaveProperty('week_end');
   });
 
-  it('η φόρμα διαβάζει ξανά την ίδια εγγραφή', () => {
-    const week = statementToFormValues({
+  it('Uber: πάντα χωρίς ΦΠΑ στη βάση', () => {
+    const values = { ...EMPTY_STATEMENT_FORM, weekStart: '2026-09-07', trips: '1', turnover: '10' };
+    const input = parseStatementForm(values, september, { ratePct: 12, vatRate: 24 }).input!;
+    expect(toStatementValues(input, { driverId: 'd', ...september }).vat_rate).toBe(0);
+  });
+
+  it('η φόρμα διαβάζει ξανά την ίδια εγγραφή: αυτόματη ή «Άλλο ποσό»', () => {
+    const base = {
       platform: 'freenow',
       kind: 'week',
       week_start: '2026-09-07',
-      trips: 0,
-      turnover: 0,
-      commission: 0,
+      trips: 6,
+      turnover: 150,
+      tips: 10,
+      rate_pct: 15,
+      vat_rate: 24,
       reference: '',
+    };
+    const auto = { ...base, commission: 26.04 };
+    expect(isAutoCommission(auto)).toBe(true);
+    expect(statementToFormValues(auto)).toEqual({
+      ...EMPTY_STATEMENT_FORM,
+      platform: 'freenow',
+      weekStart: '2026-09-07',
+      trips: '6',
+      turnover: '150',
+      tips: '10',
     });
-    expect(week).toMatchObject({ platform: 'freenow', kind: 'week', trips: '0', turnover: '0', commission: '0' });
-    expect(parseStatementForm(week, september).errors).toEqual({});
 
-    const invoice = statementToFormValues({
-      platform: 'uber',
-      kind: 'invoice',
-      week_start: null,
-      trips: 0,
-      turnover: 0,
-      commission: 48.5,
-      reference: 'U-9',
-    });
+    const manual = { ...base, commission: 25.5 };
+    expect(isAutoCommission(manual)).toBe(false);
+    expect(statementToFormValues(manual)).toMatchObject({ manualCommission: true, commission: '25,5' });
+    expect(parseStatementForm(statementToFormValues(manual), september, freenow).input?.commission).toBe(25.5);
+
+    const invoice = statementToFormValues({ ...base, platform: 'uber', kind: 'invoice', week_start: null, trips: 0, turnover: 0, tips: 0, rate_pct: null, vat_rate: 0, commission: 48.5, reference: 'U-9' });
     expect(invoice).toEqual({ ...EMPTY_STATEMENT_FORM, kind: 'invoice', commission: '48,5', reference: 'U-9' });
   });
 });
@@ -203,6 +332,8 @@ describe('groupStatements: το τιμολόγιο αντικαθιστά τις
     month: 9,
     trips: 0,
     turnover: 0,
+    tips: 0,
+    vat_rate: 24,
     commission: 0,
     commission_vat: null,
     reference: '',
@@ -211,10 +342,18 @@ describe('groupStatements: το τιμολόγιο αντικαθιστά τις
 
   it('χωρίς τιμολόγιο μετράει το άθροισμα των εβδομάδων', () => {
     const [group] = groupStatements([
-      row({ trips: 4, turnover: 100, commission: 15.5, commission_vat: 3 }),
+      row({ trips: 4, turnover: 100, tips: 5, commission: 15.5, commission_vat: 3 }),
       row({ trips: 6, turnover: 100, commission: 15.5, commission_vat: 3 }),
     ]);
-    expect(group).toMatchObject({ weeks: 2, trips: 10, turnoverCents: 20000, commissionCents: 3100, commissionVatCents: 600 });
+    expect(group).toMatchObject({
+      weeks: 2,
+      trips: 10,
+      turnoverCents: 20000,
+      tipsCents: 500,
+      commissionCents: 3100,
+      commissionVatCents: 600,
+      commissionNoVatCents: 0,
+    });
     expect(group.invoice).toBeNull();
   });
 
@@ -229,29 +368,28 @@ describe('groupStatements: το τιμολόγιο αντικαθιστά τις
       weeksCommissionCents: 3100,
       commissionCents: 3720,
       commissionVatCents: 720,
-      invoice: { commissionCents: 3720, vatCents: 720, reference: 'FN-1' },
+      invoice: { commissionCents: 3720, vatCents: 720, noVatCents: 0, reference: 'FN-1' },
     });
   });
 
-  it('χωριστά ανά αυτοκίνητο, μήνα και εφαρμογή· σύνολα ανά εφαρμογή', () => {
+  it('χωριστά ανά αυτοκίνητο, μήνα και εφαρμογή· κρατήσεις χωρίς ΦΠΑ· σύνολα ανά εφαρμογή', () => {
     const months = groupStatements([
       row({ trips: 10, turnover: 200, commission: 31 }),
-      row({ platform: 'uber', trips: 5, turnover: 100, commission: 15 }),
-      row({ platform: 'uber', month: 10, trips: 2, turnover: 40, commission: 6 }),
-      row({ platform: 'uber', month: 10, kind: 'invoice', commission: 7 }),
+      row({ platform: 'uber', vat_rate: 0, trips: 5, turnover: 100, commission: 15 }),
+      row({ platform: 'uber', vat_rate: 0, month: 10, trips: 2, turnover: 40, commission: 6 }),
+      row({ platform: 'uber', vat_rate: 0, month: 10, kind: 'invoice', commission: 7 }),
+      row({ platform: 'bolt', vat_rate: 0, trips: 1, turnover: 20, commission: 4 }),
       row({ driver_id: 'other', trips: 1, turnover: 20, commission: 3 }),
     ]);
-    expect(months).toHaveLength(4);
-    // Χωρίς ΦΠΑ από τη βάση: υπολογίζεται (FreeNow 24%, Uber 0).
+    expect(months).toHaveLength(5);
+    // Χωρίς ΦΠΑ από τη βάση: υπολογίζεται από τον ΦΠΑ της καταχώρησης.
     expect(months.find((m) => m.driverId === 'car' && m.platform === 'freenow')?.commissionVatCents).toBe(600);
+    expect(months.find((m) => m.platform === 'uber' && m.month === 10)?.commissionNoVatCents).toBe(700);
 
-    const [uber, freenow] = totalsByPlatform(months);
-    expect(uber).toMatchObject({ platform: 'uber', months: 2, invoiced: 1, trips: 7, commissionCents: 1500 + 700 });
-    expect(freenow).toMatchObject({ platform: 'freenow', months: 2, invoiced: 0, trips: 11, commissionCents: 3400 });
+    const [uberTotals, freenowTotals, boltTotals] = totalsByPlatform(months);
+    expect(uberTotals).toMatchObject({ platform: 'uber', months: 2, invoiced: 1, trips: 7, commissionCents: 2200, commissionNoVatCents: 2200 });
+    expect(freenowTotals).toMatchObject({ platform: 'freenow', months: 2, invoiced: 0, trips: 11, commissionCents: 3400, commissionNoVatCents: 0 });
+    expect(boltTotals).toMatchObject({ platform: 'bolt', commissionCents: 400, commissionVatCents: 0, commissionNoVatCents: 400 });
     expect(totalsByPlatform([])).toEqual([]);
-    // Ποσοστό από τις εβδομάδες (ίδιες εβδομάδες με τον τζίρο), όχι από το τιμολόγιο: (15 + 6) / (100 + 40).
-    expect(uber.weeksCommissionCents).toBe(2100);
-    expect(commissionRatePct(uber)).toBe(15);
-    expect(commissionRatePct({ weeksCommissionCents: 0, turnoverCents: 0 })).toBeNull();
   });
 });

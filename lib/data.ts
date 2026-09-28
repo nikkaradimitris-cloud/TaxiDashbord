@@ -11,6 +11,8 @@ import type {
   DriverRow,
   ExpenseInsert,
   ExpenseRow,
+  PlatformRateInsert,
+  PlatformRateRow,
   ProfileRow,
   ShiftInsert,
   ShiftRow,
@@ -205,6 +207,24 @@ export async function updateStatement(
   const { data, error } = await supabase.from('platform_statements').update(changes).eq('id', id).select('*');
   if (error) throw error;
   return data[0] ?? null;
+}
+
+/** Τα ποσοστά κράτησης των εφαρμογών (ο οδηγός βλέπει μόνο του δικού του αυτοκινήτου — RLS). */
+export async function fetchPlatformRates(supabase: BrowserSupabase): Promise<PlatformRateRow[]> {
+  const { data, error } = await supabase.from('platform_rates').select('*');
+  if (error) throw error;
+  return data;
+}
+
+/** Ορισμός ή αλλαγή του ποσοστού μιας εφαρμογής για ένα αυτοκίνητο. */
+export async function savePlatformRate(supabase: BrowserSupabase, payload: PlatformRateInsert): Promise<PlatformRateRow> {
+  const { data, error } = await supabase
+    .from('platform_rates')
+    .upsert(payload, { onConflict: 'driver_id,platform' })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
 }
 
 /** true αν διαγράφηκε· false αν δεν επιτρέπεται. */
