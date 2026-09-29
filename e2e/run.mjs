@@ -1207,45 +1207,47 @@ await page.reload();
 await backupPanel.getByText(/28\/09\/2026/).first().waitFor();
 check((await page.getByTestId('backup-reminder').count()) === 0, 'μετά από ανανέωση η υπενθύμιση δεν ξαναφαίνεται (η ημερομηνία μένει στον λογαριασμό)');
 
-console.log('9στ. «Λείπει Ζ»: μόνο κενά ανάμεσα σε Ζ του ίδιου ταξιμέτρου (μόνο ο ιδιοκτήτης)');
+console.log('9στ. «Λείπει Ζ»: κενά μόνο ανάμεσα σε Ζ του ίδιου οδηγού (μόνο ο ιδιοκτήτης)');
 const zNotice = page.locator('#shifts').getByTestId('z-gaps');
-await zNotice.waitFor();
-// Η παλιά έκδοση έφερε το Ζ 900 στο ΤΑΕ-1234 (ίδιο ταξίμετρο με τα Ζ 101–103 του Γιώργου).
+await idle(page);
+// Η παλιά έκδοση έφερε το Ζ 900 του «Ιδιοκτήτη» στο ΤΑΕ-1234, το αυτοκίνητο του Γιώργου (Ζ 101–103):
+// άλλος οδηγός, άλλα φορολογικά στοιχεία, άλλη σειρά Ζ, οπότε δεν ενώνονται.
 check(
-  (await panelButton(page, 'shifts').innerText()).includes('έλεγχος Ζ') &&
-    nbsp0(await zNotice.innerText()).includes('ΤΑΕ-1234 · Γιώργος Παπαδόπουλος, Ιδιοκτήτης') &&
-    nbsp0(await zNotice.innerText()).includes('από Ζ 103 σε Ζ 900: μήπως γράφτηκε λάθος ο αριθμός;'),
-  'Ζ 103 → Ζ 900 στο ίδιο αυτοκίνητο: «έλεγχος Ζ» (μήπως λάθος αριθμός), όχι 796 βάρδιες που λείπουν',
-);
-check(
-  !nbsp0(await zNotice.innerText()).includes('ΙΚΒ-5678'),
-  'ΙΚΒ-5678 με ένα μόνο Ζ (55): τίποτα για Ζ πριν ή μετά (ο μήνας δεν έκλεισε)',
+  (await zNotice.count()) === 0 && !/λείπ|έλεγχος Ζ/.test(await panelButton(page, 'shifts').innerText()),
+  'Ζ 101–103 του Γιώργου και Ζ 900 του «Ιδιοκτήτη» στο ίδιο αυτοκίνητο: δεν ενώνονται, καμία ειδοποίηση',
 );
 await expandTarget(form);
 await form.getByLabel('Οδηγός').selectOption({ label: 'Μαρία Κωνσταντίνου · ΙΚΒ-5678' });
-await fillShift(form, { 'Αριθμός Ζ': '57', 'Αποφορολογημένα Έσοδα': '10' });
-await form.getByRole('button', { name: /^Καταχώρηση/ }).click();
-await form.getByText('✓ Καταχωρήθηκε: Ζ 57').waitFor();
-await zNotice.getByText(/ΙΚΒ-5678/).waitFor();
+for (const z of ['57', '570']) {
+  await fillShift(form, { 'Αριθμός Ζ': z, 'Αποφορολογημένα Έσοδα': '10' });
+  await form.getByRole('button', { name: /^Καταχώρηση/ }).click();
+  await form.getByText(`✓ Καταχωρήθηκε: Ζ ${z}`).waitFor();
+}
+await zNotice.getByText(/Μαρία/).waitFor();
+const zText = nbsp0(await zNotice.innerText());
 check(
-  nbsp0(await zNotice.innerText()).includes('ΙΚΒ-5678 · Μαρία Κωνσταντίνου: λείπει το Ζ 56') &&
+  zText.includes('Μαρία Κωνσταντίνου · ΙΚΒ-5678: λείπει το Ζ 56') &&
     (await panelButton(page, 'shifts').innerText()).includes('λείπει 1 Ζ'),
   'Ζ 55 και Ζ 57: «λείπει το Ζ 56» και σήμανση «λείπει 1 Ζ» στον τίτλο του ιστορικού',
+);
+check(
+  zText.includes('από Ζ 57 σε Ζ 570: μήπως γράφτηκε λάθος ο αριθμός;'),
+  'Ζ 570 μετά το Ζ 57: «μήπως γράφτηκε λάθος ο αριθμός;» (όχι 512 βάρδιες που λείπουν)',
 );
 await page.locator('#shifts').screenshot({ path: `${OUT}/14-missing-z.png` });
 await dpage.reload();
 await dpage.locator('#shifts').waitFor();
 check(
   (await dpage.getByTestId('z-gaps').count()) === 0 && !(await dpage.locator('#shifts > h2').innerText()).includes('Ζ'),
-  'ο οδηγός δεν βλέπει ειδοποίηση για Ζ (βλέπει μόνο τις δικές του βάρδιες)',
+  'ο οδηγός δεν βλέπει ειδοποίηση για Ζ (μόνο ο ιδιοκτήτης)',
 );
-page.once('dialog', (d) => d.accept());
-await page.getByRole('button', { name: 'Διαγραφή βάρδιας Ζ 57' }).click();
-await page.getByText('Η βάρδια Ζ 57 διαγράφηκε.').waitFor();
-check(
-  !nbsp0(await zNotice.innerText()).includes('Ζ 56') && (await panelButton(page, 'shifts').innerText()).includes('έλεγχος Ζ'),
-  'μετά τη διαγραφή του Ζ 57 το Ζ 56 δεν λείπει πια',
-);
+for (const z of ['570', '57']) {
+  page.once('dialog', (d) => d.accept());
+  await page.getByRole('button', { name: `Διαγραφή βάρδιας Ζ ${z}` }).click();
+  await page.getByText(`Η βάρδια Ζ ${z} διαγράφηκε.`).waitFor();
+}
+await idle(page);
+check((await zNotice.count()) === 0, 'μετά τη διαγραφή των Ζ 57 και 570 δεν λείπει τίποτα');
 
 console.log('10. Μνήμη έτους/μήνα & αποσύνδεση');
 await page.locator('#filters').getByLabel('Έτος').selectOption('2025');

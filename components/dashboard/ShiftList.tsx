@@ -7,7 +7,7 @@ import type { ShiftFigures } from '@/lib/accounting';
 import { formatDateTime, formatEuro, formatKm } from '@/lib/format';
 import { monthName } from '@/lib/period';
 import type { DriverRow, ShiftRow } from '@/lib/types';
-import { jumpText, missingZText, zGapBadge, type CarZGaps } from '@/lib/zgaps';
+import { jumpText, missingZText, zGapBadge, type DriverZGaps } from '@/lib/zgaps';
 
 const PAGE = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -35,8 +35,8 @@ export function ShiftList({
   editingId: string | null;
   onEdit: (row: ShiftRow) => void;
   onDelete: (row: ShiftRow) => void;
-  /** Ζ που λείπουν ανάμεσα στις βάρδιες κάθε αυτοκινήτου (μόνο για τον ιδιοκτήτη). */
-  zGaps?: CarZGaps[];
+  /** Ζ που λείπουν ανάμεσα στις βάρδιες κάθε οδηγού (μόνο για τον ιδιοκτήτη). */
+  zGaps?: DriverZGaps[];
 }) {
   const [limit, setLimit] = useState(PAGE);
   const visible = items.slice(0, limit);
@@ -66,7 +66,7 @@ export function ShiftList({
           <p className="font-semibold">Λείπουν βάρδιες ανάμεσα στα Ζ:</p>
           <ul className="mt-1 space-y-1" data-testid="z-gaps">
             {zGaps.map((car) => (
-              <li key={car.key}>
+              <li key={car.driverId}>
                 <b>{car.label}</b>
                 {car.missing.length > 0 && `: ${missingZText(car)}`}
                 {car.jumps.map((jump) => (

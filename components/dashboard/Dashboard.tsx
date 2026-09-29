@@ -306,11 +306,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
       }
     : null;
   const items = useMemo(() => shifts.map((row) => ({ row, figures: figuresFromStored(row) })), [shifts]);
-  // «Λείπει Ζ»: μόνο ο ιδιοκτήτης βλέπει όλα τα Ζ κάθε αυτοκινήτου (ο οδηγός μόνο τα δικά του).
-  const zGaps = useMemo(
-    () => (isAdmin ? findZGaps(shifts, drivers, driverFilter === 'all' ? null : driverFilter) : []),
-    [isAdmin, shifts, drivers, driverFilter],
-  );
+  // «Λείπει Ζ»: κενά στα Ζ κάθε οδηγού (μόνο για τον ιδιοκτήτη).
+  const zGaps = useMemo(() => (isAdmin ? findZGaps(shifts, drivers) : []), [isAdmin, shifts, drivers]);
   const expenseItems = useMemo(
     () => expenses.map((row) => ({ row, figures: expenseFromStored(row) })),
     [expenses],

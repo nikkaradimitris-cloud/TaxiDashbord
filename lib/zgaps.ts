@@ -1,7 +1,8 @@
 /**
- * «Λείπει Ζ»: τα Ζ του ταξιμέτρου κάθε αυτοκινήτου είναι συνεχόμενα (5, 6, 7, …). Ελέγχονται μόνο
- * τα κενά ανάμεσα στο πρώτο και στο τελευταίο Ζ της περιόδου που φαίνεται: όχι πριν από το πρώτο
- * (π.χ. οι καταχωρήσεις ξεκίνησαν στη μέση του μήνα) ούτε μετά το τελευταίο (ο μήνας δεν έκλεισε).
+ * «Λείπει Ζ»: τα Ζ κάθε οδηγού είναι συνεχόμενα (5, 6, 7, …). Κάθε οδηγός ελέγχεται χωριστά, και όταν
+ * μοιράζεται αυτοκίνητο με άλλον: έχει δικά του φορολογικά στοιχεία και δική του σειρά Ζ. Ελέγχονται μόνο
+ * τα κενά ανάμεσα στο πρώτο και στο τελευταίο Ζ της περιόδου που φαίνεται: όχι πριν από το πρώτο (π.χ. οι
+ * καταχωρήσεις ξεκίνησαν στη μέση του μήνα) ούτε μετά το τελευταίο (ο μήνας δεν έκλεισε).
  */
 import type { DriverRow, ShiftRow } from './types';
 
@@ -14,10 +15,9 @@ export interface ZRange {
   to: number;
 }
 
-export interface CarZGaps {
-  /** Πινακίδα, ή ο οδηγός όταν δεν έχει πινακίδα. */
-  key: string;
-  /** «ΤΑΕ-1234 · Γιώργος Παπαδόπουλος» */
+export interface DriverZGaps {
+  driverId: string;
+  /** «Γιώργος Παπαδόπουλος · ΤΑΕ-1234» */
   label: string;
   /** Ζ που λείπουν. */
   missing: ZRange[];
@@ -32,38 +32,21 @@ export function parseZ(value: string): number | null {
   return /^\d{1,9}$/.test(trimmed) ? Number(trimmed) : null;
 }
 
-const plateOf = (driver: DriverRow | undefined) => driver?.plate?.trim().toUpperCase() || null;
-
-/**
- * Κενά στα Ζ ανά αυτοκίνητο (πινακίδα). `onlyDriverId`: οι βάρδιες είναι μόνο ενός οδηγού (φίλτρο)·
- * τότε αυτοκίνητο που το οδηγούν κι άλλοι δεν ελέγχεται, γιατί τα δικά τους Ζ δεν φαίνονται.
- */
-export function findZGaps(
-  shifts: Pick<ShiftRow, 'driver_id' | 'z_number'>[],
-  drivers: DriverRow[],
-  onlyDriverId: string | null,
-): CarZGaps[] {
+/** Κενά στα Ζ κάθε οδηγού, στις βάρδιες της περιόδου που φαίνεται. */
+export function findZGaps(shifts: Pick<ShiftRow, 'driver_id' | 'z_number'>[], drivers: DriverRow[]): DriverZGaps[] {
   const driversById = new Map(drivers.map((driver) => [driver.id, driver]));
-  const groups = new Map<string, { plate: string | null; driverIds: Set<string>; numbers: Set<number> }>();
-
+  const numbersByDriver = new Map<string, Set<number>>();
   for (const shift of shifts) {
     const z = parseZ(shift.z_number);
     if (z === null) continue;
-    const plate = plateOf(driversById.get(shift.driver_id));
-    const key = plate ?? `driver:${shift.driver_id}`;
-    const group = groups.get(key) ?? { plate, driverIds: new Set<string>(), numbers: new Set<number>() };
-    group.driverIds.add(shift.driver_id);
-    group.numbers.add(z);
-    groups.set(key, group);
+    const numbers = numbersByDriver.get(shift.driver_id) ?? new Set<number>();
+    numbers.add(z);
+    numbersByDriver.set(shift.driver_id, numbers);
   }
 
-  const result: CarZGaps[] = [];
-  for (const [key, group] of groups) {
-    if (onlyDriverId && group.plate) {
-      const shared = drivers.some((driver) => driver.id !== onlyDriverId && plateOf(driver) === group.plate);
-      if (shared) continue;
-    }
-    const numbers = [...group.numbers].sort((a, b) => a - b);
+  const result: DriverZGaps[] = [];
+  for (const [driverId, set] of numbersByDriver) {
+    const numbers = [...set].sort((a, b) => a - b);
     const missing: ZRange[] = [];
     const jumps: ZRange[] = [];
     let missingCount = 0;
@@ -78,12 +61,9 @@ export function findZGaps(
       }
     }
     if (missing.length === 0 && jumps.length === 0) continue;
-    const names = [...group.driverIds]
-      .map((id) => driversById.get(id)?.name)
-      .filter((name): name is string => !!name)
-      .sort((a, b) => a.localeCompare(b, 'el'));
-    const label = [group.plate, names.join(', ')].filter(Boolean).join(' · ') || 'Χωρίς όνομα';
-    result.push({ key, label, missing, missingCount, jumps });
+    const driver = driversById.get(driverId);
+    const label = driver ? (driver.plate ? `${driver.name} · ${driver.plate}` : driver.name) : 'Χωρίς όνομα';
+    result.push({ driverId, label, missing, missingCount, jumps });
   }
   return result.sort((a, b) => a.label.localeCompare(b.label, 'el'));
 }
@@ -91,7 +71,7 @@ export function findZGaps(
 const rangeText = (range: ZRange) => (range.from === range.to ? `${range.from}` : `${range.from}–${range.to}`);
 
 /** «λείπει το Ζ 7» / «λείπουν τα Ζ 7, 9–11» */
-export function missingZText(car: CarZGaps): string {
+export function missingZText(car: DriverZGaps): string {
   const list = car.missing.map(rangeText).join(', ');
   return car.missingCount === 1 ? `λείπει το Ζ ${list}` : `λείπουν τα Ζ ${list}`;
 }
@@ -102,7 +82,7 @@ export function jumpText(range: ZRange): string {
 }
 
 /** Σήμανση στον τίτλο του ιστορικού: «λείπει 1 Ζ», «λείπουν 3 Ζ» ή «έλεγχος Ζ». */
-export function zGapBadge(gaps: CarZGaps[]): string | null {
+export function zGapBadge(gaps: DriverZGaps[]): string | null {
   const count = gaps.reduce((sum, car) => sum + car.missingCount, 0);
   if (count > 0) return count === 1 ? 'λείπει 1 Ζ' : `λείπουν ${count} Ζ`;
   return gaps.some((car) => car.jumps.length > 0) ? 'έλεγχος Ζ' : null;
