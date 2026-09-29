@@ -292,6 +292,21 @@ check(
     openings.every((o) => o.shown === o.route),
   `κάθε επόμενο άνοιγμα κάτι άλλο: ${openings.map((o) => `«${o.tip}» (διαδρομή ${o.route})`).join(' → ')}`,
 );
+// Η επιλογή (μήνυμα, διαδρομή, «ήδη παίχτηκε») γίνεται πριν εμφανιστεί η σελίδα, χωρίς να περιμένει
+// τον κώδικα της εφαρμογής: και με τα αρχεία της μπλοκαρισμένα, ισχύει από την αρχή.
+const earlyCtx = await newContext({ ...ctxOptions, ...phone, serviceWorkers: 'block' }, { intro: true });
+await earlyCtx.addInitScript(() => localStorage.setItem('taxi-tracker:welcome:v1', 'true'));
+const early = await earlyCtx.newPage();
+await early.route('**/_next/static/**/*.js', (route) => route.abort());
+await early.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
+const earlyTip = await early.locator('html').getAttribute('data-tip');
+const earlyShown = (await early.locator('.intro-tip:visible').count()) === 1;
+await early.reload({ waitUntil: 'domcontentloaded' });
+check(
+  earlyTip !== null && earlyShown && (await early.locator('html').getAttribute('data-splash')) === 'done' && !(await early.getByTestId('splash').isVisible()),
+  'μήνυμα και διαδρομή διαλέγονται πριν εμφανιστεί η σελίδα· στην ανανέωση η κίνηση δεν ξαναφαίνεται ούτε στιγμιαία',
+);
+await earlyCtx.close();
 await introCtx.close();
 
 const skipCtx = await newContext({ ...ctxOptions, ...phone }, { intro: true });

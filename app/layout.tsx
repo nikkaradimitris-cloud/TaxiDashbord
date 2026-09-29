@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from 'next';
-import Script from 'next/script';
 import { AppSetup } from '@/components/intro/AppSetup';
 import { ROUTES, SPLASH_TIPS } from '@/components/intro/scenes';
 import { Splash } from '@/components/intro/Splash';
@@ -25,7 +24,9 @@ export const viewport: Viewport = {
 // Πριν εμφανιστεί η σελίδα, ώστε να μη «πηδάει»: τα μεγάλα γράμματα («Α+»), η κίνηση ανοίγματος μόνο
 // μία φορά σε κάθε άνοιγμα (και, αφού έχει φανεί το «Καλώς ήρθατε», κάθε φορά το επόμενο μήνυμα και η
 // επόμενη διαδρομή), και το «beforeinstallprompt» (κουμπί «Εγκατάσταση»), που μπορεί να έρθει πριν
-// φορτώσει η εφαρμογή (components/intro/install.ts).
+// φορτώσει η εφαρμογή (components/intro/install.ts). Απλό <script> στο <head>, που τρέχει όσο διαβάζεται
+// η σελίδα (οδηγός Next.js «Preventing flash before hydration»)· το <Script beforeInteractive> περιμένει
+// να φορτώσει ο κώδικας του Next.js, άρα μπορεί να έρθει μετά την πρώτη εικόνα.
 const [splash, welcome, tip] = [SPLASH_KEY, WELCOME_KEY, SPLASH_TIP_KEY].map((key) => JSON.stringify(key));
 const bootScript = [
   `try{if(JSON.parse(localStorage.getItem(${JSON.stringify(TEXT_SIZE_KEY)}))==='large')document.documentElement.dataset.textSize='large'}catch(e){}`,
@@ -36,10 +37,10 @@ const bootScript = [
 export default function RootLayout({ children }: LayoutProps<'/'>) {
   return (
     <html lang="el" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: bootScript }} />
+      </head>
       <body className="min-h-dvh antialiased">
-        <Script id="boot" strategy="beforeInteractive">
-          {bootScript}
-        </Script>
         <Splash />
         <AppSetup />
         {children}
