@@ -104,8 +104,8 @@ async function isFocused(locator) {
 }
 const idle = (p) => p.waitForFunction(() => !document.querySelector('section[aria-busy="true"]'));
 
-/** Διαβάζει το Excel της εφαρμογής (zip χωρίς συμπίεση): καρτέλες με γραμμές τιμών (κείμενο ή αριθμός). */
-function readXlsx(file) {
+/** Τα μέρη ενός zip χωρίς συμπίεση (όπως το Excel της εφαρμογής), ως κείμενο. */
+function unzipStored(file) {
   const bytes = fs.readFileSync(file);
   const end = bytes.length - 22;
   const files = new Map();
@@ -119,17 +119,25 @@ function readXlsx(file) {
     files.set(name, bytes.subarray(start, start + size).toString('utf8'));
     at += 46 + nameLength;
   }
+  return files;
+}
+
+/** Διαβάζει το Excel της εφαρμογής: καρτέλες με γραμμές τιμών (κείμενο από τον κοινό πίνακα ή αριθμός). */
+function readXlsx(file) {
+  const files = unzipStored(file);
   const unescape = (text) =>
     text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  const shared = [...files.get('xl/sharedStrings.xml').matchAll(/<si><t[^>]*>(.*?)<\/t><\/si>/g)].map((match) =>
+    unescape(match[1]),
+  );
   const names = [...files.get('xl/workbook.xml').matchAll(/<sheet name="([^"]*)"/g)].map((match) => unescape(match[1]));
   return names.map((name, index) => {
     const xml = files.get(`xl/worksheets/sheet${index + 1}.xml`);
     const rows = [...xml.matchAll(/<row [^>]*>(.*?)<\/row>/g)].map((row) => {
       const cells = [];
-      for (const cell of row[1].matchAll(/<c r="([A-Z]+)\d+"[^>]*>(.*?)<\/c>/g)) {
+      for (const cell of row[1].matchAll(/<c r="([A-Z]+)\d+"([^>]*)><v>(.*?)<\/v><\/c>/g)) {
         const column = [...cell[1]].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
-        const text = cell[2].match(/<t[^>]*>(.*?)<\/t>/);
-        cells[column] = text ? unescape(text[1]) : Number(cell[2].match(/<v>(.*?)<\/v>/)[1]);
+        cells[column] = / t="s"/.test(cell[2]) ? shared[Number(cell[3])] : Number(cell[3]);
       }
       return cells;
     });
@@ -1197,8 +1205,28 @@ check(
   'καρτέλα «Πληροφορίες» με τη μορφή του αρχείου',
 );
 check(!/access_token|refresh_token|password/i.test(fs.readFileSync(backupPath, 'latin1')), 'το αρχείο δεν έχει κωδικούς ή κλειδιά σύνδεσης');
+const backupParts = unzipStored(backupPath);
+check(
+  ['docProps/core.xml', 'docProps/app.xml', 'xl/sharedStrings.xml'].every((part) => backupParts.has(part)) &&
+    ![...backupParts.values()].some((xml) => xml.includes('inlineStr')),
+  'το Excel είναι γραμμένο όπως τα γράφει το ίδιο το Excel (κείμενα σε κοινό πίνακα, ιδιότητες εγγράφου)',
+);
 await page.getByText('✓ Κατέβηκε το taxi-fleet-antigrafo-2026-09-28.xlsx: 4 οδηγοί · 6 βάρδιες · 3 έξοδα · 5 καταχωρήσεις εφαρμογών.').waitFor();
 check(true, 'μήνυμα: τι κατέβηκε');
+check(
+  await page
+    .getByText('Θα το βρείτε στις «Λήψεις» (στο κινητό: εφαρμογή «Τα αρχεία μου» ή «Αρχεία»). Ανοίγει με Excel ή με τα «Υπολογιστικά φύλλα Google».')
+    .isVisible(),
+  'μήνυμα: πού θα βρει το αρχείο και με τι ανοίγει',
+);
+await page.screenshot({ path: `${OUT}/13b-backup-done.png` });
+const backupText = nbsp0(await backupPanel.innerText());
+check(
+  backupText.includes('Πού πάει: στις «Λήψεις»') &&
+    backupText.includes('Αν στο κινητό έχει λευκό εικονίδιο και δεν ανοίγει, λείπει η εφαρμογή') &&
+    backupText.includes('μην το στέλνετε σε άλλους'),
+  'πάνελ: πού πάει το αρχείο, τι σημαίνει το λευκό εικονίδιο, πού να το κρατάει',
+);
 check(
   nbsp0(await backupPanel.innerText()).includes('28/09/2026') && (await backupPanel.getByText('χρειάζεται', { exact: true }).count()) === 0,
   'πάνελ: τελευταίο αντίγραφο 28/09/2026, χωρίς σήμανση',

@@ -21,7 +21,12 @@ import type { BrowserSupabase } from '@/lib/supabase/client';
 import { buildXlsx, XLSX_MIME } from '@/lib/xlsx';
 
 type Origin = 'reminder' | 'panel';
-type Message = { tone: 'success' | 'warning' | 'error'; text: string; origin: Origin };
+/** `saved`: το αρχείο κατέβηκε (το μήνυμα λέει και πού θα το βρει). */
+type Message = { tone: 'success' | 'warning' | 'error'; text: string; origin: Origin; saved: boolean };
+
+/** Πού πάει το αρχείο και με τι ανοίγει: στο κινητό χρειάζεται εφαρμογή για Excel. */
+const SAVED_HINT =
+  'Θα το βρείτε στις «Λήψεις» (στο κινητό: εφαρμογή «Τα αρχεία μου» ή «Αρχεία»). Ανοίγει με Excel ή με τα «Υπολογιστικά φύλλα Google».';
 
 /**
  * Αντίγραφο ασφαλείας (μόνο ο ιδιοκτήτης): κατεβάζει όλους τους πίνακες σε ένα αρχείο Excel.
@@ -69,11 +74,12 @@ export function useBackup(supabase: BrowserSupabase, email: string, enabled: boo
                 tone: 'warning',
                 text: `Το ${name} κατέβηκε, αλλά η ημερομηνία του αντιγράφου δεν αποθηκεύτηκε: η υπενθύμιση μπορεί να ξαναφανεί.`,
                 origin,
+                saved: true,
               }
-            : { tone: 'success', text: `✓ Κατέβηκε το ${name}: ${backupSummary(file.counts)}.`, origin },
+            : { tone: 'success', text: `✓ Κατέβηκε το ${name}: ${backupSummary(file.counts)}.`, origin, saved: true },
         );
       } catch (error) {
-        setMessage({ tone: 'error', text: `Το αντίγραφο δεν έγινε. ${dataErrorMessage(error)}`, origin });
+        setMessage({ tone: 'error', text: `Το αντίγραφο δεν έγινε. ${dataErrorMessage(error)}`, origin, saved: false });
       } finally {
         setBusy(false);
       }
@@ -86,12 +92,19 @@ export function useBackup(supabase: BrowserSupabase, email: string, enabled: boo
 
 export type BackupState = ReturnType<typeof useBackup>;
 
+function BackupMessage({ message }: { message: Message }) {
+  return (
+    <Notice tone={message.tone}>
+      <p>{message.text}</p>
+      {message.saved && <p className="mt-1">{SAVED_HINT}</p>}
+    </Notice>
+  );
+}
+
 /** Υπενθύμιση πάνω στη σελίδα όταν δεν έχει γίνει αντίγραφο τον τελευταίο μήνα. */
 export function BackupReminder({ backup, hasData }: { backup: BackupState; hasData: boolean }) {
   const { loaded, due, lastBackupAt, busy, message, run } = backup;
-  if (message?.origin === 'reminder') {
-    return <Notice tone={message.tone}>{message.text}</Notice>;
-  }
+  if (message?.origin === 'reminder') return <BackupMessage message={message} />;
   if (!loaded || !due || !hasData) return null;
   return (
     <Notice tone="warning">
@@ -124,18 +137,28 @@ export function BackupPanel({ backup }: { backup: BackupState }) {
         </p>
         <p>
           Κατεβάζει όλα τα στοιχεία της εφαρμογής σε ένα αρχείο Excel, με μία καρτέλα για κάθε είδος: βάρδιες,
-          έξοδα οχήματος, εφαρμογές, ποσοστά, οδηγοί. Ανοίγει στο κινητό (Excel ή Google Sheets). Κρατήστε το σε ασφαλές
-          μέρος, π.χ. στείλτε το με email στον εαυτό σας ή βάλτε το στο Google Drive. Αν χρειαστεί ποτέ, από αυτό
-          ξαναμπαίνουν όλα τα στοιχεία.
+          έξοδα οχήματος, εφαρμογές, ποσοστά, οδηγοί. Αν χρειαστεί ποτέ, από αυτό ξαναμπαίνουν όλα τα στοιχεία.
         </p>
+        <ul className="list-disc space-y-1 pl-5">
+          <li>
+            <b>Πού πάει:</b> στις «Λήψεις». Στο κινητό: εφαρμογή «Τα αρχεία μου» ή «Αρχεία» → «Λήψεις».
+          </li>
+          <li>
+            <b>Με τι ανοίγει:</b> Excel ή «Υπολογιστικά φύλλα Google». Αν στο κινητό έχει λευκό εικονίδιο και δεν
+            ανοίγει, λείπει η εφαρμογή: βάλτε τη μία από τις δύο, δωρεάν από το Play Store ή το App Store.
+          </li>
+          <li>
+            <b>Πού να το κρατάτε:</b> στείλτε το με email στον εαυτό σας ή βάλτε το στο Google Drive. Έχει τα στοιχεία
+            των οδηγών: μην το στέλνετε σε άλλους.
+          </li>
+        </ul>
         <p className="text-muted">
-          Καλό είναι να γίνεται μία φορά τον μήνα· μετά από {BACKUP_REMINDER_DAYS} μέρες η εφαρμογή το θυμίζει. Το
-          αρχείο έχει τα στοιχεία των οδηγών: μην το στέλνετε σε άλλους.
+          Καλό είναι να γίνεται μία φορά τον μήνα· μετά από {BACKUP_REMINDER_DAYS} μέρες η εφαρμογή το θυμίζει.
         </p>
         <Button variant="primary" onClick={() => run('panel')} disabled={busy}>
           {busy ? 'Ετοιμάζεται…' : 'Κατέβασμα αντιγράφου'}
         </Button>
-        {message?.origin === 'panel' && <Notice tone={message.tone}>{message.text}</Notice>}
+        {message?.origin === 'panel' && <BackupMessage message={message} />}
       </div>
     </Panel>
   );
