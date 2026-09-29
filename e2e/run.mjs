@@ -161,13 +161,125 @@ function yellowNotPressable(p) {
 }
 
 const browser = await chromium.launch();
-/** Νέο «κινητό/υπολογιστής» με τη σταθερή ημερομηνία του ελέγχου (η ώρα κυλάει κανονικά από εκεί). */
-async function newContext(options) {
+/**
+ * Νέο «κινητό/υπολογιστής» με τη σταθερή ημερομηνία του ελέγχου (η ώρα κυλάει κανονικά από εκεί).
+ * Όπως μια συσκευή που έχει ήδη δει την κίνηση ανοίγματος και το «Καλώς ήρθατε» (`intro: true` για
+ * την πρώτη φορά) και έχει πει «Όχι τώρα» στην εγκατάσταση (`install: true` για να φαίνεται η πρόταση).
+ */
+async function newContext(options, { intro = false, install = false } = {}) {
   const context = await browser.newContext(options);
   await context.clock.install({ time: TODAY });
+  await context.addInitScript(
+    ({ intro, install }) => {
+      try {
+        if (!intro) {
+          localStorage.setItem('taxi-tracker:welcome:v1', 'true');
+          sessionStorage.setItem('taxi-tracker:splash', '1');
+        }
+        if (!install) localStorage.setItem('taxi-tracker:install-dismissed', 'true');
+      } catch {
+        // σελίδα χωρίς μνήμη (π.χ. about:blank)
+      }
+    },
+    { intro, install },
+  );
   return context;
 }
 const ctxOptions = { locale: 'el-GR', timezoneId: 'Europe/Athens', acceptDownloads: true };
+const phone = { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 };
+const activeSlide = (p) => p.locator('section[data-active="true"] h2');
+
+// ---------------------------------------------------------------------
+console.log('0. Εικονίδιο και εγκατάσταση, κίνηση ανοίγματος, «Καλώς ήρθατε» (πρώτη φορά στο κινητό)');
+const introCtx = await newContext({ ...ctxOptions, ...phone }, { intro: true });
+const ip = await introCtx.newPage();
+watch(ip, 'intro');
+await ip.goto(BASE, { waitUntil: 'commit' });
+const splash = ip.getByTestId('splash');
+await splash.waitFor({ state: 'visible', timeout: 5000 });
+check(true, 'πρώτο άνοιγμα: κίνηση ανοίγματος');
+await ip.screenshot({ path: `${OUT}/00a-splash.png` });
+await ip.waitForURL(`${BASE}/welcome?next=%2Flogin`);
+check(true, 'πρώτη φορά στη συσκευή → «Καλώς ήρθατε» (και μετά η σύνδεση)');
+await splash.waitFor({ state: 'hidden', timeout: 5000 });
+check(true, 'η κίνηση κλείνει μόνη της');
+const slideTitles = ['Καλώς ήρθατε', 'Για τον οδηγό', 'Για τον ιδιοκτήτη', 'Γιατί φτιάχτηκε'];
+for (const [i, title] of slideTitles.entries()) {
+  await activeSlide(ip).filter({ hasText: title }).waitFor();
+  if (title === 'Για τον οδηγό') {
+    await ip.locator('.intro-result strong').filter({ hasText: '146,23 €' }).waitFor({ timeout: 6000 });
+    check(true, 'κάρτα οδηγού: το καθαρό ταμείο «μετράει» μέχρι 146,23 €');
+  }
+  await ip.waitForTimeout(2800); // τέλος της κίνησης της κάρτας
+  await ip.screenshot({ path: `${OUT}/00b-welcome-${i + 1}.png` });
+  if (i < slideTitles.length - 1) await ip.getByRole('button', { name: 'Επόμενο' }).click();
+}
+check(true, `4 κάρτες με «Επόμενο»: ${slideTitles.join(' · ')}`);
+check((await yellowNotPressable(ip)).length === 0, '«Καλώς ήρθατε»: κίτρινο μόνο στο λογότυπο και στο κουμπί');
+await ip.getByRole('button', { name: 'Ξεκινάμε' }).click();
+await ip.waitForURL(`${BASE}/login`);
+await hydrated(ip);
+await ip.waitForTimeout(500);
+check(ip.url() === `${BASE}/login` && !(await splash.isVisible()), '«Ξεκινάμε» → σύνδεση· μετά ούτε κίνηση ούτε «Καλώς ήρθατε» ξανά');
+await ip.reload();
+await hydrated(ip);
+await ip.waitForTimeout(500);
+check(ip.url() === `${BASE}/login` && !(await splash.isVisible()), 'ανανέωση: η κίνηση παίζει μία φορά σε κάθε άνοιγμα');
+
+const manifest = await (await ip.request.get(`${BASE}/manifest.webmanifest`)).json();
+const icons = [...manifest.icons.map((icon) => icon.src), await ip.locator('link[rel="apple-touch-icon"]').getAttribute('href')];
+const iconTypes = await Promise.all(icons.map(async (src) => (await ip.request.get(`${BASE}${src}`)).headers()['content-type']));
+check(
+  manifest.display === 'standalone' &&
+    manifest.short_name === 'Taxi Fleet' &&
+    ['192x192', '512x512'].every((size) => manifest.icons.some((icon) => icon.sizes === size && icon.purpose === 'any')) &&
+    manifest.icons.some((icon) => icon.purpose === 'maskable') &&
+    iconTypes.every((type) => type === 'image/png'),
+  `εικονίδια για Android και iPhone (${icons.length} PNG), πλήρης οθόνη`,
+);
+const installability = await (await introCtx.newCDPSession(ip)).send('Page.getInstallabilityErrors');
+check(installability.installabilityErrors.length === 0, 'ο Chromium τη θεωρεί εφαρμογή που εγκαθίσταται');
+check(
+  await ip.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    return !!registration.active && !!(await caches.match('/offline.html'));
+  }),
+  'service worker με τη σελίδα «Χωρίς σύνδεση»',
+);
+await introCtx.setOffline(true);
+await ip.reload().catch(() => {});
+await ip.getByRole('heading', { name: 'Χωρίς σύνδεση' }).waitFor({ timeout: 5000 });
+check(true, 'χωρίς σήμα: δική της σελίδα αντί για τη σελίδα σφάλματος του browser');
+await ip.screenshot({ path: `${OUT}/00c-offline.png` });
+await introCtx.setOffline(false);
+await hydrated(ip); // η σελίδα «Χωρίς σύνδεση» ξαναφορτώνει μόνη της μόλις έρθει σήμα
+check(true, 'μόλις έρθει σήμα, η εφαρμογή ανοίγει μόνη της');
+await ip.getByRole('link', { name: 'Τι κάνει η εφαρμογή' }).click();
+await ip.waitForURL(`${BASE}/welcome?next=/login`);
+await ip.getByRole('button', { name: 'Παράλειψη' }).click();
+await ip.waitForURL(`${BASE}/login`);
+check(true, 'σύνδεση → «Τι κάνει η εφαρμογή» → «Παράλειψη» → πίσω στη σύνδεση');
+await introCtx.close();
+
+const skipCtx = await newContext({ ...ctxOptions, ...phone }, { intro: true });
+const sp = await skipCtx.newPage();
+await sp.goto(`${BASE}/login`, { waitUntil: 'commit' });
+await sp.getByTestId('splash').click();
+const skipStart = Date.now();
+await sp.getByTestId('splash').waitFor({ state: 'hidden', timeout: 5000 });
+check(Date.now() - skipStart < 600, `ένα πάτημα κλείνει την κίνηση (${Date.now() - skipStart} ms)`);
+await skipCtx.close();
+
+const stillCtx = await newContext({ ...ctxOptions, ...phone, reducedMotion: 'reduce' }, { intro: true });
+const still = await stillCtx.newPage();
+await still.goto(`${BASE}/login`, { waitUntil: 'domcontentloaded' });
+check(!(await still.getByTestId('splash').isVisible()), '«μείωση κίνησης»: χωρίς κίνηση ανοίγματος');
+await still.waitForURL(`${BASE}/welcome?next=%2Flogin`);
+await activeSlide(still).filter({ hasText: 'Καλώς ήρθατε' }).waitFor();
+check((await still.evaluate(() => document.getAnimations().length)) === 0, '«μείωση κίνησης»: οι κάρτες μένουν ακίνητες');
+await stillCtx.close();
+
+// ---------------------------------------------------------------------
 
 // ---------------------------------------------------------------------
 console.log('1. Ιδιοκτήτης: εγγραφή, επιβεβαίωση email, ενεργοποίηση Admin');
@@ -1276,6 +1388,63 @@ for (const z of ['570', '57']) {
 }
 await idle(page);
 check((await zNotice.count()) === 0, 'μετά τη διαγραφή των Ζ 57 και 570 δεν λείπει τίποτα');
+
+console.log('9ζ. «Βάλτε την εφαρμογή στην αρχική οθόνη» (Android και iPhone)');
+const installState = await driverCtx.storageState();
+for (const origin of installState.origins) {
+  origin.localStorage = origin.localStorage.filter((item) => item.name !== 'taxi-tracker:install-dismissed');
+}
+const installCtx = await newContext({ ...ctxOptions, ...phone, storageState: installState }, { install: true });
+const inst = await installCtx.newPage();
+watch(inst, 'install');
+await inst.goto(BASE);
+await inst.locator('#filters').waitFor();
+await idle(inst);
+const installNotice = inst.getByTestId('install-notice');
+check((await installNotice.count()) === 0, 'χωρίς πρόταση εγκατάστασης όσο ο browser δεν την επιτρέπει');
+// Ό,τι στέλνει ο Chrome στο Android όταν η εφαρμογή μπορεί να εγκατασταθεί.
+await inst.evaluate(() => {
+  const event = new Event('beforeinstallprompt', { cancelable: true });
+  event.prompt = async () => {
+    window.__e2ePrompted = true;
+  };
+  event.userChoice = Promise.resolve({ outcome: 'accepted' });
+  window.dispatchEvent(event);
+});
+await installNotice.waitFor();
+await inst.screenshot({ path: `${OUT}/14-install-notice.png` });
+await installNotice.getByRole('button', { name: 'Εγκατάσταση' }).click();
+await installNotice.waitFor({ state: 'detached' });
+check(await inst.evaluate(() => window.__e2ePrompted === true), 'Android: «Εγκατάσταση» ανοίγει το παράθυρο του browser· μετά η πρόταση φεύγει');
+await inst.getByRole('link', { name: 'Τι κάνει η εφαρμογή' }).click();
+await inst.waitForURL(`${BASE}/welcome?next=/`);
+await inst.getByRole('button', { name: 'Παράλειψη' }).click();
+await inst.waitForURL(`${BASE}/`);
+check(true, 'κεντρική → «Τι κάνει η εφαρμογή» → «Παράλειψη» → πίσω στην κεντρική');
+await installCtx.close();
+
+const iphoneCtx = await newContext(
+  {
+    ...ctxOptions,
+    ...phone,
+    storageState: installState,
+    userAgent:
+      'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1',
+  },
+  { install: true },
+);
+const iphone = await iphoneCtx.newPage();
+watch(iphone, 'iphone');
+await iphone.goto(BASE);
+const iphoneNotice = iphone.getByTestId('install-notice');
+await iphoneNotice.waitFor();
+check((await iphoneNotice.innerText()).includes('«Προσθήκη στην οθόνη Αφετηρίας»'), 'iPhone: τα δύο βήματα από το «Κοινοποίηση»');
+await iphoneNotice.getByRole('button', { name: 'Εντάξει' }).click();
+await iphone.reload();
+await iphone.locator('#filters').waitFor();
+await idle(iphone);
+check((await iphoneNotice.count()) === 0, 'iPhone: μετά το «Εντάξει» δεν ξαναβγαίνει');
+await iphoneCtx.close();
 
 console.log('10. Μνήμη έτους/μήνα & αποσύνδεση');
 await page.locator('#filters').getByLabel('Έτος').selectOption('2025');

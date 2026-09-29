@@ -36,6 +36,11 @@ export default async function LoginPage({ searchParams }: PageProps<'/login'>) {
               Ξεχάσατε τον κωδικό;
             </Link>
           </p>
+          <p>
+            <Link href="/welcome?next=/login" className="underline">
+              Τι κάνει η εφαρμογή
+            </Link>
+          </p>
         </>
       }
     >

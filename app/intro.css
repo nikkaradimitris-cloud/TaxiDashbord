@@ -1,0 +1,745 @@
+/*
+ * Κίνηση ανοίγματος (Splash) και οθόνη «Καλώς ήρθατε»: σκούρα «νυχτερινή πόλη», φωτεινή διαδρομή
+ * και το ταξί που την ακολουθεί. Κίτρινο μόνο στο ταξί/λογότυπο και σε ό,τι πατιέται.
+ * Όταν το κινητό ζητά «μείωση κίνησης», τίποτα δεν κινείται (και το Splash δεν εμφανίζεται).
+ */
+
+.intro-dark {
+  --intro-bg: #0b1020;
+  --intro-text: #f8fafc;
+  --intro-muted: #cbd5e1;
+  --intro-faint: rgba(148, 163, 184, 0.22);
+  --intro-route: #67e8f9;
+  --intro-good: #34d399;
+  background:
+    radial-gradient(120% 70% at 50% 28%, #1c2b58 0%, rgba(11, 16, 32, 0) 62%),
+    radial-gradient(90% 55% at 50% 112%, #0d3b4a 0%, rgba(11, 16, 32, 0) 62%),
+    var(--intro-bg);
+  color: var(--intro-text);
+}
+
+/* Κουκκίδες στο φόντο, σαν ψηφιακός χάρτης. */
+.intro-dots {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.2) 1px, transparent 1.3px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(85% 65% at 50% 40%, #000 25%, transparent 80%);
+}
+
+/* ------------------------------------------------------------------ */
+/* Πόλη: τετράγωνα, διαδρομή, ταξί                                     */
+/* ------------------------------------------------------------------ */
+
+.intro-scene {
+  position: relative;
+  width: min(80vw, 340px);
+}
+
+.intro-scene svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.intro-block {
+  fill: rgba(148, 163, 184, 0.07);
+  stroke: var(--intro-faint);
+  stroke-width: 0.6;
+}
+
+.intro-route,
+.intro-route-glow {
+  fill: none;
+  stroke: var(--intro-route);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.intro-route {
+  stroke-width: 2.2;
+}
+
+.intro-route-glow {
+  stroke-width: 7;
+  stroke-opacity: 0.18;
+}
+
+.intro-pin {
+  fill: var(--intro-bg);
+  stroke: var(--intro-route);
+  stroke-width: 1.6;
+}
+
+.intro-ping {
+  fill: none;
+  stroke: var(--intro-route);
+  stroke-width: 1.2;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.intro-taxi-halo {
+  fill: #facc15;
+  opacity: 0.28;
+}
+
+.intro-taxi-dot {
+  fill: #facc15;
+}
+
+.intro-scene[data-mode='once'] .intro-route,
+.intro-scene[data-mode='once'] .intro-route-glow {
+  animation: intro-draw 0.95s cubic-bezier(0.5, 0.05, 0.25, 1) forwards;
+}
+
+.intro-scene[data-mode='once'] .intro-ping {
+  animation: intro-ping 0.8s ease-out 0.95s;
+}
+
+.intro-scene[data-mode='loop'] .intro-route,
+.intro-scene[data-mode='loop'] .intro-route-glow {
+  animation: intro-draw-loop 3.2s cubic-bezier(0.5, 0.05, 0.25, 1) infinite;
+}
+
+.intro-scene[data-mode='loop'] .intro-ping {
+  animation: intro-ping-loop 3.2s ease-out infinite;
+}
+
+.intro-scene[data-mode='still'] .intro-route,
+.intro-scene[data-mode='still'] .intro-route-glow {
+  stroke-dashoffset: 0;
+}
+
+@keyframes intro-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes intro-draw-loop {
+  0% {
+    stroke-dashoffset: 100;
+    opacity: 1;
+  }
+  55%,
+  85% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+@keyframes intro-ping {
+  0% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(3);
+  }
+}
+
+@keyframes intro-ping-loop {
+  0%,
+  55% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  56% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+  80%,
+  100% {
+    opacity: 0;
+    transform: scale(3);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Κίνηση ανοίγματος (περίπου 1,7 δευτ.· ένα πάτημα την κλείνει)         */
+/* ------------------------------------------------------------------ */
+
+.intro-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 28px;
+  padding: 24px;
+  animation: intro-out 0.35s ease-in 1.35s forwards;
+}
+
+.intro-splash[data-skip='true'] {
+  animation: intro-out 0.2s ease-in forwards;
+}
+
+/* Το script του app/layout.tsx το κρύβει πριν εμφανιστεί η σελίδα, αν έχει ήδη παιχτεί σε αυτό το άνοιγμα. */
+:root[data-splash='done'] .intro-splash {
+  display: none;
+}
+
+.intro-splash .intro-scene {
+  animation: intro-in 0.35s ease-out both;
+}
+
+.intro-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.intro-logo-wrap {
+  position: relative;
+  display: block;
+  width: 76px;
+  height: 76px;
+  margin-bottom: 8px;
+  animation: intro-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) 0.55s both;
+}
+
+.intro-logo-wrap svg {
+  width: 100%;
+  height: 100%;
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(250, 204, 21, 0.28);
+}
+
+.intro-logo-wrap::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid rgba(250, 204, 21, 0.7);
+  border-radius: 24px;
+  opacity: 0;
+  animation: intro-ring 0.8s ease-out 0.8s;
+}
+
+.intro-title {
+  font-size: 1.625rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  animation: intro-up 0.4s ease-out 0.75s both;
+}
+
+.intro-tagline {
+  color: var(--intro-muted);
+  animation: intro-up 0.4s ease-out 0.85s both;
+}
+
+@keyframes intro-out {
+  to {
+    opacity: 0;
+    visibility: hidden;
+  }
+}
+
+@keyframes intro-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+@keyframes intro-pop {
+  from {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+}
+
+@keyframes intro-ring {
+  from {
+    opacity: 1;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.3);
+  }
+}
+
+@keyframes intro-up {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* «Καλώς ήρθατε»                                                      */
+/* ------------------------------------------------------------------ */
+
+.intro-welcome {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+.intro-slides {
+  position: relative;
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.intro-slides::-webkit-scrollbar {
+  display: none;
+}
+
+.intro-slide {
+  display: flex;
+  flex: 0 0 100%;
+  flex-direction: column;
+  justify-content: center;
+  gap: 14px;
+  padding: 8px 24px 16px;
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
+}
+
+.intro-slide > * {
+  width: 100%;
+  max-width: 26rem;
+  margin-inline: auto;
+}
+
+.intro-art {
+  display: grid;
+  place-items: center;
+  height: 250px;
+  margin-bottom: 8px;
+}
+
+.intro-slide h2 {
+  font-size: 1.625rem;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.intro-slide p {
+  color: var(--intro-muted);
+}
+
+/* Κείμενα που μπαίνουν όταν η κάρτα γίνεται ενεργή. */
+.intro-slide[data-active='true'] .intro-fade {
+  animation: intro-up 0.45s ease-out both;
+  animation-delay: calc(var(--i, 0) * 0.1s);
+}
+
+.intro-glass {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+/* --- Οδηγός: από το Ζ στο ταμείο --- */
+
+.intro-driver {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: min(88vw, 344px);
+}
+
+.intro-receipt {
+  position: relative;
+  width: 142px;
+  flex: none;
+  padding: 12px 12px 18px;
+  overflow: hidden;
+  border-radius: 6px 6px 0 0;
+  background: #f8fafc;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.7;
+  font-variant-numeric: tabular-nums;
+  /* Κάτω άκρη απόδειξης με «δόντια». */
+  -webkit-mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%;
+  mask: conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) 50% / 12px 100%;
+}
+
+.intro-receipt b {
+  display: block;
+  margin-bottom: 4px;
+  border-bottom: 1px dashed #94a3b8;
+  font-size: 15px;
+}
+
+.intro-receipt span {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.intro-receipt i,
+.intro-result i {
+  font-style: normal;
+}
+
+.intro-scan {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  height: 3px;
+  background: var(--intro-route);
+  box-shadow: 0 0 12px 4px rgba(103, 232, 249, 0.7);
+  opacity: 0;
+}
+
+.intro-flow {
+  width: 34px;
+  flex: none;
+  fill: none;
+  stroke: var(--intro-route);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-dasharray: 4 5;
+  opacity: 0;
+}
+
+.intro-result {
+  flex: 1;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.intro-result strong {
+  display: block;
+  margin: 2px 0 8px;
+  color: var(--intro-good);
+  font-size: 23px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.intro-result span {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  color: var(--intro-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-slide[data-active='true'] .intro-receipt {
+  animation: intro-slide-in 0.5s ease-out both;
+}
+
+.intro-slide[data-active='true'] .intro-receipt span {
+  animation: intro-up 0.3s ease-out both;
+  animation-delay: calc(0.35s + var(--i) * 0.12s);
+}
+
+.intro-slide[data-active='true'] .intro-scan {
+  animation: intro-scan 0.8s ease-in-out 0.85s;
+}
+
+.intro-slide[data-active='true'] .intro-flow {
+  animation:
+    intro-show 0.2s ease-out 1.45s both,
+    intro-flow 0.6s linear 1.45s infinite;
+}
+
+.intro-slide[data-active='true'] .intro-result {
+  animation: intro-pop 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) 1.6s both;
+}
+
+.intro-slide[data-active='true'] .intro-result span {
+  animation: intro-up 0.3s ease-out both;
+  animation-delay: calc(2.5s + var(--i) * 0.15s);
+}
+
+@keyframes intro-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(-24px) rotate(-3deg);
+  }
+}
+
+@keyframes intro-scan {
+  0% {
+    top: 0;
+    opacity: 1;
+  }
+  100% {
+    top: 100%;
+    opacity: 0.2;
+  }
+}
+
+@keyframes intro-show {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes intro-flow {
+  to {
+    stroke-dashoffset: -9;
+  }
+}
+
+/* --- Ιδιοκτήτης: ο στόλος με μια ματιά --- */
+
+.intro-owner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  width: min(84vw, 330px);
+}
+
+.intro-chart {
+  width: 100%;
+  height: auto;
+  padding: 12px 12px 6px;
+  border-radius: 16px;
+  overflow: visible;
+}
+
+.intro-axis {
+  stroke: var(--intro-faint);
+  stroke-width: 1;
+}
+
+.intro-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+.intro-trend {
+  fill: none;
+  stroke: var(--intro-route);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  filter: drop-shadow(0 0 4px rgba(103, 232, 249, 0.6));
+}
+
+.intro-trend-dot {
+  fill: var(--intro-bg);
+  stroke: var(--intro-route);
+  stroke-width: 2;
+  opacity: 0;
+}
+
+.intro-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px;
+}
+
+.intro-chips span {
+  padding: 3px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: var(--intro-text);
+  font-size: 13px;
+}
+
+.intro-slide[data-active='true'] .intro-bar {
+  animation: intro-grow 0.55s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+  animation-delay: calc(0.15s + var(--i) * 0.1s);
+}
+
+.intro-slide[data-active='true'] .intro-trend {
+  animation: intro-draw 1s ease-in-out 0.8s forwards;
+}
+
+.intro-slide[data-active='true'] .intro-trend-dot {
+  animation: intro-show 0.2s ease-out both;
+  animation-delay: calc(0.8s + var(--i) * 0.19s);
+}
+
+.intro-slide[data-active='true'] .intro-chips span {
+  animation: intro-pop 0.35s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+  animation-delay: calc(1.6s + var(--i) * 0.12s);
+}
+
+@keyframes intro-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+
+/* --- Γιατί φτιάχτηκε: από τα χαρτιά σε ένα μέρος --- */
+
+.intro-why {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: min(84vw, 320px);
+  height: 100%;
+}
+
+.intro-paper {
+  position: absolute;
+  width: 64px;
+  height: 80px;
+  border-radius: 4px;
+  background:
+    repeating-linear-gradient(#f8fafc 0 12px, #cbd5e1 12px 13px) content-box,
+    #f8fafc;
+  padding: 16px 10px 8px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transform: translate(var(--x), var(--y)) rotate(var(--r));
+}
+
+.intro-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px 22px;
+  border-radius: 18px;
+}
+
+.intro-done svg {
+  width: 56px;
+  height: 56px;
+  fill: none;
+  stroke: var(--intro-good);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.intro-check {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+}
+
+.intro-done b {
+  font-size: 17px;
+}
+
+.intro-signal {
+  position: absolute;
+  bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+}
+
+.intro-signal svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: var(--intro-route);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.intro-slide[data-active='true'] .intro-paper {
+  animation: intro-gather 0.9s cubic-bezier(0.6, 0, 0.3, 1) both;
+  animation-delay: calc(0.2s + var(--i) * 0.12s);
+}
+
+.intro-slide[data-active='true'] .intro-done {
+  animation: intro-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1) 1.1s both;
+}
+
+.intro-slide[data-active='true'] .intro-check {
+  animation: intro-draw 0.5s ease-out 1.45s forwards;
+}
+
+.intro-slide[data-active='true'] .intro-signal {
+  animation: intro-up 0.4s ease-out 1.9s both;
+}
+
+@keyframes intro-gather {
+  from {
+    opacity: 1;
+  }
+  70% {
+    opacity: 1;
+    transform: translate(0, 0) rotate(0deg) scale(0.8);
+  }
+  to {
+    opacity: 0;
+    transform: translate(0, 0) rotate(0deg) scale(0.6);
+  }
+}
+
+/* Κουκκίδες των καρτών και κουμπιά πάνω στο σκούρο φόντο. */
+.intro-dot {
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+  transition:
+    width 0.25s,
+    background-color 0.25s;
+}
+
+.intro-dot[data-on='true'] {
+  width: 26px;
+  background: #f8fafc;
+}
+
+/* ------------------------------------------------------------------ */
+/* Μείωση κίνησης: όλα ακίνητα, στην τελική τους μορφή                 */
+/* ------------------------------------------------------------------ */
+
+@media (prefers-reduced-motion: reduce) {
+  .intro-splash {
+    display: none;
+  }
+
+  .intro-welcome *,
+  .intro-welcome *::before,
+  .intro-welcome *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  .intro-welcome .intro-route,
+  .intro-welcome .intro-route-glow,
+  .intro-welcome .intro-trend,
+  .intro-welcome .intro-check {
+    stroke-dashoffset: 0;
+  }
+
+  .intro-welcome .intro-flow,
+  .intro-welcome .intro-trend-dot {
+    opacity: 1;
+  }
+
+  .intro-welcome .intro-paper {
+    display: none;
+  }
+}

@@ -2,6 +2,7 @@
  * Μνήμη της συσκευής (localStorage), ως "stores" για το useSyncExternalStore:
  *  - η επιλεγμένη περίοδος (Έτος/Μήνας), το φίλτρο οδηγού και η προβολή πίνακα/γραφήματος,
  *  - το μέγεθος των γραμμάτων (κουμπί «Α+»),
+ *  - αν έχει φανεί η οθόνη «Καλώς ήρθατε» και το «Όχι τώρα» στην εγκατάσταση,
  *  - οι βάρδιες που περιμένουν αποστολή όταν δεν υπάρχει σήμα,
  *  - δεδομένα της παλιάς τοπικής έκδοσης (για μεταφορά στο Supabase).
  * Όλες οι προσβάσεις είναι προστατευμένες: σε ιδιωτική περιήγηση απλώς δεν
@@ -168,6 +169,40 @@ export function setTextSize(size: TextSize) {
 export function applyTextSize(size: TextSize) {
   if (size === 'large') document.documentElement.dataset.textSize = 'large';
   else delete document.documentElement.dataset.textSize;
+}
+
+// ---------------------------------------------------------------------
+// Καλωσόρισμα, κίνηση ανοίγματος, εγκατάσταση στο κινητό
+// ---------------------------------------------------------------------
+
+/** Η οθόνη «Καλώς ήρθατε» έχει φανεί σε αυτή τη συσκευή: βγαίνει μόνη της μόνο την πρώτη φορά. */
+export const WELCOME_KEY = 'taxi-tracker:welcome:v1';
+/** Η κίνηση του ανοίγματος έχει παιχτεί σε αυτό το άνοιγμα (sessionStorage, το διαβάζει το app/layout.tsx). */
+export const SPLASH_KEY = 'taxi-tracker:splash';
+/** «Όχι τώρα» στην πρόταση «Βάλτε την εφαρμογή στην αρχική οθόνη». */
+export const INSTALL_DISMISSED_KEY = 'taxi-tracker:install-dismissed';
+
+/** Χωρίς μνήμη συσκευής (π.χ. μπλοκαρισμένη) μετράει ως «έχει φανεί», για να μη βγαίνει κάθε φορά. */
+export function hasSeenWelcome(): boolean {
+  try {
+    return window.localStorage.getItem(WELCOME_KEY) !== null;
+  } catch {
+    return true;
+  }
+}
+
+export function setWelcomeSeen() {
+  write(WELCOME_KEY, true);
+}
+
+export function getInstallDismissed(): boolean {
+  return cached(INSTALL_DISMISSED_KEY, () => read(INSTALL_DISMISSED_KEY) === true);
+}
+
+export function dismissInstall() {
+  snapshots.set(INSTALL_DISMISSED_KEY, true);
+  write(INSTALL_DISMISSED_KEY, true);
+  notify();
 }
 
 // ---------------------------------------------------------------------

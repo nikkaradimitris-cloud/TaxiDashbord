@@ -1,6 +1,8 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { InstallNotice } from '@/components/intro/InstallApp';
 import { Logo } from '@/components/Logo';
 import { PanelMemoryProvider, usePanelOpen } from '@/components/Panel';
 import { SignOutButton } from '@/components/SignOutButton';
@@ -638,6 +640,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
               {isAdmin && <BackupReminder backup={backup} hasData={drivers.length > 0} />}
 
+              <InstallNotice />
+
               <OutboxPanel
                 items={outbox}
                 onSend={flushOutbox}
@@ -910,6 +914,12 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               )}
 
               {isAdmin && <BackupPanel backup={backup} />}
+
+              <p className="pt-2 text-center text-sm">
+                <Link href="/welcome?next=/" className="text-muted underline">
+                  Τι κάνει η εφαρμογή
+                </Link>
+              </p>
             </>
           )}
         </main>

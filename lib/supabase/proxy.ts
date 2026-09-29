@@ -5,7 +5,7 @@ import type { Database } from '@/lib/database.types';
 import { getSupabaseConfig } from './config';
 
 /** Σελίδες που ανοίγουν χωρίς σύνδεση. */
-const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth'];
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/auth', '/welcome'];
 /** Σελίδες που δεν έχουν νόημα για ήδη συνδεδεμένο χρήστη. */
 const GUEST_ONLY_PATHS = ['/login', '/register'];
 
