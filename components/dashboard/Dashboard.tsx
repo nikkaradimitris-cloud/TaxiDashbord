@@ -57,6 +57,7 @@ import { EntryKindSwitch, NewEntryButton, type EntryKind } from './EntryFields';
 import { ExpenseForm } from './ExpenseForm';
 import { ExpenseList } from './ExpenseList';
 import { FleetPanel } from './FleetPanel';
+import { ShareApp } from './ShareApp';
 import { LegacyImport } from './LegacyImport';
 import { OutboxPanel } from './OutboxPanel';
 import { PeriodBar } from './PeriodBar';
@@ -914,6 +915,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               )}
 
               {isAdmin && <BackupPanel backup={backup} />}
+
+              {isAdmin && <ShareApp />}
 
               <p className="pt-2 text-center text-sm">
                 <Link href="/welcome?next=/" className="text-muted underline">

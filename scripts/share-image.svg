@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <!-- Εικόνα προεπισκόπησης όταν στέλνεται ο σύνδεσμος της εφαρμογής (WhatsApp κ.λπ.).
+       Πηγή του app/opengraph-image.png: node scripts/icons.mjs -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#131c3a"/>
+      <stop offset="1" stop-color="#0b1020"/>
+    </linearGradient>
+    <linearGradient id="icon" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fde047"/>
+      <stop offset="1" stop-color="#eab308"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fef9c3"/>
+      <stop offset="1" stop-color="#facc15"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <!-- Διαδρομή ταξί στον χάρτη, όπως στην κίνηση ανοίγματος -->
+  <path d="M-20 596H330V556H700V600H1220" fill="none" stroke="#facc15" stroke-opacity="0.18" stroke-width="10"
+        stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="1 26"/>
+
+  <!-- Εικονίδιο και όνομα -->
+  <g transform="translate(72 60) scale(1.625)">
+    <rect width="64" height="64" rx="14" fill="url(#icon)"/>
+    <g transform="translate(0 3.25)">
+      <rect x="25" y="11" width="14" height="7" rx="2" fill="#111827"/>
+      <rect x="28" y="13.4" width="8" height="2.2" rx="1.1" fill="#fde68a"/>
+      <path d="M12 44V35l5-11a6 6 0 0 1 5.5-3.6h19A6 6 0 0 1 47 24l5 11v9a2.5 2.5 0 0 1-2.5 2.5h-3A2.5 2.5 0 0 1 44 44v-1.5H20V44a2.5 2.5 0 0 1-2.5 2.5h-3A2.5 2.5 0 0 1 12 44z" fill="#111827"/>
+      <path d="M19.5 33l3-7.4a2.5 2.5 0 0 1 2.3-1.6h14.4a2.5 2.5 0 0 1 2.3 1.6l3 7.4z" fill="url(#glass)"/>
+      <circle cx="20" cy="38" r="3" fill="#fef9c3"/>
+      <circle cx="44" cy="38" r="3" fill="#fef9c3"/>
+      <rect x="27" y="37" width="10" height="2" rx="1" fill="#374151"/>
+    </g>
+  </g>
+  <text x="200" y="130" font-family="DejaVu Sans, sans-serif" font-size="52" font-weight="700" fill="#ffffff">Taxi Fleet Tracker</text>
+
+  <!-- Τι κάνει -->
+  <g font-family="DejaVu Sans, sans-serif" font-weight="700" font-size="44">
+    <text x="72" y="262" fill="#ffffff">Βάρδιες ταξί από το Ζ.</text>
+    <text x="72" y="320" fill="#facc15">ΦΠΑ στο τέλος του μήνα.</text>
+  </g>
+  <g font-family="DejaVu Sans, sans-serif" font-size="29" fill="#cbd5e1">
+    <g transform="translate(72 386)">
+      <circle cx="16" cy="-10" r="16" fill="#facc15"/>
+      <path d="M8 -10l5.5 5.5 11-11" fill="none" stroke="#111827" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="48" y="0">Αξιοποίηση χιλιομέτρων</text>
+    </g>
+    <g transform="translate(72 440)">
+      <circle cx="16" cy="-10" r="16" fill="#facc15"/>
+      <path d="M8 -10l5.5 5.5 11-11" fill="none" stroke="#111827" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="48" y="0">Χρεωστικό ή Πιστωτικό</text>
+    </g>
+    <g transform="translate(72 494)">
+      <circle cx="16" cy="-10" r="16" fill="#facc15"/>
+      <path d="M8 -10l5.5 5.5 11-11" fill="none" stroke="#111827" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="48" y="0">Excel για τον λογιστή</text>
+    </g>
+  </g>
+
+  <!-- Κάρτα ΦΠΑ του μήνα, όπως στο «Καλώς ήρθατε» -->
+  <g font-family="DejaVu Sans, sans-serif">
+    <rect x="744" y="118" width="392" height="394" rx="28" fill="#141d3b" stroke="#2b3b6b" stroke-width="2"/>
+    <text x="774" y="176" font-size="28" font-weight="700" fill="#ffffff">Προς Απόδοση ΦΠΑ</text>
+    <text x="774" y="212" font-size="23" fill="#94a3b8">Σεπτέμβριος</text>
+    <line x1="774" y1="236" x2="1106" y2="236" stroke="#2b3b6b" stroke-width="2"/>
+    <text x="774" y="276" font-size="20" fill="#cbd5e1">ΦΠΑ εσόδων 13%</text>
+    <text x="1106" y="276" font-size="20" fill="#e2e8f0" text-anchor="end">+ 452,86 €</text>
+    <text x="774" y="316" font-size="20" fill="#cbd5e1">ΦΠΑ εξόδων 24%</text>
+    <text x="1106" y="316" font-size="20" fill="#e2e8f0" text-anchor="end">− 297,43 €</text>
+    <line x1="774" y1="340" x2="1106" y2="340" stroke="#2b3b6b" stroke-width="2"/>
+    <text x="774" y="414" font-size="62" font-weight="700" fill="#facc15">155,43 €</text>
+    <rect x="774" y="440" width="332" height="44" rx="22" fill="#3a2f0b"/>
+    <text x="940" y="469" font-size="19" font-weight="700" fill="#fde68a" text-anchor="middle">Χρεωστικό — προς πληρωμή</text>
+  </g>
+</svg>

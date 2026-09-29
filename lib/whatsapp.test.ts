@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { computeExpense, computeShift, summarize } from './accounting';
-import { buildVatMessage, toWhatsAppNumber, whatsappLink } from './whatsapp';
+import { buildShareMessage, buildVatMessage, toWhatsAppNumber, whatsappLink, whatsappShareLink } from './whatsapp';
 
 describe('toWhatsAppNumber', () => {
   it.each([
@@ -87,5 +87,14 @@ describe('buildVatMessage / whatsappLink', () => {
     const link = whatsappLink('6912345678', 'Γεια σου & καλή βάρδια');
     expect(link).toBe(`https://wa.me/306912345678?text=${encodeURIComponent('Γεια σου & καλή βάρδια')}`);
     expect(whatsappLink('', 'x')).toBeNull();
+  });
+
+  it('μήνυμα για φίλους: ο σύνδεσμος στο τέλος, σε δική του γραμμή· WhatsApp χωρίς παραλήπτη', () => {
+    const text = buildShareMessage('https://taxi-dashbord.vercel.app');
+    expect(text).toContain('αξιοποίηση των χιλιομέτρων');
+    expect(text).toContain('ΦΠΑ: Χρεωστικός ή Πιστωτικός');
+    expect(text.endsWith('Γράψου κι εσύ:\nhttps://taxi-dashbord.vercel.app')).toBe(true);
+    const link = whatsappShareLink(text);
+    expect(link).toBe(`https://wa.me/?text=${encodeURIComponent(text)}`);
   });
 });

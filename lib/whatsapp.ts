@@ -60,3 +60,20 @@ export function whatsappLink(phone: string | null | undefined, text: string): st
   if (!number) return null;
   return `https://wa.me/${number}?text=${encodeURIComponent(text)}`;
 }
+
+/**
+ * Μήνυμα για φίλους: τι κάνει η εφαρμογή και ο σύνδεσμός της. Ο σύνδεσμος μπαίνει στο τέλος, σε δική
+ * του γραμμή, ώστε το WhatsApp να δείξει την εικόνα προεπισκόπησης (app/opengraph-image.png).
+ */
+export function buildShareMessage(appUrl: string): string {
+  return (
+    'Γεια! Με αυτή την εφαρμογή γράφω τις βάρδιες του ταξί από το Ζ, βλέπω αμέσως την αξιοποίηση των ' +
+    'χιλιομέτρων, και στο τέλος του μήνα βγαίνει ο ΦΠΑ: Χρεωστικός ή Πιστωτικός. Γράψου κι εσύ:\n' +
+    appUrl
+  );
+}
+
+/** Σύνδεσμος WhatsApp χωρίς παραλήπτη: ο χρήστης διαλέγει σε ποιον θα το στείλει. */
+export function whatsappShareLink(text: string): string {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}

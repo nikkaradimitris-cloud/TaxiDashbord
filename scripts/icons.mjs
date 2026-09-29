@@ -21,3 +21,7 @@ for (const [source, target, size] of ICONS) {
     .toFile(target);
   console.log(`${target} (${size}×${size})`);
 }
+
+// Εικόνα προεπισκόπησης όταν στέλνεται ο σύνδεσμος της εφαρμογής (WhatsApp κ.λπ.), 1200×630.
+await sharp('scripts/share-image.svg').png({ compressionLevel: 9 }).toFile('app/opengraph-image.png');
+console.log('app/opengraph-image.png (1200×630)');

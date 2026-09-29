@@ -12,6 +12,14 @@ export const metadata: Metadata = {
   applicationName: 'Taxi Fleet Tracker',
   robots: { index: false, follow: false },
   appleWebApp: { capable: true, title: 'Taxi Fleet', statusBarStyle: 'default' },
+  // Προεπισκόπηση όταν στέλνεται ο σύνδεσμος (WhatsApp κ.λπ.)· η εικόνα είναι το app/opengraph-image.png.
+  openGraph: {
+    title: 'Taxi Fleet Tracker',
+    description: 'Βάρδιες ταξί από το Ζ, αξιοποίηση χιλιομέτρων και ΦΠΑ του μήνα: Χρεωστικό ή Πιστωτικό.',
+    siteName: 'Taxi Fleet Tracker',
+    locale: 'el_GR',
+    type: 'website',
+  },
 };
 
 export const viewport: Viewport = {

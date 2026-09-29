@@ -629,6 +629,42 @@ console.log(waText.split('\n').map((l) => `      ${l}`).join('\n'));
 check(nbsp0(waText).includes('Έξοδα: 50,00 € (καύσιμα 40,00 € + οχήματος 10,00 €)'), 'WhatsApp: έξοδα με ανάλυση καύσιμα + οχήματος');
 
 await page.locator('#filters').getByLabel('Οδηγός').selectOption('all');
+
+console.log('4β. «Στείλτε την εφαρμογή σε φίλο» και η προεπισκόπηση στο WhatsApp');
+const shareButton = page.getByRole('button', { name: 'Στείλτε την εφαρμογή σε φίλο' });
+await page.evaluate(() => {
+  window.open = (url) => {
+    window.__e2eOpened = url;
+    return null;
+  };
+});
+await shareButton.click();
+const shareLink = await page.evaluate(() => window.__e2eOpened ?? '');
+const shareText = decodeURIComponent(shareLink.split('?text=')[1] ?? '');
+check(
+  shareLink.startsWith('https://wa.me/?text=') &&
+    shareText.includes('ΦΠΑ: Χρεωστικός ή Πιστωτικός') &&
+    shareText.endsWith(`Γράψου κι εσύ:\n${BASE}`),
+  'κουμπί: WhatsApp χωρίς παραλήπτη, με έτοιμο μήνυμα και τον σύνδεσμο της εφαρμογής στο τέλος',
+);
+await shareButton.locator('..').screenshot({ path: `${OUT}/04b-share-button.png` });
+// Ό,τι διαβάζει το WhatsApp όταν στέλνεται ο σύνδεσμος (χωρίς σύνδεση λογαριασμού).
+const shareHtml = await (await fetch(`${BASE}/`)).text();
+const ogMeta = (property) => shareHtml.match(new RegExp(`<meta property="${property}" content="([^"]*)"`))?.[1];
+check(
+  ogMeta('og:title') === 'Taxi Fleet Tracker' &&
+    (ogMeta('og:description') ?? '').includes('ΦΠΑ του μήνα') &&
+    ogMeta('og:image:width') === '1200' &&
+    ogMeta('og:image:height') === '630',
+  `σύνδεσμος της εφαρμογής: τίτλος, περιγραφή και εικόνα 1200×630 για το WhatsApp (${ogMeta('og:image')})`,
+);
+const ogImage = await fetch(ogMeta('og:image') ?? `${BASE}/missing`);
+const ogBytes = (await ogImage.arrayBuffer()).byteLength;
+check(
+  ogImage.status === 200 && ogImage.headers.get('content-type') === 'image/png' && ogBytes > 10000 && ogBytes < 300000,
+  `η εικόνα προεπισκόπησης ανοίγει χωρίς σύνδεση (${ogImage.status}, ${Math.round(ogBytes / 1024)} KB)`,
+);
+
 const [download] = await Promise.all([
   page.waitForEvent('download'),
   page.getByRole('button', { name: /Εξαγωγή Excel/ }).click(),
@@ -765,6 +801,7 @@ check(dtext.includes('Γιώργος Παπαδόπουλος · ΤΑΕ-1234'), 
 check(!dtext.includes('Μαρία'), 'ο οδηγός ΔΕΝ βλέπει άλλους οδηγούς');
 check(!dtext.includes('Υποδομή Στόλου'), 'ο οδηγός ΔΕΝ βλέπει την Υποδομή Στόλου');
 check(!dtext.includes('Αποστολή WhatsApp'), 'ο οδηγός δεν έχει κουμπί WhatsApp');
+check(!dtext.includes('Στείλτε την εφαρμογή σε φίλο'), 'ο οδηγός δεν έχει «Στείλτε την εφαρμογή σε φίλο» (μόνο ο ιδιοκτήτης)');
 check(
   (await dpage.locator('#backup').count()) === 0 && (await dpage.getByTestId('backup-reminder').count()) === 0,
   'ο οδηγός δεν έχει «Αντίγραφο ασφαλείας»',
