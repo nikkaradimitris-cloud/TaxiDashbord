@@ -179,6 +179,8 @@ export function applyTextSize(size: TextSize) {
 export const WELCOME_KEY = 'taxi-tracker:welcome:v1';
 /** Η κίνηση του ανοίγματος έχει παιχτεί σε αυτό το άνοιγμα (sessionStorage, το διαβάζει το app/layout.tsx). */
 export const SPLASH_KEY = 'taxi-tracker:splash';
+/** Πόσες φορές έχει ανοίξει μετά το «Καλώς ήρθατε»: διαλέγει το μήνυμα και τη διαδρομή του ανοίγματος. */
+export const SPLASH_TIP_KEY = 'taxi-tracker:splash-tip';
 /** «Όχι τώρα» στην πρόταση «Βάλτε την εφαρμογή στην αρχική οθόνη». */
 export const INSTALL_DISMISSED_KEY = 'taxi-tracker:install-dismissed';
 

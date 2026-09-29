@@ -14,9 +14,20 @@ import { useReducedMotion } from './motion';
 const order = (i: number) => ({ '--i': i }) as CSSProperties;
 
 const euro = new Intl.NumberFormat('el-GR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const decimal1 = new Intl.NumberFormat('el-GR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
-/** Ποσό που «μετράει» από το 0 όταν η κάρτα γίνεται ενεργή. */
-function CountUp({ value, active, delay }: { value: number; active: boolean; delay: number }) {
+/** Αριθμός που «μετράει» από το 0 όταν η κάρτα γίνεται ενεργή. */
+function CountUp({
+  value,
+  active,
+  delay,
+  format = euro,
+}: {
+  value: number;
+  active: boolean;
+  delay: number;
+  format?: Intl.NumberFormat;
+}) {
   const reduced = useReducedMotion();
   const [shown, setShown] = useState(0);
   useEffect(() => {
@@ -29,7 +40,7 @@ function CountUp({ value, active, delay }: { value: number; active: boolean; del
     });
     return () => cancelAnimationFrame(frame);
   }, [active, reduced, value, delay]);
-  return <>{euro.format(reduced ? value : shown)}</>;
+  return <>{format.format(reduced ? value : shown)}</>;
 }
 
 function DriverArt({ active }: { active: boolean }) {
@@ -62,6 +73,50 @@ function DriverArt({ active }: { active: boolean }) {
         </span>
         <span style={order(1)}>
           ΦΠΑ <i>20,84 €</i>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Η βάρδια του παραδείγματος (Ζ 1024): 80,5 μισθωμένα και 40 ελεύθερα χλμ, καθαρά 160,39 €.
+const KM_PAID = 80.5;
+const KM_EMPTY = 40;
+const KM_PCT = (KM_PAID / (KM_PAID + KM_EMPTY)) * 100; // 66,8%· έσοδο ανά χλμ 160,39 / 120,5 = 1,33 €
+
+function KmArt({ active }: { active: boolean }) {
+  return (
+    <div className="intro-km">
+      <div className="intro-gauge">
+        <svg viewBox="0 0 120 120">
+          <circle className="intro-gauge-track" cx="60" cy="60" r="50" />
+          <circle
+            className="intro-gauge-fill"
+            cx="60"
+            cy="60"
+            r="50"
+            pathLength={100}
+            style={{ '--pct': KM_PCT.toFixed(1) } as CSSProperties}
+          />
+        </svg>
+        <p>
+          <strong>
+            <CountUp value={KM_PCT} active={active} delay={300} format={decimal1} />%
+          </strong>
+          αξιοποίηση
+        </p>
+      </div>
+      <div className="intro-km-legend intro-glass">
+        <span style={order(0)}>
+          <i className="intro-key" data-kind="paid" />
+          Μισθωμένα <b>{decimal1.format(KM_PAID)} χλμ</b>
+        </span>
+        <span style={order(1)}>
+          <i className="intro-key" data-kind="empty" />
+          Ελεύθερα <b>{decimal1.format(KM_EMPTY)} χλμ</b>
+        </span>
+        <span style={order(2)}>
+          Έσοδο ανά χλμ <b>1,33 €</b>
         </span>
       </div>
     </div>
@@ -174,7 +229,7 @@ const SLIDES: Slide[] = [
   {
     title: 'Καλώς ήρθατε',
     lines: [
-      'Το Taxi Fleet Tracker κρατά βάρδιες, ταμείο και ΦΠΑ του ταξί, σε ένα κινητό.',
+      'Το Taxi Fleet Tracker κρατά βάρδιες, χιλιόμετρα, ταμείο και ΦΠΑ του ταξί, σε ένα κινητό.',
       'Για τον ιδιοκτήτη του στόλου και για κάθε οδηγό.',
     ],
     // Νέο «κλειδί» σε κάθε ενεργοποίηση: η διαδρομή ξεκινά από την αρχή.
@@ -187,6 +242,14 @@ const SLIDES: Slide[] = [
       'Βλέπει αμέσως καθαρά, ΦΠΑ και ταμείο τσέπης.',
     ],
     art: (active) => <DriverArt active={active} />,
+  },
+  {
+    title: 'Αξιοποίηση χιλιομέτρων',
+    lines: [
+      'Από τα μισθωμένα και τα ελεύθερα χιλιόμετρα κάθε βάρδιας φαίνεται πόσο δουλεύει το αυτοκίνητο με πελάτη.',
+      'Αξιοποίηση % και έσοδο ανά χιλιόμετρο, για κάθε οδηγό και μήνα.',
+    ],
+    art: (active) => <KmArt active={active} />,
   },
   {
     title: 'Για τον ιδιοκτήτη',
@@ -207,7 +270,7 @@ const SLIDES: Slide[] = [
 ];
 
 /**
- * «Καλώς ήρθατε»: τέσσερις κάρτες με κινούμενα σχέδια (σύρσιμο ή «Επόμενο»). Βγαίνει μόνη της την
+ * «Καλώς ήρθατε»: πέντε κάρτες με κινούμενα σχέδια (σύρσιμο ή «Επόμενο»). Βγαίνει μόνη της την
  * πρώτη φορά σε κάθε συσκευή (AppSetup) και ξανά από το «Τι κάνει η εφαρμογή».
  */
 export function Welcome({ next }: { next: string }) {

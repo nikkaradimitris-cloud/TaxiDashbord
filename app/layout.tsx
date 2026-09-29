@@ -1,8 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import Script from 'next/script';
 import { AppSetup } from '@/components/intro/AppSetup';
+import { ROUTES, SPLASH_TIPS } from '@/components/intro/scenes';
 import { Splash } from '@/components/intro/Splash';
-import { SPLASH_KEY, TEXT_SIZE_KEY } from '@/lib/storage';
+import { SPLASH_KEY, SPLASH_TIP_KEY, TEXT_SIZE_KEY, WELCOME_KEY } from '@/lib/storage';
 import './globals.css';
 import './intro.css';
 
@@ -22,11 +23,13 @@ export const viewport: Viewport = {
 };
 
 // Πριν εμφανιστεί η σελίδα, ώστε να μη «πηδάει»: τα μεγάλα γράμματα («Α+»), η κίνηση ανοίγματος μόνο
-// μία φορά σε κάθε άνοιγμα, και το «beforeinstallprompt» (κουμπί «Εγκατάσταση»), που μπορεί να έρθει
-// πριν φορτώσει η εφαρμογή (components/intro/install.ts).
+// μία φορά σε κάθε άνοιγμα (και, αφού έχει φανεί το «Καλώς ήρθατε», κάθε φορά το επόμενο μήνυμα και η
+// επόμενη διαδρομή), και το «beforeinstallprompt» (κουμπί «Εγκατάσταση»), που μπορεί να έρθει πριν
+// φορτώσει η εφαρμογή (components/intro/install.ts).
+const [splash, welcome, tip] = [SPLASH_KEY, WELCOME_KEY, SPLASH_TIP_KEY].map((key) => JSON.stringify(key));
 const bootScript = [
   `try{if(JSON.parse(localStorage.getItem(${JSON.stringify(TEXT_SIZE_KEY)}))==='large')document.documentElement.dataset.textSize='large'}catch(e){}`,
-  `try{if(sessionStorage.getItem(${JSON.stringify(SPLASH_KEY)}))document.documentElement.dataset.splash='done';else sessionStorage.setItem(${JSON.stringify(SPLASH_KEY)},'1')}catch(e){document.documentElement.dataset.splash='done'}`,
+  `try{var d=document.documentElement;if(sessionStorage.getItem(${splash}))d.dataset.splash='done';else{sessionStorage.setItem(${splash},'1');if(localStorage.getItem(${welcome})!==null){var n=Number(localStorage.getItem(${tip}))||0;d.dataset.tip=String(n%${SPLASH_TIPS.length});d.dataset.route=String(n%${ROUTES.length});localStorage.setItem(${tip},String(n+1))}}}catch(e){document.documentElement.dataset.splash='done'}`,
   `addEventListener('beforeinstallprompt',function(e){e.preventDefault();window.__taxiInstallPrompt=e})`,
 ].join(';');
 

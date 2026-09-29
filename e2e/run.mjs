@@ -198,23 +198,35 @@ await ip.goto(BASE, { waitUntil: 'commit' });
 const splash = ip.getByTestId('splash');
 await splash.waitFor({ state: 'visible', timeout: 5000 });
 check(true, 'πρώτο άνοιγμα: κίνηση ανοίγματος');
+check(
+  (await ip.locator('html').getAttribute('data-tip')) === null && (await ip.locator('.intro-tip:visible').count()) === 0,
+  'πρώτο άνοιγμα: μόνο το λογότυπο (μετά έρχεται το «Καλώς ήρθατε»)',
+);
 await ip.screenshot({ path: `${OUT}/00a-splash.png` });
 await ip.waitForURL(`${BASE}/welcome?next=%2Flogin`);
 check(true, 'πρώτη φορά στη συσκευή → «Καλώς ήρθατε» (και μετά η σύνδεση)');
 await splash.waitFor({ state: 'hidden', timeout: 5000 });
 check(true, 'η κίνηση κλείνει μόνη της');
-const slideTitles = ['Καλώς ήρθατε', 'Για τον οδηγό', 'Για τον ιδιοκτήτη', 'Γιατί φτιάχτηκε'];
+const slideTitles = ['Καλώς ήρθατε', 'Για τον οδηγό', 'Αξιοποίηση χιλιομέτρων', 'Για τον ιδιοκτήτη', 'Γιατί φτιάχτηκε'];
 for (const [i, title] of slideTitles.entries()) {
   await activeSlide(ip).filter({ hasText: title }).waitFor();
   if (title === 'Για τον οδηγό') {
     await ip.locator('.intro-result strong').filter({ hasText: '146,23 €' }).waitFor({ timeout: 6000 });
     check(true, 'κάρτα οδηγού: το καθαρό ταμείο «μετράει» μέχρι 146,23 €');
   }
+  if (title === 'Αξιοποίηση χιλιομέτρων') {
+    await ip.locator('.intro-gauge strong').filter({ hasText: '66,8%' }).waitFor({ timeout: 6000 });
+    const legend = await ip.locator('.intro-km-legend').innerText();
+    check(
+      legend.includes('80,5 χλμ') && legend.includes('40,0 χλμ') && legend.includes('1,33 €'),
+      'κάρτα χιλιομέτρων: αξιοποίηση 66,8% (80,5 μισθωμένα από 120,5), έσοδο ανά χλμ 1,33 €',
+    );
+  }
   await ip.waitForTimeout(2800); // τέλος της κίνησης της κάρτας
   await ip.screenshot({ path: `${OUT}/00b-welcome-${i + 1}.png` });
   if (i < slideTitles.length - 1) await ip.getByRole('button', { name: 'Επόμενο' }).click();
 }
-check(true, `4 κάρτες με «Επόμενο»: ${slideTitles.join(' · ')}`);
+check(true, `${slideTitles.length} κάρτες με «Επόμενο»: ${slideTitles.join(' · ')}`);
 check((await yellowNotPressable(ip)).length === 0, '«Καλώς ήρθατε»: κίτρινο μόνο στο λογότυπο και στο κουμπί');
 await ip.getByRole('button', { name: 'Ξεκινάμε' }).click();
 await ip.waitForURL(`${BASE}/login`);
@@ -259,6 +271,27 @@ await ip.waitForURL(`${BASE}/welcome?next=/login`);
 await ip.getByRole('button', { name: 'Παράλειψη' }).click();
 await ip.waitForURL(`${BASE}/login`);
 check(true, 'σύνδεση → «Τι κάνει η εφαρμογή» → «Παράλειψη» → πίσω στη σύνδεση');
+// Κάθε επόμενο άνοιγμα (νέα καρτέλα = νέο άνοιγμα της εφαρμογής): άλλο μήνυμα και άλλη διαδρομή.
+const openings = [];
+for (let n = 0; n < 3; n++) {
+  const tab = await introCtx.newPage();
+  await tab.goto(`${BASE}/login`, { waitUntil: 'commit' });
+  const tip = tab.locator('.intro-tip:visible');
+  await tip.waitFor({ timeout: 5000 });
+  const route = await tab.locator('html').getAttribute('data-route');
+  const shownRoutes = await tab.locator('.intro-route-set:visible').evaluateAll((sets) => sets.map((set) => set.dataset.route));
+  openings.push({ tip: (await tip.innerText()).trim(), route, shown: shownRoutes.join(',') });
+  await tab.waitForTimeout(1300);
+  await tab.screenshot({ path: `${OUT}/00d-opening-${n + 2}.png` });
+  await tab.close();
+}
+check(
+  openings[0].tip === 'Αξιοποίηση χιλιομέτρων: πόσα ήταν με πελάτη' &&
+    new Set(openings.map((o) => o.tip)).size === 3 &&
+    new Set(openings.map((o) => o.route)).size === 3 &&
+    openings.every((o) => o.shown === o.route),
+  `κάθε επόμενο άνοιγμα κάτι άλλο: ${openings.map((o) => `«${o.tip}» (διαδρομή ${o.route})`).join(' → ')}`,
+);
 await introCtx.close();
 
 const skipCtx = await newContext({ ...ctxOptions, ...phone }, { intro: true });

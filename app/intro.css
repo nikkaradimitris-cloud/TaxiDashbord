@@ -167,7 +167,7 @@
 }
 
 /* ------------------------------------------------------------------ */
-/* Κίνηση ανοίγματος (περίπου 1,7 δευτ.· ένα πάτημα την κλείνει)         */
+/* Κίνηση ανοίγματος (1,7 δευτ., 2,5 με μήνυμα· ένα πάτημα την κλείνει)  */
 /* ------------------------------------------------------------------ */
 
 .intro-splash {
@@ -240,6 +240,36 @@
 .intro-tagline {
   color: var(--intro-muted);
   animation: intro-up 0.4s ease-out 0.85s both;
+}
+
+/*
+ * Από το δεύτερο άνοιγμα και μετά: ένα μήνυμα (SPLASH_TIPS) και μία διαδρομή (ROUTES), κάθε φορά
+ * τα επόμενα. Τα διαλέγει το script του app/layout.tsx (`data-tip`, `data-route` στο <html>) και το
+ * Splash δείχνει το σωστό. Με μήνυμα η κίνηση κρατά λίγο παραπάνω, για να διαβαστεί.
+ */
+.intro-tip {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  max-width: min(88vw, 340px);
+  margin-top: 14px;
+  padding: 8px 14px;
+  border-radius: 16px;
+  color: var(--intro-text);
+  font-size: 15px;
+  text-align: left;
+  animation: intro-up 0.4s ease-out 1s both;
+}
+
+.intro-tip svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  fill: var(--intro-route);
+}
+
+:root[data-tip] .intro-splash:not([data-skip='true']) {
+  animation-delay: 2.2s;
 }
 
 @keyframes intro-out {
@@ -503,6 +533,115 @@
 @keyframes intro-flow {
   to {
     stroke-dashoffset: -9;
+  }
+}
+
+/* --- Αξιοποίηση χιλιομέτρων: μισθωμένα / συνολικά --- */
+
+.intro-km {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: min(88vw, 344px);
+}
+
+.intro-gauge {
+  position: relative;
+  width: 132px;
+  flex: none;
+}
+
+.intro-gauge svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: rotate(-90deg);
+}
+
+.intro-gauge circle {
+  fill: none;
+  stroke-width: 12;
+}
+
+.intro-gauge-track {
+  stroke: rgba(148, 163, 184, 0.22);
+}
+
+.intro-gauge-fill {
+  stroke: var(--intro-route);
+  stroke-linecap: round;
+  stroke-dasharray: var(--pct) 100;
+  filter: drop-shadow(0 0 5px rgba(103, 232, 249, 0.6));
+}
+
+.intro-gauge p {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: var(--intro-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.intro-gauge strong {
+  color: var(--intro-text);
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+
+.intro-km-legend {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+.intro-km-legend span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--intro-muted);
+}
+
+.intro-km-legend b {
+  margin-left: auto;
+  color: var(--intro-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.intro-key {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+}
+
+.intro-key[data-kind='paid'] {
+  background: var(--intro-route);
+}
+
+.intro-key[data-kind='empty'] {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+.intro-slide[data-active='true'] .intro-gauge-fill {
+  animation: intro-gauge 1.1s cubic-bezier(0.3, 0.1, 0.2, 1) 0.3s both;
+}
+
+.intro-slide[data-active='true'] .intro-km-legend span {
+  animation: intro-up 0.3s ease-out both;
+  animation-delay: calc(1.2s + var(--i) * 0.15s);
+}
+
+@keyframes intro-gauge {
+  from {
+    stroke-dasharray: 0 100;
   }
 }
 
