@@ -6,7 +6,7 @@ export default function RegisterPage() {
   return (
     <AuthShell
       title="Νέος λογαριασμός"
-      subtitle="Για οδηγούς του στόλου (και για τον ιδιοκτήτη την πρώτη φορά)."
+      subtitle="Για ιδιοκτήτες με δικό τους ταξί και για οδηγούς."
       footer={
         <p>
           Έχετε ήδη λογαριασμό;{' '}

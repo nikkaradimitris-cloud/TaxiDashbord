@@ -12,6 +12,7 @@ import {
 
 const tables: BackupTables = {
   profiles: [{ id: 'p1' }, { id: 'p2' }],
+  fleets: [{ id: 'f1' }],
   drivers: [{ id: 'd1' }],
   platform_rates: [],
   shifts: Array.from({ length: 1234 }, (_, i) => ({ id: `s${i}` })),
@@ -29,6 +30,7 @@ describe('αντίγραφο ασφαλείας', () => {
     expect(Object.keys(file.tables)).toEqual([...BACKUP_TABLES]);
     expect(file.counts).toEqual({
       profiles: 2,
+      fleets: 1,
       drivers: 1,
       platform_rates: 0,
       shifts: 1234,
@@ -72,6 +74,7 @@ describe('αντίγραφο ασφαλείας', () => {
       email: 'giorgos@example.com',
       active: true,
       user_id: 'u2',
+      fleet_id: 'f1',
       created_at: '2026-09-01T08:00:00Z',
     };
     const file = buildBackup(
@@ -80,6 +83,7 @@ describe('αντίγραφο ασφαλείας', () => {
           { id: 'u2', email: 'giorgos@example.com', full_name: 'Γιώργος Π.', role: 'driver', email_confirmed_at: null, created_at: '2026-09-02T08:00:00Z' },
           { id: 'u1', email: 'owner@example.com', full_name: 'Νίκος', role: 'admin', email_confirmed_at: '2026-09-01T08:00:00Z', created_at: '2026-09-01T08:00:00Z' },
         ],
+        fleets: [{ id: 'f1', name: 'Νίκος', owner_id: 'u1', created_at: '2026-09-01T08:00:00Z' }],
         drivers: [giorgos],
         platform_rates: [
           { driver_id: 'd1', platform: 'freenow', rate_pct: 12, vat_rate: 24, updated_by: 'u1', updated_at: '2026-09-03T08:00:00Z' },
@@ -107,9 +111,11 @@ describe('αντίγραφο ασφαλείας', () => {
       'Ποσοστά εφαρμογών',
       'Οδηγοί',
       'Λογαριασμοί',
+      'Στόλος',
     ]);
-    const [info, shifts, expenses, apps, rates, drivers, accounts] = sheets;
+    const [info, shifts, expenses, apps, rates, drivers, accounts, fleet] = sheets;
     expect(info.rows).toContainEqual(['Ημερομηνία', '28/09/2026 10:00']);
+    expect(info.rows).toContainEqual(['Στόλος', 'Νίκος']);
     expect(info.rows).toContainEqual(['Βάρδιες', 2]);
     expect(info.rows).toContainEqual(['Μορφή αρχείου', BACKUP_SHEETS_FORMAT]);
 
@@ -135,7 +141,10 @@ describe('αντίγραφο ασφαλείας', () => {
     expect(rates.rows[0][column(rates, 'Ποσοστό %')]).toBe(12);
     expect(drivers.rows[0][column(drivers, 'Ενεργός')]).toBe('Ναι');
     expect(drivers.rows[0][column(drivers, 'Λογαριασμός')]).toBe('Συνδεδεμένος');
+    expect(drivers.rows[0][column(drivers, 'fleet_id')]).toBe('f1');
     // Πρώτα ο ιδιοκτήτης.
     expect(accounts.rows.map((row) => row[column(accounts, 'Ρόλος')])).toEqual(['Ιδιοκτήτης', 'Οδηγός']);
+    // Ο στόλος: όνομα και οι στήλες για επαναφορά.
+    expect(fleet.rows).toEqual([['Νίκος', '01/09/2026 11:00', 'f1', 'u1', '2026-09-01T08:00:00Z']]);
   });
 });

@@ -28,6 +28,7 @@ export type Database = {
           active: boolean;
           created_at: string;
           email: string | null;
+          fleet_id: string;
           id: string;
           name: string;
           phone: string | null;
@@ -38,6 +39,7 @@ export type Database = {
           active?: boolean;
           created_at?: string;
           email?: string | null;
+          fleet_id?: string;
           id?: string;
           name: string;
           phone?: string | null;
@@ -48,11 +50,41 @@ export type Database = {
           active?: boolean;
           created_at?: string;
           email?: string | null;
+          fleet_id?: string;
           id?: string;
           name?: string;
           phone?: string | null;
           plate?: string | null;
           user_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "drivers_fleet_id_fkey";
+            columns: ["fleet_id"];
+            isOneToOne: false;
+            referencedRelation: "fleets";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      fleets: {
+        Row: {
+          created_at: string;
+          id: string;
+          name: string;
+          owner_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          name: string;
+          owner_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          name?: string;
+          owner_id?: string;
         };
         Relationships: [];
       };
@@ -367,8 +399,18 @@ export type Database = {
       };
     };
     Functions: {
-      admin_exists: { Args: Record<PropertyKey, never>; Returns: boolean };
-      claim_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      accept_invite: { Args: { p_driver_id: string }; Returns: boolean };
+      create_fleet: { Args: { p_name: string; p_plate?: string }; Returns: string };
+      my_invites: {
+        Args: Record<PropertyKey, never>;
+        Returns: {
+          driver_id: string;
+          driver_name: string;
+          fleet_name: string;
+          owner_email: string;
+          plate: string;
+        }[];
+      };
     };
     Enums: {
       [_ in never]: never;

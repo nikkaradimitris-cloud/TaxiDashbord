@@ -7,12 +7,13 @@
 import { categoryLabel } from './expenses';
 import { formatDateTime, formatInteger } from './format';
 import { platformLabel, statementRevenueCents } from './platforms';
-import type { DriverRow, ExpenseRow, PlatformRateRow, ProfileRow, ShiftRow, StatementRow } from './types';
+import type { DriverRow, ExpenseRow, FleetRow, PlatformRateRow, ProfileRow, ShiftRow, StatementRow } from './types';
 import type { Cell, Sheet, SheetColumn } from './xlsx';
 
 /** Οι πίνακες του αντιγράφου, με τη σειρά που θα ξαναμπαίνουν σε μια βάση. */
 export const BACKUP_TABLES = [
   'profiles',
+  'fleets',
   'drivers',
   'platform_rates',
   'shifts',
@@ -82,7 +83,7 @@ export function isBackupDue(lastBackupAt: string | null, now: Date): boolean {
 // ---------------------------------------------------------------------
 
 /** Σημάδι της μορφής στην καρτέλα «Πληροφορίες» (για την επαναφορά). */
-export const BACKUP_SHEETS_FORMAT = 'taxi-fleet-tracker · 2';
+export const BACKUP_SHEETS_FORMAT = 'taxi-fleet-tracker · 3';
 
 type Column<Row> = SheetColumn & { value: (row: Row) => Cell };
 
@@ -139,6 +140,7 @@ export function backupSheets(file: BackupFile): Sheet[] {
   const profiles = [...(file.tables.profiles as ProfileRow[])].sort(
     (a, b) => (a.role === b.role ? byText(a.full_name, b.full_name) : a.role === 'admin' ? -1 : 1),
   );
+  const fleets = [...(file.tables.fleets as FleetRow[])].sort((a, b) => byText(a.name, b.name));
   const { counts } = file;
 
   const info: Sheet = {
@@ -152,6 +154,7 @@ export function backupSheets(file: BackupFile): Sheet[] {
       ['Αντίγραφο ασφαλείας', 'Taxi Fleet Tracker'],
       ['Ημερομηνία', formatDateTime(file.createdAt)],
       ['Από', file.createdBy],
+      ['Στόλος', fleets.map((fleet) => fleet.name).join(', ') || '—'],
       [],
       ['Βάρδιες', counts.shifts],
       ['Έξοδα οχήματος', counts.vehicle_expenses],
@@ -281,6 +284,7 @@ export function backupSheets(file: BackupFile): Sheet[] {
         { header: 'Λογαριασμός', width: 13, value: (r) => (r.user_id ? 'Συνδεδεμένος' : '—') },
         { header: 'Καταχωρήθηκε', width: 17, value: (r) => when(r.created_at) },
         raw('id'),
+        raw('fleet_id'),
         raw('user_id'),
         raw('created_at'),
       ],
@@ -300,6 +304,17 @@ export function backupSheets(file: BackupFile): Sheet[] {
         raw('created_at'),
       ],
       profiles,
+    ),
+    sheet<FleetRow>(
+      'Στόλος',
+      [
+        { header: 'Όνομα', width: 24, value: (r) => r.name },
+        { header: 'Δημιουργήθηκε', width: 17, value: (r) => when(r.created_at) },
+        raw('id'),
+        raw('owner_id'),
+        raw('created_at'),
+      ],
+      fleets,
     ),
   ];
 }

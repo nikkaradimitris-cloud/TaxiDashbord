@@ -72,8 +72,8 @@ export function RegisterForm() {
           (ελέγξτε και τα ανεπιθύμητα).
         </Notice>
         <p className="text-sm text-muted">
-          Μετά την επιβεβαίωση, ο λογαριασμός συνδέεται αυτόματα με τα στοιχεία σας στον στόλο, αρκεί ο ιδιοκτήτης να
-          έχει καταχωρίσει το ίδιο email.
+          Μετά την επιβεβαίωση διαλέγετε «Έχω δικό μου ταξί» ή, αν ο ιδιοκτήτης σας έχει γράψει το ίδιο email,
+          πατάτε «Αποδοχή» στην πρόσκλησή του.
         </p>
         <Link href="/login" className="block text-center text-sm font-medium underline">
           Μετάβαση στη σύνδεση
@@ -104,7 +104,7 @@ export function RegisterForm() {
       <Field label="Ονοματεπώνυμο">
         <Input autoComplete="name" required value={fullName} onChange={(e) => setFullName(e.target.value)} />
       </Field>
-      <Field label="Email" hint="Το ίδιο email που έχει δηλώσει ο ιδιοκτήτης για εσάς.">
+      <Field label="Email" hint="Οδηγός; Το ίδιο email που έχει δηλώσει ο ιδιοκτήτης για εσάς.">
         <Input
           type="email"
           autoComplete="email"

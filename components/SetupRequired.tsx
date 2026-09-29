@@ -42,10 +42,12 @@ export function SetupRequired({ kind = 'env', detail }: { kind?: Kind; detail?: 
         {kind === 'database' && (
           <ol className="mt-4 list-decimal space-y-3 pl-5 text-sm leading-6">
             <li>
-              Ανοίξτε το αρχείο <code>supabase/migrations/20260927120000_taxi_fleet.sql</code> του project.
+              Ανοίξτε τα αρχεία του φακέλου <code>supabase/migrations</code> του project, με τη σειρά (από το
+              παλιότερο).
             </li>
             <li>
-              Στο Supabase: <b>SQL Editor → New query</b>, επικολλήστε ολόκληρο το αρχείο και πατήστε <b>Run</b>.
+              Στο Supabase: <b>SQL Editor → New query</b>, επικολλήστε ολόκληρο κάθε αρχείο που δεν έχει εκτελεστεί
+              ακόμα και πατήστε <b>Run</b>.
             </li>
             <li>Ανανεώστε αυτή τη σελίδα.</li>
           </ol>

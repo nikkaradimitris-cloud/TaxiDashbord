@@ -103,6 +103,8 @@ async function isFocused(locator) {
   }
 }
 const idle = (p) => p.waitForFunction(() => !document.querySelector('section[aria-busy="true"]'));
+/** Περιμένει να τελειώσει η αλλαγή χρώματος (transition) ενός στοιχείου, π.χ. πριν από μια εικόνα. */
+const settled = (locator) => locator.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
 
 /** Τα μέρη ενός zip χωρίς συμπίεση (όπως το Excel της εφαρμογής), ως κείμενο. */
 function unzipStored(file) {
@@ -330,7 +332,7 @@ await stillCtx.close();
 // ---------------------------------------------------------------------
 
 // ---------------------------------------------------------------------
-console.log('1. Ιδιοκτήτης: εγγραφή, επιβεβαίωση email, ενεργοποίηση Admin');
+console.log('1. Ιδιοκτήτης: εγγραφή, επιβεβαίωση email, «Έχω δικό μου ταξί»');
 const owner = await newContext({ ...ctxOptions, viewport: { width: 1366, height: 900 } });
 const page = await owner.newPage();
 watch(page, 'owner');
@@ -344,25 +346,50 @@ await page.screenshot({ path: `${OUT}/02-register-sent.png` });
 
 await page.goto(await confirmationLink('owner@example.com'));
 await page.waitForURL(`${BASE}/`);
-await page.getByText('Είμαι ο ιδιοκτήτης').waitFor();
-check(true, 'σύνδεσμος επιβεβαίωσης → συνδεδεμένος, οθόνη αναμονής');
+const ownTaxi = page.getByRole('button', { name: /Έχω δικό μου ταξί/ });
+await ownTaxi.waitFor();
+check(true, 'σύνδεσμος επιβεβαίωσης → συνδεδεμένος, οθόνη επιλογής');
+const choiceText = await page.locator('main').innerText();
+check(
+  choiceText.includes('Πώς θα χρησιμοποιήσετε την εφαρμογή;') &&
+    choiceText.includes('Οδηγώ ταξί άλλου') &&
+    (await page.getByTestId('invite').count()) === 0,
+  'χωρίς πρόσκληση: «Έχω δικό μου ταξί» ή «Οδηγώ ταξί άλλου»',
+);
 await page.screenshot({ path: `${OUT}/03-pending-owner.png` });
 
-page.once('dialog', (d) => d.accept());
-await page.getByRole('button', { name: /Είμαι ο ιδιοκτήτης/ }).click();
+await ownTaxi.click();
+check((await ownTaxi.getAttribute('aria-pressed')) === 'true', '«Έχω δικό μου ταξί» επιλεγμένο');
+const createFleetForm = page.locator('#create-fleet');
+check(
+  (await createFleetForm.getByLabel('Το όνομά σας').inputValue()) === 'Νίκος Ιδιοκτήτης',
+  'το όνομα της εγγραφής είναι ήδη γραμμένο',
+);
+await createFleetForm.getByLabel('Το όνομά σας').fill('Νίκος (Ιδιοκτήτης)');
+await createFleetForm.getByLabel('Πινακίδα ταξί').fill('ταχ-9999');
+await settled(ownTaxi);
+const choiceYellow = await yellowNotPressable(page);
+check(choiceYellow.length === 0, `οθόνη επιλογής: κίτρινο μόνο σε ό,τι πατιέται${choiceYellow.length ? ` ✘ ${choiceYellow.join(' | ')}` : ''}`);
+check(
+  (await ownTaxi.evaluate((el) => getComputedStyle(el).backgroundColor)) ===
+    (await createFleetForm.getByRole('button', { name: 'Δημιουργία' }).evaluate((el) => getComputedStyle(el).backgroundColor)),
+  'η επιλογή «Έχω δικό μου ταξί» με το ίδιο κίτρινο που έχουν τα κουμπιά',
+);
+await page.screenshot({ path: `${OUT}/03b-create-fleet.png` });
+await createFleetForm.getByRole('button', { name: 'Δημιουργία' }).click();
 await page.locator('#fleet').waitFor();
-check(await page.getByText('Admin', { exact: true }).isVisible(), 'ο ιδιοκτήτης είναι πλέον Admin');
+check(await page.getByText('Admin', { exact: true }).isVisible(), 'ο ιδιοκτήτης έχει πλέον τον δικό του στόλο (Admin)');
 
 console.log('1β. Πάνελ: προεπιλογές του ιδιοκτήτη');
-// Περιμένουμε να φορτωθούν οι οδηγοί (κλειστό: «Κανένας οδηγός ακόμη» · ανοιχτό: «Δεν έχουν καταχωρηθεί…»).
-await page.locator('#fleet').getByText(/Κανένας οδηγός ακόμη|Δεν έχουν καταχωρηθεί οδηγοί ακόμη/).first().waitFor();
+// Ο νέος στόλος έχει ήδη το αυτοκίνητο του ιδιοκτήτη.
+await page.locator('#fleet').getByText('1 οδηγός · 1 με λογαριασμό').waitFor();
 check(
   (await page.getByRole('button', { name: /Νέα καταχώρηση/ }).isVisible()) && !(await page.locator('#shift-form').isVisible()),
   'ιδιοκτήτης: η φόρμα είναι κλειστή — φαίνεται το «+ Νέα καταχώρηση»',
 );
 check(
-  (await panelOpen(page, 'fleet')) && (await page.locator('#fleet').getByRole('button', { name: '+ Προσθήκη οδηγού' }).isVisible()),
-  'χωρίς οδηγούς η «Υποδομή Στόλου» ανοίγει μόνη της, με τη φόρμα',
+  !(await panelOpen(page, 'fleet')),
+  'νέος στόλος: η «Υποδομή Στόλου» κλειστή, με σύνοψη «1 οδηγός · 1 με λογαριασμό» (το αυτοκίνητο του ιδιοκτήτη)',
 );
 // Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι βάρδιες.
 const noShiftsSummary = await page
@@ -372,11 +399,21 @@ const noShiftsSummary = await page
   .then(() => true, () => false);
 check(!(await panelOpen(page, 'shifts')) && noShiftsSummary, 'κλειστό πάνελ «Ιστορικό βαρδιών» με σύνοψη «Καμία βάρδια»');
 await page.locator('#backup').getByText('Δεν έχει γίνει ακόμα', { exact: true }).waitFor();
-check((await page.getByTestId('backup-reminder').count()) === 0, 'χωρίς οδηγούς δεν εμφανίζεται υπενθύμιση για αντίγραφο ασφαλείας');
+check(
+  (await page.getByTestId('backup-reminder').count()) === 0,
+  'νέος στόλος χωρίς καταχωρήσεις: καμία υπενθύμιση για αντίγραφο ασφαλείας',
+);
 
 // ---------------------------------------------------------------------
 console.log('2. Υποδομή Στόλου');
 const fleet = page.locator('#fleet');
+await openPanel(page, 'fleet');
+check(
+  nbsp0(await fleet.innerText()).includes('Νίκος (Ιδιοκτήτης) · ΤΑΧ-9999') &&
+    (await fleet.getByText('✓ Ο λογαριασμός σας').count()) === 1,
+  'το αυτοκίνητο του ιδιοκτήτη (ΤΑΧ-9999) συνδεδεμένο με τον λογαριασμό του',
+);
+await fleet.getByRole('button', { name: '+ Νέος οδηγός' }).click();
 async function addDriver(d) {
   await fleet.getByLabel('Όνομα Οδηγού').fill(d.name);
   await fleet.getByLabel('Πινακίδα').first().fill(d.plate);
@@ -390,11 +427,18 @@ check(
   (await panelOpen(page, 'fleet')) && (await fleet.getByLabel('Όνομα Οδηγού').isVisible()),
   'μετά τον πρώτο οδηγό το πάνελ και η φόρμα μένουν ανοιχτά',
 );
+check(
+  await fleet.getByText('θα δει την πρόσκληση και θα πατήσει «Αποδοχή»').isVisible(),
+  'οδηγός με email: μήνυμα ότι θα δει πρόσκληση και θα πατήσει «Αποδοχή»',
+);
 await addDriver({ name: 'Μαρία Κωνσταντίνου', plate: 'ΙΚΒ-5678', phone: '6987654321', email: '' });
-await addDriver({ name: 'Νίκος (Ιδιοκτήτης)', plate: 'ΤΑΧ-9999', phone: '6900000000', email: 'owner@example.com' });
 check(await fleet.getByText('ΤΑΕ-1234').isVisible(), 'η πινακίδα αποθηκεύτηκε με κεφαλαία');
-check((await fleet.getByText('✓ Συνδεδεμένος λογαριασμός').count()) === 1, 'ο ιδιοκτήτης συνδέθηκε αυτόματα με τον οδηγό του');
-check((await fleet.getByText('Αναμονή εγγραφής').count()) === 1, 'ο Γιώργος σε αναμονή εγγραφής');
+check(
+  (await fleet.getByText('Πρόσκληση: περιμένει εγγραφή και «Αποδοχή»').count()) === 1 &&
+    (await fleet.getByText('✓ Συνδεδεμένος λογαριασμός').count()) === 0,
+  'ο Γιώργος: πρόσκληση σε αναμονή (καμία σύνδεση χωρίς «Αποδοχή»)',
+);
+await fleet.screenshot({ path: `${OUT}/04a-fleet-invites.png` });
 await fleet.getByRole('button', { name: 'Άκυρο' }).click();
 check(await isFocused(fleet.getByRole('button', { name: '+ Νέος οδηγός' })), '«Άκυρο» → η φόρμα κλείνει, ο κέρσορας στο «+ Νέος οδηγός»');
 await fleet.getByRole('button', { name: '+ Νέος οδηγός' }).click();
@@ -644,12 +688,12 @@ const shareText = decodeURIComponent(shareLink.split('?text=')[1] ?? '');
 check(
   shareLink.startsWith('https://wa.me/?text=') &&
     shareText.includes('ΦΠΑ: Χρεωστικός ή Πιστωτικός') &&
-    shareText.endsWith(`Γράψου κι εσύ:\n${BASE}`),
-  'κουμπί: WhatsApp χωρίς παραλήπτη, με έτοιμο μήνυμα και τον σύνδεσμο της εφαρμογής στο τέλος',
+    shareText.endsWith(`Γράψου κι εσύ:\n${BASE}/register`),
+  'κουμπί: WhatsApp χωρίς παραλήπτη, με έτοιμο μήνυμα και σύνδεσμο κατευθείαν στην εγγραφή',
 );
 await shareButton.locator('..').screenshot({ path: `${OUT}/04b-share-button.png` });
 // Ό,τι διαβάζει το WhatsApp όταν στέλνεται ο σύνδεσμος (χωρίς σύνδεση λογαριασμού).
-const shareHtml = await (await fetch(`${BASE}/`)).text();
+const shareHtml = await (await fetch(`${BASE}/register`)).text();
 const ogMeta = (property) => shareHtml.match(new RegExp(`<meta property="${property}" content="([^"]*)"`))?.[1];
 check(
   ogMeta('og:title') === 'Taxi Fleet Tracker' &&
@@ -776,13 +820,29 @@ check(await mpage.evaluate(() => !document.documentElement.dataset.textSize), '�
 await ownerMobile.close();
 
 // ---------------------------------------------------------------------
-console.log('6. Οδηγός: εγγραφή, αυτόματη σύνδεση, μόνο δικά του δεδομένα');
+console.log('6. Οδηγός: εγγραφή, πρόσκληση, «Αποδοχή», μόνο δικά του δεδομένα');
 const driverCtx = await newContext({ ...ctxOptions, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
 const dpage = await driverCtx.newPage();
 watch(dpage, 'driver');
 await register(dpage, { name: 'Γιώργος Π.', email: 'giorgos@example.com', password: 'DriverPass123' });
 await dpage.goto(await confirmationLink('giorgos@example.com'));
 await dpage.waitForURL(`${BASE}/`);
+const dinvite = dpage.getByTestId('invite');
+await dinvite.waitFor();
+check(
+  nbsp0(await dinvite.innerText())
+    .replace(/\s+/g, ' ')
+    .includes('Νίκος (Ιδιοκτήτης) (owner@example.com) σας πρόσθεσε ως οδηγό στο αυτοκίνητο: ΤΑΕ-1234 · Γιώργος Παπαδόπουλος'),
+  'πρόσκληση: ποιος ιδιοκτήτης (και το email του) και ποιο αυτοκίνητο',
+);
+check(
+  (await dpage.locator('#shift-form').count()) === 0 && !(await dpage.locator('body').innerText()).includes('160,39'),
+  'πριν από την «Αποδοχή» ο οδηγός δεν βλέπει τίποτα από τον στόλο',
+);
+const inviteWidth = await dpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
+check(inviteWidth[0] === 390 && inviteWidth[1] === 390, `πρόσκληση: πλάτος 390px στο κινητό (${inviteWidth})`);
+await dpage.screenshot({ path: `${OUT}/07a-driver-invite-mobile.png`, fullPage: true });
+await dinvite.getByRole('button', { name: 'Αποδοχή' }).click();
 await dpage.locator('#shift-form').waitFor();
 check((await dpage.getByRole('button', { name: /Νέα καταχώρηση/ }).count()) === 0, 'οδηγός: η φόρμα είναι ανοιχτή από την αρχή');
 check(
@@ -797,7 +857,7 @@ check(
 const dwidth = await dpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(dwidth[0] === 390 && dwidth[1] === 390, `οδηγός: πλάτος 390px στο κινητό (${dwidth})`);
 const dtext = await dpage.locator('body').innerText();
-check(dtext.includes('Γιώργος Παπαδόπουλος · ΤΑΕ-1234'), 'ο οδηγός συνδέθηκε αυτόματα με την εγγραφή του στόλου');
+check(dtext.includes('Γιώργος Παπαδόπουλος · ΤΑΕ-1234'), 'μετά την «Αποδοχή» ο οδηγός συνδέθηκε με την εγγραφή του στόλου');
 check(!dtext.includes('Μαρία'), 'ο οδηγός ΔΕΝ βλέπει άλλους οδηγούς');
 check(!dtext.includes('Υποδομή Στόλου'), 'ο οδηγός ΔΕΝ βλέπει την Υποδομή Στόλου');
 check(!dtext.includes('Αποστολή WhatsApp'), 'ο οδηγός δεν έχει κουμπί WhatsApp');
@@ -881,28 +941,134 @@ check((await dchart.locator('#analysis-body svg path[fill="none"]').count()) ===
 await dchart.screenshot({ path: `${OUT}/08c-driver-chart.png` });
 
 // ---------------------------------------------------------------------
-console.log('8. Λογαριασμός χωρίς αντιστοίχιση → αντιστοίχιση από τον Admin');
+console.log('8. Λογαριασμός χωρίς πρόσκληση → ο ιδιοκτήτης γράφει το email του → «Αποδοχή»');
 const mariaCtx = await newContext({ ...ctxOptions, viewport: { width: 390, height: 844 } });
 const mariaPage = await mariaCtx.newPage();
 watch(mariaPage, 'maria');
 await register(mariaPage, { name: 'Μαρία Κ.', email: 'maria.k@example.com', password: 'MariaPass123' });
 await mariaPage.goto(await confirmationLink('maria.k@example.com'));
 await mariaPage.waitForURL(`${BASE}/`);
-await mariaPage.getByText('δεν έχει αντιστοιχιστεί').waitFor();
-check(!(await mariaPage.getByText('Είμαι ο ιδιοκτήτης').isVisible()), 'δεύτερος χρήστης δεν μπορεί να γίνει Admin');
+const otherTaxi = mariaPage.getByRole('button', { name: /Οδηγώ ταξί άλλου/ });
+await otherTaxi.waitFor();
+check((await mariaPage.getByTestId('invite').count()) === 0, 'email που δεν έχει γράψει κανένας ιδιοκτήτης: καμία πρόσκληση');
+await otherTaxi.click();
+await settled(otherTaxi);
+check(
+  (await mariaPage.locator('main').innerText()).includes('με το email σας: maria.k@example.com'),
+  '«Οδηγώ ταξί άλλου»: τι να ζητήσει από τον ιδιοκτήτη, με το email της',
+);
 await mariaPage.screenshot({ path: `${OUT}/09-unlinked-driver.png` });
 
+// Ο ιδιοκτήτης δεν βλέπει ποιοι έκαναν εγγραφή: γράφει ο ίδιος το email της Μαρίας.
 await page.reload();
-await fleet.getByText('Λογαριασμοί χωρίς αντιστοίχιση').waitFor();
-await fleet.getByLabel('Οδηγός για maria.k@example.com').selectOption({ label: 'Μαρία Κωνσταντίνου · ΙΚΒ-5678' });
-await fleet.getByRole('button', { name: 'Αντιστοίχιση', exact: true }).click();
-await fleet.getByText('συνδέθηκε με τον/την Μαρία Κωνσταντίνου').waitFor();
+await openPanel(page, 'fleet');
+await fleet.getByText('Μαρία Κωνσταντίνου').waitFor();
+check(
+  !(await fleet.innerText()).includes('maria.k@example.com') && !(await fleet.innerText()).includes('χωρίς αντιστοίχιση'),
+  'ο ιδιοκτήτης δεν βλέπει λογαριασμούς που δεν έχει προσκαλέσει',
+);
+await fleet.locator('li', { hasText: 'Μαρία Κωνσταντίνου' }).getByRole('button', { name: 'Επεξεργασία' }).click();
+await fleet.getByLabel('Email σύνδεσης').fill('maria.k@example.com');
+await fleet.getByRole('button', { name: 'Αποθήκευση' }).click();
+await fleet.getByText('Τα στοιχεία αποθηκεύτηκαν. Μόλις κάνει εγγραφή με αυτό το email').waitFor();
+check(true, 'ο ιδιοκτήτης έγραψε το email της Μαρίας: πρόσκληση');
 await mariaPage.getByRole('button', { name: 'Ανανέωση' }).click();
+const mariaInvite = mariaPage.getByTestId('invite');
+await mariaInvite.waitFor();
+check(
+  nbsp0(await mariaInvite.innerText()).includes('ΙΚΒ-5678 · Μαρία Κωνσταντίνου'),
+  '«Ανανέωση» → η πρόσκληση για ΙΚΒ-5678 · Μαρία Κωνσταντίνου',
+);
+await mariaInvite.getByRole('button', { name: 'Αποδοχή' }).click();
 await mariaPage.locator('#shift-form').waitFor();
 await openAll(mariaPage);
 const mtext = await mariaPage.locator('body').innerText();
 check(mtext.includes('Ζ 55') && !mtext.includes('Ζ 101'), 'η Μαρία βλέπει μόνο τη δική της βάρδια (Ζ 55)');
 check(mtext.includes('Φρένα') && !mtext.includes('Λογιστής') && !mtext.includes('Υγρό'), 'η Μαρία βλέπει μόνο το έξοδο του δικού της αυτοκινήτου');
+
+// ---------------------------------------------------------------------
+console.log('8β. Φίλος με δικό του ταξί: χωριστός στόλος, κανείς δεν βλέπει τα στοιχεία του άλλου');
+// Πρώτη φορά στη συσκευή, από τον σύνδεσμο του WhatsApp (…/register).
+const friendCtx = await newContext(
+  { ...ctxOptions, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 },
+  { intro: true },
+);
+const fpage = await friendCtx.newPage();
+watch(fpage, 'friend');
+await fpage.goto(`${BASE}/register`);
+await fpage.getByRole('button', { name: 'Δημιουργία λογαριασμού' }).waitFor();
+await hydrated(fpage);
+check(fpage.url() === `${BASE}/register`, 'σύνδεσμος του WhatsApp: ο φίλος ανοίγει κατευθείαν την εγγραφή');
+await register(fpage, { name: 'Κώστας Φίλος', email: 'kostas@example.com', password: 'KostasPass123' });
+await fpage.goto(await confirmationLink('kostas@example.com'));
+await fpage.waitForURL(`${BASE}/`);
+await fpage.getByRole('button', { name: /Έχω δικό μου ταξί/ }).click();
+await settled(fpage.getByRole('button', { name: /Έχω δικό μου ταξί/ }));
+const friendForm = fpage.locator('#create-fleet');
+await friendForm.getByLabel('Πινακίδα ταξί').fill('κωσ-1111');
+const friendWidth = await fpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
+check(friendWidth[0] === 390 && friendWidth[1] === 390, `«Έχω δικό μου ταξί»: πλάτος 390px στο κινητό (${friendWidth})`);
+await fpage.screenshot({ path: `${OUT}/09b-friend-create-mobile.png`, fullPage: true });
+await friendForm.getByRole('button', { name: 'Δημιουργία' }).click();
+await fpage.getByRole('button', { name: /Νέα καταχώρηση/ }).waitFor();
+await openPanel(fpage, 'fleet');
+await fpage.locator('#fleet').getByText('✓ Ο λογαριασμός σας').waitFor();
+const friendFleet = nbsp0(await fpage.locator('#fleet').innerText());
+check(
+  friendFleet.includes('Κώστας Φίλος · ΚΩΣ-1111') &&
+    friendFleet.includes('1 οδηγός') &&
+    !/Γιώργος|Μαρία|ΤΑΕ-1234|ΤΑΧ-9999|owner@example\.com|maria\.k@example\.com/.test(friendFleet),
+  'φίλος: ο στόλος του έχει μόνο το δικό του ταξί (κανένας οδηγός ή λογαριασμός του άλλου στόλου)',
+);
+await fpage.getByRole('button', { name: /Νέα καταχώρηση/ }).click();
+const fform = fpage.locator('#shift-form');
+await fform.waitFor();
+check(
+  nbsp0(await fform.innerText()).replace(/\s+/g, ' ').includes('Κώστας Φίλος · ΚΩΣ-1111'),
+  'φίλος: η βάρδια πάει στο δικό του ταξί χωρίς να διαλέξει',
+);
+await fillShift(fform, { 'Αριθμός Ζ': '7001', 'Αποφορολογημένα Έσοδα': '77' });
+await fform.getByRole('button', { name: /^Καταχώρηση/ }).click();
+await fform.getByText('✓ Καταχωρήθηκε: Ζ 7001').waitFor();
+check(true, 'φίλος: καταχώρησε βάρδια στο δικό του ταξί');
+await openAll(fpage);
+const ftext = nbsp0(await fpage.locator('body').innerText());
+check(
+  ftext.includes('Ζ 7001') && !/Ζ 101|Ζ 55|160,39|Φρένα|Λογιστής/.test(ftext),
+  'φίλος: βλέπει μόνο τη δική του βάρδια, καμία βάρδια ή έξοδο του άλλου στόλου',
+);
+await fpage.screenshot({ path: `${OUT}/09c-friend-dashboard-mobile.png`, fullPage: true });
+
+// Το αντίγραφο ασφαλείας του φίλου: μόνο τα δικά του.
+const friendReminder = fpage.getByTestId('backup-reminder');
+await friendReminder.waitFor();
+const [friendDownload] = await Promise.all([
+  fpage.waitForEvent('download'),
+  friendReminder.getByRole('button', { name: 'Κατέβασμα τώρα' }).click(),
+]);
+const friendBackupPath = `${OUT}/antigrafo-filos.xlsx`;
+await friendDownload.saveAs(friendBackupPath);
+const friendBook = readXlsx(friendBackupPath);
+const friendSheet = (name) => friendBook.find((sheet) => sheet.name === name);
+const friendRows = Object.fromEntries(
+  ['Βάρδιες', 'Οδηγοί', 'Λογαριασμοί', 'Στόλος'].map((name) => [name, friendSheet(name).rows.length - 1]),
+);
+check(
+  JSON.stringify(friendRows) === JSON.stringify({ 'Βάρδιες': 1, 'Οδηγοί': 1, 'Λογαριασμοί': 1, 'Στόλος': 1 }) &&
+    !/owner@example\.com|giorgos@example\.com|maria\.k@example\.com|Γιώργος|160\.39/.test(JSON.stringify(friendBook)),
+  `φίλος: το Excel του έχει μόνο τα δικά του (${JSON.stringify(friendRows)})`,
+);
+
+// Ο ιδιοκτήτης δεν βλέπει τίποτα από τον φίλο (και στο αντίγραφό του, στο 9ε).
+await page.reload();
+await fleet.getByText('Μαρία Κωνσταντίνου').waitFor();
+const ownerDriverOptions = await page.locator('#filters').getByLabel('Οδηγός').locator('option').allTextContents();
+check(
+  !/Κώστας|ΚΩΣ-1111|kostas@example\.com/.test(nbsp0(await page.locator('body').innerText())) &&
+    !ownerDriverOptions.some((option) => option.includes('Κώστας')),
+  `ιδιοκτήτης: ούτε το ταξί ούτε ο λογαριασμός του φίλου (οδηγοί: ${ownerDriverOptions.join(', ')})`,
+);
+await friendCtx.close();
 
 // ---------------------------------------------------------------------
 console.log('9. Μεταφορά δεδομένων παλιάς τοπικής έκδοσης');
@@ -1373,11 +1539,11 @@ await backupDownload.saveAs(backupPath);
 const workbook = readXlsx(backupPath);
 check(
   JSON.stringify(workbook.map((sheet) => sheet.name)) ===
-    JSON.stringify(['Πληροφορίες', 'Βάρδιες', 'Έξοδα οχήματος', 'Εφαρμογές', 'Ποσοστά εφαρμογών', 'Οδηγοί', 'Λογαριασμοί']),
+    JSON.stringify(['Πληροφορίες', 'Βάρδιες', 'Έξοδα οχήματος', 'Εφαρμογές', 'Ποσοστά εφαρμογών', 'Οδηγοί', 'Λογαριασμοί', 'Στόλος']),
   `Excel: καρτέλες ${workbook.map((sheet) => sheet.name).join(', ')}`,
 );
 const sheetOf = (name) => workbook.find((sheet) => sheet.name === name);
-const expectedRows = { 'Βάρδιες': 6, 'Έξοδα οχήματος': 3, 'Εφαρμογές': 5, 'Ποσοστά εφαρμογών': 3, 'Οδηγοί': 4, 'Λογαριασμοί': 3 };
+const expectedRows = { 'Βάρδιες': 6, 'Έξοδα οχήματος': 3, 'Εφαρμογές': 5, 'Ποσοστά εφαρμογών': 3, 'Οδηγοί': 4, 'Λογαριασμοί': 3, 'Στόλος': 1 };
 const actualRows = Object.fromEntries(Object.keys(expectedRows).map((name) => [name, sheetOf(name).rows.length - 1]));
 check(JSON.stringify(actualRows) === JSON.stringify(expectedRows), `όλες οι γραμμές κάθε πίνακα: ${JSON.stringify(actualRows)}`);
 const shiftSheet = sheetOf('Βάρδιες');
@@ -1398,8 +1564,14 @@ check(
   'το Excel έχει τα πραγματικά στοιχεία (Μαρία, τιμολόγιο FN-0925, Φρένα) με ελληνικά ονόματα',
 );
 check(
-  sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Μορφή αρχείου' && row[1] === 'taxi-fleet-tracker · 2'),
-  'καρτέλα «Πληροφορίες» με τη μορφή του αρχείου',
+  sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Μορφή αρχείου' && row[1] === 'taxi-fleet-tracker · 3') &&
+    sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Στόλος' && row[1] === 'Νίκος (Ιδιοκτήτης)'),
+  'καρτέλα «Πληροφορίες» με τον στόλο και τη μορφή του αρχείου',
+);
+check(
+  !/kostas@example\.com|Κώστας|ΚΩΣ-1111/.test(JSON.stringify(workbook)) &&
+    sheetOf('Οδηγοί').rows[0].includes('fleet_id'),
+  'το Excel του ιδιοκτήτη δεν έχει τίποτα από τον στόλο του φίλου (και οι οδηγοί έχουν τη στήλη fleet_id)',
 );
 check(!/access_token|refresh_token|password/i.test(fs.readFileSync(backupPath, 'latin1')), 'το αρχείο δεν έχει κωδικούς ή κλειδιά σύνδεσης');
 const backupParts = unzipStored(backupPath);

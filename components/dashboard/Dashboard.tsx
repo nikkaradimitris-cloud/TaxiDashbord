@@ -639,7 +639,13 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 />
               )}
 
-              {isAdmin && <BackupReminder backup={backup} hasData={drivers.length > 0} />}
+              {/* Υπενθύμιση μόνο όταν υπάρχουν καταχωρήσεις (όχι σε έναν στόλο που μόλις φτιάχτηκε). */}
+              {isAdmin && (
+                <BackupReminder
+                  backup={backup}
+                  hasData={shifts.length > 0 || expenses.length > 0 || statements.length > 0}
+                />
+              )}
 
               <InstallNotice />
 
@@ -908,6 +914,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               {isAdmin && (
                 <FleetPanel
                   supabase={supabase}
+                  userId={userId}
                   drivers={drivers}
                   loaded={driversState !== null}
                   onChanged={() => setDriversVersion((v) => v + 1)}

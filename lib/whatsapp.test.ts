@@ -90,10 +90,10 @@ describe('buildVatMessage / whatsappLink', () => {
   });
 
   it('μήνυμα για φίλους: ο σύνδεσμος στο τέλος, σε δική του γραμμή· WhatsApp χωρίς παραλήπτη', () => {
-    const text = buildShareMessage('https://taxi-dashbord.vercel.app');
+    const text = buildShareMessage('https://taxi-dashbord.vercel.app/register');
     expect(text).toContain('αξιοποίηση των χιλιομέτρων');
     expect(text).toContain('ΦΠΑ: Χρεωστικός ή Πιστωτικός');
-    expect(text.endsWith('Γράψου κι εσύ:\nhttps://taxi-dashbord.vercel.app')).toBe(true);
+    expect(text.endsWith('Γράψου κι εσύ:\nhttps://taxi-dashbord.vercel.app/register')).toBe(true);
     const link = whatsappShareLink(text);
     expect(link).toBe(`https://wa.me/?text=${encodeURIComponent(text)}`);
   });

@@ -11,6 +11,7 @@ const driver = (id: string, name: string, plate: string | null): DriverRow => ({
   email: null,
   phone: null,
   user_id: null,
+  fleet_id: 'f1',
 });
 
 const giorgos = driver('g', 'Γιώργος Παπαδόπουλος', 'ΤΑΕ-1234');

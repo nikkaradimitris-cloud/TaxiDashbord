@@ -2,7 +2,7 @@
 -- Εκτέλεση: npx supabase test db   (χρειάζεται τοπικό Supabase: npx supabase start)
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(116);
+select plan(127);
 
 -- ------------------------------------------------------------------
 -- Σχήμα
@@ -13,11 +13,12 @@ select has_table('public', 'shifts', 'πίνακας shifts');
 select has_table('public', 'vehicle_expenses', 'πίνακας vehicle_expenses');
 select has_table('public', 'platform_statements', 'πίνακας platform_statements');
 select has_table('public', 'platform_rates', 'πίνακας platform_rates');
+select has_table('public', 'fleets', 'πίνακας fleets');
 select has_view('public', 'monthly_summary', 'αναφορά monthly_summary');
 select ok(
   (select bool_and(rowsecurity) from pg_tables
    where schemaname = 'public'
-     and tablename in ('profiles', 'drivers', 'shifts', 'vehicle_expenses', 'platform_statements', 'platform_rates')),
+     and tablename in ('profiles', 'fleets', 'drivers', 'shifts', 'vehicle_expenses', 'platform_statements', 'platform_rates')),
   'RLS ενεργό σε όλους τους πίνακες'
 );
 
@@ -38,21 +39,34 @@ select is(
   'Ιδιοκτήτης', 'το ονοματεπώνυμο της εγγραφής αποθηκεύεται'
 );
 
+-- «Έχω δικό μου ταξί»: ο λογαριασμός φτιάχνει τον στόλο του και γίνεται ο ιδιοκτήτης.
 set local role authenticated;
 set local request.jwt.claims = '{"sub": "11111111-1111-1111-1111-111111111111"}';
-select is(public.admin_exists(), false, 'αρχικά δεν υπάρχει admin');
-select is(public.claim_admin(), true, 'ο ιδιοκτήτης γίνεται admin');
-select is(public.admin_exists(), true, 'υπάρχει πλέον admin');
-
-set local request.jwt.claims = '{"sub": "44444444-4444-4444-4444-444444444444"}';
-select is(public.claim_admin(), false, 'δεύτερη διεκδίκηση admin απορρίπτεται');
+select isnt(public.create_fleet(' Νίκος ', 'ταχ-9999'), null, 'ο ιδιοκτήτης φτιάχνει τον στόλο του');
 select is(
   (select role from public.profiles where id = auth.uid()),
-  'driver', 'ο δεύτερος χρήστης παραμένει driver'
+  'admin', 'ο ιδιοκτήτης του στόλου έχει ρόλο admin'
+);
+select results_eq(
+  $$ select f.name, d.name, d.plate, d.email, d.user_id
+     from public.fleets f join public.drivers d on d.fleet_id = f.id $$,
+  $$ values ('Νίκος', 'Νίκος', 'ΤΑΧ-9999', 'owner@example.com', '11111111-1111-1111-1111-111111111111'::uuid) $$,
+  'το πρώτο αυτοκίνητο: όνομα και πινακίδα, συνδεδεμένο με τον ιδιοκτήτη'
+);
+select throws_ok(
+  $$ select public.create_fleet('Δεύτερος', null) $$,
+  'P0001', 'Έχετε ήδη δικό σας στόλο.', 'ένας στόλος ανά λογαριασμό'
+);
+
+set local request.jwt.claims = '{"sub": "44444444-4444-4444-4444-444444444444"}';
+select is_empty($$ select * from public.my_invites() $$, 'λογαριασμός χωρίς πρόσκληση: καμία πρόσκληση');
+select is(
+  (select role from public.profiles where id = auth.uid()),
+  'driver', 'λογαριασμός χωρίς στόλο παραμένει driver'
 );
 
 -- ------------------------------------------------------------------
--- Υποδομή στόλου (admin) & αυτόματη σύνδεση λογαριασμών με email
+-- Υποδομή στόλου (ιδιοκτήτης) & σύνδεση οδηγών μόνο με «Αποδοχή»
 -- ------------------------------------------------------------------
 set local request.jwt.claims = '{"sub": "11111111-1111-1111-1111-111111111111"}';
 insert into public.drivers (id, name, plate, phone, email) values
@@ -68,29 +82,53 @@ select is(
   'ΤΑΕ-1234', 'η πινακίδα αποθηκεύεται με κεφαλαία'
 );
 select is(
+  (select fleet_id from public.drivers where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
+  (select id from public.fleets), 'ο νέος οδηγός μπαίνει στον στόλο του ιδιοκτήτη'
+);
+select is(
   (select user_id from public.drivers where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
   null, 'χωρίς λογαριασμό → καμία σύνδεση'
 );
 select is(
   (select user_id from public.drivers where id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
-  '33333333-3333-3333-3333-333333333333'::uuid, 'υπάρχων επιβεβαιωμένος λογαριασμός → άμεση σύνδεση'
+  null, 'υπάρχων λογαριασμός με το ίδιο email → πρόσκληση, όχι σύνδεση χωρίς «Αποδοχή»'
 );
 select throws_ok(
   $$ insert into public.drivers (name, email) values ('Διπλός', 'MARIA@example.com') $$,
-  '23505', null, 'το ίδιο email δεν δίνεται σε δύο οδηγούς'
+  '23505', null, 'το ίδιο email δεν δίνεται σε δύο οδηγούς του στόλου'
 );
 
+-- Η Μαρία (υπάρχων λογαριασμός) βλέπει την πρόσκληση και την αποδέχεται.
+set local request.jwt.claims = '{"sub": "33333333-3333-3333-3333-333333333333"}';
+select results_eq(
+  $$ select driver_id, driver_name, plate, fleet_name, owner_email from public.my_invites() $$,
+  $$ values ('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'::uuid, 'Μαρία', 'ΤΑΧ-5678', 'Νίκος', 'owner@example.com') $$,
+  'η πρόσκληση γράφει οδηγό, πινακίδα, στόλο και email του ιδιοκτήτη'
+);
+select is_empty($$ select id from public.drivers $$, 'πριν από την «Αποδοχή» δεν βλέπει τίποτα από τον στόλο');
+select is(public.accept_invite('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), false, 'δεν αποδέχεται πρόσκληση για άλλο email');
+select is(public.accept_invite('bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'), true, '«Αποδοχή» της πρόσκλησης');
+select is(
+  (select user_id from public.drivers where id = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'),
+  '33333333-3333-3333-3333-333333333333'::uuid, 'μετά την «Αποδοχή» → σύνδεση'
+);
+select is_empty($$ select * from public.my_invites() $$, 'η πρόσκληση δεν εμφανίζεται πια');
+
+-- Ο Γιώργος κάνει εγγραφή: η πρόσκληση φαίνεται μόνο μετά την επιβεβαίωση του email.
 reset role;
 insert into auth.users (id, email, raw_user_meta_data)
 values ('22222222-2222-2222-2222-222222222222', 'giorgos@example.com', '{}');
-select is(
-  (select user_id from public.drivers where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
-  null, 'μη επιβεβαιωμένο email → ακόμη καμία σύνδεση'
-);
+set local role authenticated;
+set local request.jwt.claims = '{"sub": "22222222-2222-2222-2222-222222222222"}';
+select is_empty($$ select * from public.my_invites() $$, 'μη επιβεβαιωμένο email → καμία πρόσκληση');
+select is(public.accept_invite('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), false, 'μη επιβεβαιωμένο email → καμία σύνδεση');
+reset role;
 update auth.users set email_confirmed_at = now() where id = '22222222-2222-2222-2222-222222222222';
+set local role authenticated;
+select is(public.accept_invite('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'), true, 'μετά την επιβεβαίωση του email → «Αποδοχή»');
 select is(
   (select user_id from public.drivers where id = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'),
-  '22222222-2222-2222-2222-222222222222'::uuid, 'μετά την επιβεβαίωση του email → σύνδεση'
+  '22222222-2222-2222-2222-222222222222'::uuid, 'ο Γιώργος συνδέθηκε με την εγγραφή του στόλου'
 );
 
 -- ------------------------------------------------------------------

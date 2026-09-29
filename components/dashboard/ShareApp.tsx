@@ -3,10 +3,14 @@
 import { Button } from '@/components/ui';
 import { buildShareMessage, whatsappShareLink } from '@/lib/whatsapp';
 
-/** «Στείλτε την εφαρμογή σε φίλο»: WhatsApp με έτοιμο μήνυμα· ο σύνδεσμος δείχνει την εικόνα προεπισκόπησης. */
+/**
+ * «Στείλτε την εφαρμογή σε φίλο»: WhatsApp με έτοιμο μήνυμα· ο σύνδεσμος δείχνει την εικόνα προεπισκόπησης
+ * και ανοίγει κατευθείαν την εγγραφή (μετά ο φίλος πατά «Έχω δικό μου ταξί»).
+ */
 export function ShareApp() {
   function share() {
-    window.open(whatsappShareLink(buildShareMessage(window.location.origin)), '_blank', 'noopener,noreferrer');
+    const link = whatsappShareLink(buildShareMessage(`${window.location.origin}/register`));
+    window.open(link, '_blank', 'noopener,noreferrer');
   }
 
   return (

@@ -1,18 +1,20 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import { Panel, usePanelOpen } from '@/components/Panel';
-import { Badge, Button, Field, Input, Notice, Select } from '@/components/ui';
-import { createDriver, deleteDriver, fetchProfiles, updateDriver, type DriverInput } from '@/lib/data';
+import { Badge, Button, Field, Input, Notice } from '@/components/ui';
+import { createDriver, deleteDriver, updateDriver, type DriverInput } from '@/lib/data';
 import { dataErrorMessage } from '@/lib/errors';
-import { formatDateTime } from '@/lib/format';
 import type { BrowserSupabase } from '@/lib/supabase/client';
-import type { DriverRow, ProfileRow } from '@/lib/types';
+import type { DriverRow } from '@/lib/types';
 import { toWhatsAppNumber, whatsappLink } from '@/lib/whatsapp';
 
 type Message = { tone: 'success' | 'error'; text: string };
 
 const EMPTY: DriverInput = { name: '', plate: '', phone: '', email: '' };
+
+/** Μετά από νέο email οδηγού: τι γίνεται στη συνέχεια. */
+const INVITE_NOTE = ' Μόλις κάνει εγγραφή με αυτό το email, θα δει την πρόσκληση και θα πατήσει «Αποδοχή».';
 
 function validate(input: DriverInput): string | null {
   if (!input.name.trim()) return 'Το όνομα οδηγού είναι υποχρεωτικό.';
@@ -24,14 +26,20 @@ function phoneWarning(phone: string): string | undefined {
   return phone.trim() && !toWhatsAppNumber(phone) ? 'Δεν μοιάζει με κινητό (69XXXXXXXX) — το WhatsApp δεν θα λειτουργεί.' : undefined;
 }
 
-/** Υποδομή στόλου: οδηγοί, πινακίδες, κινητά και λογαριασμοί σύνδεσης (μόνο admin). */
+/**
+ * Υποδομή στόλου: οδηγοί, πινακίδες, κινητά και email σύνδεσης (μόνο ο ιδιοκτήτης). Ο οδηγός με email
+ * βλέπει πρόσκληση όταν συνδεθεί και μπαίνει στον στόλο μόνο αν πατήσει «Αποδοχή». Λογαριασμοί άλλων
+ * (π.χ. όσων έκαναν εγγραφή για δικό τους ταξί) δεν φαίνονται εδώ.
+ */
 export function FleetPanel({
   supabase,
+  userId,
   drivers,
   loaded,
   onChanged,
 }: {
   supabase: BrowserSupabase;
+  userId: string;
   drivers: DriverRow[];
   loaded: boolean;
   onChanged: () => void;
@@ -41,8 +49,6 @@ export function FleetPanel({
   const [editForm, setEditForm] = useState<DriverInput>(EMPTY);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
-  const [profiles, setProfiles] = useState<ProfileRow[] | null>(null);
-  const [assign, setAssign] = useState<Record<string, string>>({});
   /** Η φόρμα «νέος οδηγός» ανοίγει με κουμπί (ανοιχτή από την αρχή όταν δεν υπάρχει κανένας οδηγός). */
   const [adding, setAdding] = useState(false);
   const showAddForm = adding || (loaded && drivers.length === 0);
@@ -50,26 +56,6 @@ export function FleetPanel({
   // Χωρίς οδηγούς το πάνελ ανοίγει μόνο του· μετά τον πρώτο οδηγό μένει ανοιχτό μέχρι να το κλείσει ο χρήστης.
   const [, setPanelOpen] = usePanelOpen('fleet', false);
   const linkedCount = drivers.filter((driver) => driver.user_id).length;
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchProfiles(supabase).then(
-      (rows) => {
-        if (!cancelled) setProfiles(rows);
-      },
-      () => {
-        if (!cancelled) setProfiles([]);
-      },
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, drivers]);
-
-  const unlinked = useMemo(() => {
-    const linked = new Set(drivers.map((d) => d.user_id).filter(Boolean));
-    return (profiles ?? []).filter((p) => p.role !== 'admin' && !linked.has(p.id));
-  }, [profiles, drivers]);
 
   async function run(action: () => Promise<unknown>, success: string) {
     setBusy(true);
@@ -94,7 +80,10 @@ export function FleetPanel({
       setMessage({ tone: 'error', text: problem });
       return;
     }
-    const ok = await run(() => createDriver(supabase, form), `Ο οδηγός «${form.name.trim()}» προστέθηκε.`);
+    const ok = await run(
+      () => createDriver(supabase, form),
+      `Ο οδηγός «${form.name.trim()}» προστέθηκε.${form.email.trim() ? INVITE_NOTE : ''}`,
+    );
     if (ok) {
       setForm(EMPTY);
       // Η φόρμα μένει ανοιχτή για τον επόμενο οδηγό (και όταν ήταν ο πρώτος).
@@ -109,7 +98,11 @@ export function FleetPanel({
       setMessage({ tone: 'error', text: problem });
       return;
     }
-    const ok = await run(() => updateDriver(supabase, driver.id, editForm), 'Τα στοιχεία αποθηκεύτηκαν.');
+    const newEmail = editForm.email.trim().toLowerCase();
+    const ok = await run(
+      () => updateDriver(supabase, driver.id, editForm),
+      `Τα στοιχεία αποθηκεύτηκαν.${newEmail && newEmail !== driver.email ? INVITE_NOTE : ''}`,
+    );
     if (ok) setEditingId(null);
   }
 
@@ -130,25 +123,11 @@ export function FleetPanel({
     );
   }
 
-  function handleAssign(profile: ProfileRow) {
-    const driverId = assign[profile.id];
-    const driver = drivers.find((d) => d.id === driverId);
-    if (!driver || !profile.email) return;
-    if (driver.email && driver.email !== profile.email && !confirm(`Αντικατάσταση του email ${driver.email} με ${profile.email};`)) {
-      return;
-    }
-    void run(
-      () => updateDriver(supabase, driver.id, { email: profile.email ?? '' }),
-      profile.email_confirmed_at
-        ? `Ο λογαριασμός ${profile.email} συνδέθηκε με τον/την ${driver.name}.`
-        : `Ορίστηκε το email. Η σύνδεση θα ολοκληρωθεί μόλις ο/η ${driver.name} επιβεβαιώσει το email του/της.`,
-    );
-  }
-
   function invite(driver: DriverRow) {
     const text =
       `Γεια σου ${driver.name}! Για να καταχωρείς τις βάρδιές σου, κάνε εγγραφή στο Taxi Fleet Tracker` +
-      `${driver.email ? ` με το email ${driver.email}` : ''}:\n${window.location.origin}/register`;
+      `${driver.email ? ` με το email ${driver.email} και πάτησε «Αποδοχή» στην πρόσκληση` : ''}:\n` +
+      `${window.location.origin}/register`;
     const link = whatsappLink(driver.phone, text);
     if (link) window.open(link, '_blank', 'noopener,noreferrer');
   }
@@ -164,14 +143,13 @@ export function FleetPanel({
             ? 'Κανένας οδηγός ακόμη'
             : `${drivers.length === 1 ? '1 οδηγός' : `${drivers.length} οδηγοί`} · ${linkedCount} με λογαριασμό`
       }
-      badge={unlinked.length > 0 ? <Badge tone="warn">{unlinked.length} χωρίς αντιστοίχιση</Badge> : null}
       defaultOpen={loaded && drivers.length === 0}
     >
       {showAddForm ? (
         <>
           <p className="mb-3 text-sm text-muted">
             Οι οδηγοί που προσθέτετε εμφανίζονται αυτόματα στα μενού. Αν δηλώσετε email, ο οδηγός κάνει εγγραφή με
-            αυτό και βλέπει/καταχωρεί μόνο τις δικές του βάρδιες.
+            αυτό, πατά «Αποδοχή» στην πρόσκληση και βλέπει/καταχωρεί μόνο τις δικές του βάρδιες.
           </p>
           <form onSubmit={handleAdd} className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2 lg:grid-cols-5">
             <Field label="Όνομα Οδηγού *">
@@ -262,7 +240,7 @@ export function FleetPanel({
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                 />
               </Field>
-              <Field label="Email σύνδεσης" hint="Κενό = ο οδηγός χάνει την πρόσβαση">
+              <Field label="Email σύνδεσης" hint="Άλλο email = νέα πρόσκληση · κενό = ο οδηγός χάνει την πρόσβαση">
                 <Input
                   type="email"
                   inputMode="email"
@@ -288,12 +266,14 @@ export function FleetPanel({
                 </p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {!driver.active && <Badge tone="bad">Ανενεργός</Badge>}
-                  {driver.user_id ? (
+                  {driver.user_id === userId ? (
+                    <Badge tone="good">✓ Ο λογαριασμός σας</Badge>
+                  ) : driver.user_id ? (
                     <Badge tone="good">✓ Συνδεδεμένος λογαριασμός</Badge>
                   ) : driver.email ? (
-                    <Badge tone="warn">Αναμονή εγγραφής / επιβεβαίωσης email</Badge>
+                    <Badge tone="warn">Πρόσκληση: περιμένει εγγραφή και «Αποδοχή»</Badge>
                   ) : (
-                    <Badge>Χωρίς λογαριασμό — καταχωρεί ο admin</Badge>
+                    <Badge>Χωρίς λογαριασμό — καταχωρείτε εσείς</Badge>
                   )}
                 </div>
               </div>
@@ -317,47 +297,6 @@ export function FleetPanel({
           ),
         )}
       </ul>
-
-      {unlinked.length > 0 && (
-        <div className="mt-5 rounded-xl border border-dashed border-accent-strong p-3">
-          <h3 className="font-semibold">Λογαριασμοί χωρίς αντιστοίχιση ({unlinked.length})</h3>
-          <p className="mb-3 text-sm text-muted">
-            Έκαναν εγγραφή αλλά το email τους δεν ταιριάζει με κανέναν οδηγό. Αντιστοιχίστε τους με ένα κλικ.
-          </p>
-          <ul className="space-y-3">
-            {unlinked.map((profile) => (
-              <li key={profile.id} className="flex flex-wrap items-end gap-3">
-                <div className="min-w-48 flex-1">
-                  <p className="font-medium">{profile.email}</p>
-                  <p className="text-xs text-muted">
-                    {profile.full_name || '—'} · εγγραφή {formatDateTime(profile.created_at)} ·{' '}
-                    {profile.email_confirmed_at ? 'email επιβεβαιωμένο' : 'email ΟΧΙ επιβεβαιωμένο'}
-                  </p>
-                </div>
-                <Select
-                  aria-label={`Οδηγός για ${profile.email}`}
-                  className="w-auto min-w-48"
-                  value={assign[profile.id] ?? ''}
-                  onChange={(e) => setAssign({ ...assign, [profile.id]: e.target.value })}
-                >
-                  <option value="">Επιλογή οδηγού…</option>
-                  {drivers
-                    .filter((d) => !d.user_id)
-                    .map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {d.name}
-                        {d.plate ? ` · ${d.plate}` : ''}
-                      </option>
-                    ))}
-                </Select>
-                <Button onClick={() => handleAssign(profile)} disabled={busy || !assign[profile.id]}>
-                  Αντιστοίχιση
-                </Button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </Panel>
   );
 }

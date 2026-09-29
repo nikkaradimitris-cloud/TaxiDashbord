@@ -47,8 +47,14 @@ export default async function HomePage() {
   const ownDriver = driverResult.data;
 
   if (role === 'driver' && !ownDriver) {
-    const { data: adminExists } = await supabase.rpc('admin_exists');
-    return <PendingAccess email={email} fullName={profile.full_name} canClaimAdmin={adminExists === false} />;
+    // Ούτε ιδιοκτήτης ούτε οδηγός ακόμη: προσκλήσεις για το email του ή «Έχω δικό μου ταξί».
+    const { data: invites, error: invitesError } = await supabase.rpc('my_invites');
+    if (invitesError) {
+      if (isMissingSchemaError(invitesError)) return <SetupRequired kind="database" />;
+      if (isNetworkError(invitesError)) return <SetupRequired kind="unreachable" />;
+      return <SetupRequired kind="unreachable" detail={invitesError.message} />;
+    }
+    return <PendingAccess email={email} fullName={profile.full_name} invites={invites} />;
   }
 
   return <Dashboard session={{ userId, email, fullName: profile.full_name, role, ownDriver }} />;

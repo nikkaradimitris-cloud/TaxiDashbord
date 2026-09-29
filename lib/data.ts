@@ -1,7 +1,7 @@
 /**
  * Πρόσβαση στα δεδομένα από τον browser. Κάθε ερώτημα τρέχει με τα
  * δικαιώματα του συνδεδεμένου χρήστη· το Row Level Security της βάσης
- * αποφασίζει τι βλέπει ο καθένας (admin: όλα, οδηγός: μόνο τα δικά του).
+ * αποφασίζει τι βλέπει ο καθένας (ιδιοκτήτης: όλο τον στόλο του, οδηγός: μόνο τα δικά του).
  */
 import type { BackupTable } from './backup';
 import type { MonthFilter } from './period';
@@ -14,7 +14,6 @@ import type {
   ExpenseRow,
   PlatformRateInsert,
   PlatformRateRow,
-  ProfileRow,
   ShiftInsert,
   ShiftRow,
   StatementInsert,
@@ -285,14 +284,26 @@ export async function deleteDriver(supabase: BrowserSupabase, id: string): Promi
   if (error) throw error;
 }
 
-/** Όλα τα προφίλ (μόνο ο admin τα βλέπει όλα). */
-export async function fetchProfiles(supabase: BrowserSupabase): Promise<ProfileRow[]> {
-  const { data, error } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
+/**
+ * «Έχω δικό μου ταξί»: νέος στόλος με τον χρήστη ιδιοκτήτη και το πρώτο αυτοκίνητο
+ * (το όνομά του και η πινακίδα), συνδεδεμένο με τον λογαριασμό του.
+ */
+export async function createFleet(supabase: BrowserSupabase, input: { name: string; plate: string }): Promise<void> {
+  const { error } = await supabase.rpc('create_fleet', {
+    p_name: input.name.trim(),
+    p_plate: input.plate.trim() || undefined,
+  });
+  if (error) throw error;
+}
+
+/** «Αποδοχή» πρόσκλησης ενός ιδιοκτήτη. `false` αν η πρόσκληση δεν ισχύει πια. */
+export async function acceptInvite(supabase: BrowserSupabase, driverId: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc('accept_invite', { p_driver_id: driverId });
   if (error) throw error;
   return data;
 }
 
-/** Όλες οι γραμμές ενός πίνακα για το αντίγραφο ασφαλείας (ό,τι επιτρέπει το RLS: ο admin βλέπει όλα). */
+/** Όλες οι γραμμές ενός πίνακα για το αντίγραφο ασφαλείας (ό,τι επιτρέπει το RLS: ο ιδιοκτήτης όλο τον στόλο του). */
 export async function fetchBackupTable(supabase: BrowserSupabase, table: BackupTable): Promise<unknown[]> {
   const rows: unknown[] = [];
   let total = Infinity;
