@@ -7,6 +7,7 @@ import {
   BACKUP_REMINDER_DAYS,
   BACKUP_TABLES,
   backupFileName,
+  backupSheets,
   backupSummary,
   buildBackup,
   isBackupDue,
@@ -17,12 +18,13 @@ import { saveFile } from '@/lib/download';
 import { dataErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/format';
 import type { BrowserSupabase } from '@/lib/supabase/client';
+import { buildXlsx, XLSX_MIME } from '@/lib/xlsx';
 
 type Origin = 'reminder' | 'panel';
 type Message = { tone: 'success' | 'warning' | 'error'; text: string; origin: Origin };
 
 /**
- * Αντίγραφο ασφαλείας (μόνο ο ιδιοκτήτης): κατεβάζει όλους τους πίνακες σε ένα αρχείο JSON.
+ * Αντίγραφο ασφαλείας (μόνο ο ιδιοκτήτης): κατεβάζει όλους τους πίνακες σε ένα αρχείο Excel.
  * Η ημερομηνία του τελευταίου αντιγράφου μένει στον λογαριασμό (user metadata), ώστε η
  * υπενθύμιση να ισχύει σε κινητό και υπολογιστή, χωρίς αλλαγή στη βάση.
  */
@@ -58,7 +60,7 @@ export function useBackup(supabase: BrowserSupabase, email: string, enabled: boo
         const now = new Date();
         const file = buildBackup(tables, email, now);
         const name = backupFileName(now);
-        saveFile(JSON.stringify(file, null, 1), 'application/json', name);
+        saveFile(buildXlsx(backupSheets(file)), XLSX_MIME, name);
         setLast({ at: file.createdAt, due: false });
         const { error } = await supabase.auth.updateUser({ data: { last_backup_at: file.createdAt } });
         setMessage(
@@ -121,9 +123,10 @@ export function BackupPanel({ backup }: { backup: BackupState }) {
           <b>Τελευταίο αντίγραφο:</b> {!loaded ? '…' : lastBackupAt ? formatDate(lastBackupAt) : 'δεν έχει γίνει ακόμα'}
         </p>
         <p>
-          Κατεβάζει όλα τα στοιχεία της εφαρμογής (οδηγοί, βάρδιες, έξοδα, εφαρμογές, ποσοστά) σε ένα αρχείο. Κρατήστε
-          το σε ασφαλές μέρος, π.χ. στείλτε το με email στον εαυτό σας ή βάλτε το στο Google Drive. Αν χρειαστεί ποτέ,
-          από αυτό ξαναμπαίνουν όλα τα στοιχεία.
+          Κατεβάζει όλα τα στοιχεία της εφαρμογής σε ένα αρχείο Excel, με μία καρτέλα για κάθε είδος: βάρδιες,
+          έξοδα οχήματος, εφαρμογές, ποσοστά, οδηγοί. Ανοίγει στο κινητό (Excel ή Google Sheets). Κρατήστε το σε ασφαλές
+          μέρος, π.χ. στείλτε το με email στον εαυτό σας ή βάλτε το στο Google Drive. Αν χρειαστεί ποτέ, από αυτό
+          ξαναμπαίνουν όλα τα στοιχεία.
         </p>
         <p className="text-muted">
           Καλό είναι να γίνεται μία φορά τον μήνα· μετά από {BACKUP_REMINDER_DAYS} μέρες η εφαρμογή το θυμίζει. Το

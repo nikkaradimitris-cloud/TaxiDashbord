@@ -47,6 +47,7 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import type { MonthSummaryRow } from '@/lib/table';
 import type { DriverRow, ExpenseRow, PlatformRateRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
+import { findZGaps } from '@/lib/zgaps';
 import { AnalysisCard } from './AnalysisCard';
 import { BackupPanel, BackupReminder, useBackup } from './Backup';
 import { EditShiftDialog } from './EditShiftDialog';
@@ -305,6 +306,11 @@ export function Dashboard({ session }: { session: SessionInfo }) {
       }
     : null;
   const items = useMemo(() => shifts.map((row) => ({ row, figures: figuresFromStored(row) })), [shifts]);
+  // «Λείπει Ζ»: μόνο ο ιδιοκτήτης βλέπει όλα τα Ζ κάθε αυτοκινήτου (ο οδηγός μόνο τα δικά του).
+  const zGaps = useMemo(
+    () => (isAdmin ? findZGaps(shifts, drivers, driverFilter === 'all' ? null : driverFilter) : []),
+    [isAdmin, shifts, drivers, driverFilter],
+  );
   const expenseItems = useMemo(
     () => expenses.map((row) => ({ row, figures: expenseFromStored(row) })),
     [expenses],
@@ -799,6 +805,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 editingId={editing?.id ?? null}
                 onEdit={startEdit}
                 onDelete={handleDelete}
+                zGaps={zGaps}
               />
 
               {editing && (

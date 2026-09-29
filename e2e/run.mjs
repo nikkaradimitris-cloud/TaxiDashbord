@@ -104,6 +104,39 @@ async function isFocused(locator) {
 }
 const idle = (p) => p.waitForFunction(() => !document.querySelector('section[aria-busy="true"]'));
 
+/** Διαβάζει το Excel της εφαρμογής (zip χωρίς συμπίεση): καρτέλες με γραμμές τιμών (κείμενο ή αριθμός). */
+function readXlsx(file) {
+  const bytes = fs.readFileSync(file);
+  const end = bytes.length - 22;
+  const files = new Map();
+  let at = bytes.readUInt32LE(end + 16);
+  for (let i = bytes.readUInt16LE(end + 10); i > 0; i--) {
+    const size = bytes.readUInt32LE(at + 24);
+    const nameLength = bytes.readUInt16LE(at + 28);
+    const local = bytes.readUInt32LE(at + 42);
+    const name = bytes.subarray(at + 46, at + 46 + nameLength).toString('utf8');
+    const start = local + 30 + bytes.readUInt16LE(local + 26) + bytes.readUInt16LE(local + 28);
+    files.set(name, bytes.subarray(start, start + size).toString('utf8'));
+    at += 46 + nameLength;
+  }
+  const unescape = (text) =>
+    text.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+  const names = [...files.get('xl/workbook.xml').matchAll(/<sheet name="([^"]*)"/g)].map((match) => unescape(match[1]));
+  return names.map((name, index) => {
+    const xml = files.get(`xl/worksheets/sheet${index + 1}.xml`);
+    const rows = [...xml.matchAll(/<row [^>]*>(.*?)<\/row>/g)].map((row) => {
+      const cells = [];
+      for (const cell of row[1].matchAll(/<c r="([A-Z]+)\d+"[^>]*>(.*?)<\/c>/g)) {
+        const column = [...cell[1]].reduce((sum, letter) => sum * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+        const text = cell[2].match(/<t[^>]*>(.*?)<\/t>/);
+        cells[column] = text ? unescape(text[1]) : Number(cell[2].match(/<v>(.*?)<\/v>/)[1]);
+      }
+      return cells;
+    });
+    return { name, rows };
+  });
+}
+
 /** Στοιχεία με κίτρινο φόντο που δεν πατιούνται (κανόνας: κίτρινο μόνο ό,τι πατιέται). */
 function yellowNotPressable(p) {
   return p.evaluate(() => {
@@ -163,10 +196,13 @@ check(
   (await panelOpen(page, 'fleet')) && (await page.locator('#fleet').getByRole('button', { name: '+ Προσθήκη οδηγού' }).isVisible()),
   'χωρίς οδηγούς η «Υποδομή Στόλου» ανοίγει μόνη της, με τη φόρμα',
 );
-check(
-  !(await panelOpen(page, 'shifts')) && nbsp0(await page.locator('#shifts').innerText()).includes('Καμία βάρδια'),
-  'κλειστό πάνελ «Ιστορικό βαρδιών» με σύνοψη «Καμία βάρδια»',
-);
+// Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι βάρδιες.
+const noShiftsSummary = await page
+  .locator('#shifts')
+  .getByText('Καμία βάρδια', { exact: true })
+  .waitFor({ timeout: 10000 })
+  .then(() => true, () => false);
+check(!(await panelOpen(page, 'shifts')) && noShiftsSummary, 'κλειστό πάνελ «Ιστορικό βαρδιών» με σύνοψη «Καμία βάρδια»');
 await page.locator('#backup').getByText('Δεν έχει γίνει ακόμα', { exact: true }).waitFor();
 check((await page.getByTestId('backup-reminder').count()) === 0, 'χωρίς οδηγούς δεν εμφανίζεται υπενθύμιση για αντίγραφο ασφαλείας');
 
@@ -1124,31 +1160,44 @@ const [backupDownload] = await Promise.all([
   reminder.getByRole('button', { name: 'Κατέβασμα τώρα' }).click(),
 ]);
 check(
-  backupDownload.suggestedFilename() === 'taxi-fleet-antigrafo-2026-09-28.json',
+  backupDownload.suggestedFilename() === 'taxi-fleet-antigrafo-2026-09-28.xlsx',
   `όνομα αρχείου ${backupDownload.suggestedFilename()}`,
 );
-const backupPath = `${OUT}/backup.json`;
+const backupPath = `${OUT}/antigrafo.xlsx`;
 await backupDownload.saveAs(backupPath);
-const backupFile = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+const workbook = readXlsx(backupPath);
 check(
-  backupFile.app === 'taxi-fleet-tracker' && backupFile.format === 1 && backupFile.createdBy === 'owner@example.com',
-  'αρχείο: εφαρμογή, μορφή, ποιος το κατέβασε',
+  JSON.stringify(workbook.map((sheet) => sheet.name)) ===
+    JSON.stringify(['Πληροφορίες', 'Βάρδιες', 'Έξοδα οχήματος', 'Εφαρμογές', 'Ποσοστά εφαρμογών', 'Οδηγοί', 'Λογαριασμοί']),
+  `Excel: καρτέλες ${workbook.map((sheet) => sheet.name).join(', ')}`,
 );
-const expectedCounts = { profiles: 3, drivers: 4, platform_rates: 3, shifts: 6, vehicle_expenses: 3, platform_statements: 5 };
+const sheetOf = (name) => workbook.find((sheet) => sheet.name === name);
+const expectedRows = { 'Βάρδιες': 6, 'Έξοδα οχήματος': 3, 'Εφαρμογές': 5, 'Ποσοστά εφαρμογών': 3, 'Οδηγοί': 4, 'Λογαριασμοί': 3 };
+const actualRows = Object.fromEntries(Object.keys(expectedRows).map((name) => [name, sheetOf(name).rows.length - 1]));
+check(JSON.stringify(actualRows) === JSON.stringify(expectedRows), `όλες οι γραμμές κάθε πίνακα: ${JSON.stringify(actualRows)}`);
+const shiftSheet = sheetOf('Βάρδιες');
+const headerOf = (sheet, header) => sheet.rows[0].indexOf(header);
+const z101 = shiftSheet.rows.find((row) => row[headerOf(shiftSheet, 'Αριθμός Ζ')] === '101');
 check(
-  JSON.stringify(backupFile.counts) === JSON.stringify(expectedCounts) &&
-    Object.entries(backupFile.tables).every(([table, rows]) => rows.length === backupFile.counts[table]),
-  `όλοι οι πίνακες, όλες οι γραμμές: ${JSON.stringify(backupFile.counts)}`,
+  !!z101 &&
+    z101[headerOf(shiftSheet, 'Οδηγός')] === 'Γιώργος Παπαδόπουλος' &&
+    z101[headerOf(shiftSheet, 'Καθαρά έσοδα €')] === 160.39 &&
+    z101[headerOf(shiftSheet, 'Φιλοδωρήματα €')] === 7 &&
+    shiftSheet.rows[0].includes('driver_id'),
+  'καρτέλα «Βάρδιες»: Ζ 101 του Γιώργου, καθαρά 160,39 €, φιλοδωρήματα 7 € (και οι στήλες για επαναφορά)',
 );
 check(
-  backupFile.tables.shifts.some((row) => row.z_number === '101' && Number(row.net_revenue) === 160.39 && Number(row.tips) === 7) &&
-    backupFile.tables.drivers.some((row) => row.name === 'Μαρία Κωνσταντίνου' && row.plate === 'ΙΚΒ-5678') &&
-    backupFile.tables.platform_statements.some((row) => row.reference === 'FN-0925') &&
-    backupFile.tables.vehicle_expenses.some((row) => row.description === 'Φρένα'),
-  'το αρχείο έχει τα πραγματικά ποσά (Ζ 101, Μαρία, τιμολόγιο FN-0925, Φρένα)',
+  sheetOf('Οδηγοί').rows.some((row) => row.includes('Μαρία Κωνσταντίνου') && row.includes('ΙΚΒ-5678')) &&
+    sheetOf('Εφαρμογές').rows.some((row) => row.includes('FN-0925') && row.includes('FreeNow')) &&
+    sheetOf('Έξοδα οχήματος').rows.some((row) => row.includes('Φρένα') && row.includes('Επισκευές / Συντήρηση')),
+  'το Excel έχει τα πραγματικά στοιχεία (Μαρία, τιμολόγιο FN-0925, Φρένα) με ελληνικά ονόματα',
 );
-check(!/access_token|refresh_token|password/i.test(JSON.stringify(backupFile)), 'το αρχείο δεν έχει κωδικούς ή κλειδιά σύνδεσης');
-await page.getByText('✓ Κατέβηκε το taxi-fleet-antigrafo-2026-09-28.json: 4 οδηγοί · 6 βάρδιες · 3 έξοδα · 5 καταχωρήσεις εφαρμογών.').waitFor();
+check(
+  sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Μορφή αρχείου' && row[1] === 'taxi-fleet-tracker · 2'),
+  'καρτέλα «Πληροφορίες» με τη μορφή του αρχείου',
+);
+check(!/access_token|refresh_token|password/i.test(fs.readFileSync(backupPath, 'latin1')), 'το αρχείο δεν έχει κωδικούς ή κλειδιά σύνδεσης');
+await page.getByText('✓ Κατέβηκε το taxi-fleet-antigrafo-2026-09-28.xlsx: 4 οδηγοί · 6 βάρδιες · 3 έξοδα · 5 καταχωρήσεις εφαρμογών.').waitFor();
 check(true, 'μήνυμα: τι κατέβηκε');
 check(
   nbsp0(await backupPanel.innerText()).includes('28/09/2026') && (await backupPanel.getByText('χρειάζεται', { exact: true }).count()) === 0,
@@ -1157,6 +1206,46 @@ check(
 await page.reload();
 await backupPanel.getByText(/28\/09\/2026/).first().waitFor();
 check((await page.getByTestId('backup-reminder').count()) === 0, 'μετά από ανανέωση η υπενθύμιση δεν ξαναφαίνεται (η ημερομηνία μένει στον λογαριασμό)');
+
+console.log('9στ. «Λείπει Ζ»: μόνο κενά ανάμεσα σε Ζ του ίδιου ταξιμέτρου (μόνο ο ιδιοκτήτης)');
+const zNotice = page.locator('#shifts').getByTestId('z-gaps');
+await zNotice.waitFor();
+// Η παλιά έκδοση έφερε το Ζ 900 στο ΤΑΕ-1234 (ίδιο ταξίμετρο με τα Ζ 101–103 του Γιώργου).
+check(
+  (await panelButton(page, 'shifts').innerText()).includes('έλεγχος Ζ') &&
+    nbsp0(await zNotice.innerText()).includes('ΤΑΕ-1234 · Γιώργος Παπαδόπουλος, Ιδιοκτήτης') &&
+    nbsp0(await zNotice.innerText()).includes('από Ζ 103 σε Ζ 900: μήπως γράφτηκε λάθος ο αριθμός;'),
+  'Ζ 103 → Ζ 900 στο ίδιο αυτοκίνητο: «έλεγχος Ζ» (μήπως λάθος αριθμός), όχι 796 βάρδιες που λείπουν',
+);
+check(
+  !nbsp0(await zNotice.innerText()).includes('ΙΚΒ-5678'),
+  'ΙΚΒ-5678 με ένα μόνο Ζ (55): τίποτα για Ζ πριν ή μετά (ο μήνας δεν έκλεισε)',
+);
+await expandTarget(form);
+await form.getByLabel('Οδηγός').selectOption({ label: 'Μαρία Κωνσταντίνου · ΙΚΒ-5678' });
+await fillShift(form, { 'Αριθμός Ζ': '57', 'Αποφορολογημένα Έσοδα': '10' });
+await form.getByRole('button', { name: /^Καταχώρηση/ }).click();
+await form.getByText('✓ Καταχωρήθηκε: Ζ 57').waitFor();
+await zNotice.getByText(/ΙΚΒ-5678/).waitFor();
+check(
+  nbsp0(await zNotice.innerText()).includes('ΙΚΒ-5678 · Μαρία Κωνσταντίνου: λείπει το Ζ 56') &&
+    (await panelButton(page, 'shifts').innerText()).includes('λείπει 1 Ζ'),
+  'Ζ 55 και Ζ 57: «λείπει το Ζ 56» και σήμανση «λείπει 1 Ζ» στον τίτλο του ιστορικού',
+);
+await page.locator('#shifts').screenshot({ path: `${OUT}/14-missing-z.png` });
+await dpage.reload();
+await dpage.locator('#shifts').waitFor();
+check(
+  (await dpage.getByTestId('z-gaps').count()) === 0 && !(await dpage.locator('#shifts > h2').innerText()).includes('Ζ'),
+  'ο οδηγός δεν βλέπει ειδοποίηση για Ζ (βλέπει μόνο τις δικές του βάρδιες)',
+);
+page.once('dialog', (d) => d.accept());
+await page.getByRole('button', { name: 'Διαγραφή βάρδιας Ζ 57' }).click();
+await page.getByText('Η βάρδια Ζ 57 διαγράφηκε.').waitFor();
+check(
+  !nbsp0(await zNotice.innerText()).includes('Ζ 56') && (await panelButton(page, 'shifts').innerText()).includes('έλεγχος Ζ'),
+  'μετά τη διαγραφή του Ζ 57 το Ζ 56 δεν λείπει πια',
+);
 
 console.log('10. Μνήμη έτους/μήνα & αποσύνδεση');
 await page.locator('#filters').getByLabel('Έτος').selectOption('2025');

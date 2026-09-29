@@ -2,11 +2,12 @@
 
 import { useState } from 'react';
 import { Panel } from '@/components/Panel';
-import { Button, cx } from '@/components/ui';
+import { Badge, Button, cx, Notice } from '@/components/ui';
 import type { ShiftFigures } from '@/lib/accounting';
 import { formatDateTime, formatEuro, formatKm } from '@/lib/format';
 import { monthName } from '@/lib/period';
 import type { DriverRow, ShiftRow } from '@/lib/types';
+import { jumpText, missingZText, zGapBadge, type CarZGaps } from '@/lib/zgaps';
 
 const PAGE = 50;
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -22,6 +23,7 @@ export function ShiftList({
   editingId,
   onEdit,
   onDelete,
+  zGaps = [],
 }: {
   items: { row: ShiftRow; figures: ShiftFigures }[];
   loading: boolean;
@@ -33,10 +35,13 @@ export function ShiftList({
   editingId: string | null;
   onEdit: (row: ShiftRow) => void;
   onDelete: (row: ShiftRow) => void;
+  /** Ζ που λείπουν ανάμεσα στις βάρδιες κάθε αυτοκινήτου (μόνο για τον ιδιοκτήτη). */
+  zGaps?: CarZGaps[];
 }) {
   const [limit, setLimit] = useState(PAGE);
   const visible = items.slice(0, limit);
   const grossCents = items.reduce((sum, item) => sum + item.figures.grossReceiptsCents, 0);
+  const zBadge = loading ? null : zGapBadge(zGaps);
 
   // Ο οδηγός διορθώνει/διαγράφει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
   const canModify = (row: ShiftRow) =>
@@ -53,8 +58,28 @@ export function ShiftList({
             ? 'Καμία βάρδια'
             : `${items.length === 1 ? '1 βάρδια' : `${items.length} βάρδιες`} · μικτή είσπραξη ${formatEuro(grossCents)}`
       }
+      badge={zBadge ? <Badge tone="warn">{zBadge}</Badge> : null}
       className={cx(loading && 'opacity-60')}
     >
+      {zBadge && (
+        <Notice tone="warning" className="mb-3">
+          <p className="font-semibold">Λείπουν βάρδιες ανάμεσα στα Ζ:</p>
+          <ul className="mt-1 space-y-1" data-testid="z-gaps">
+            {zGaps.map((car) => (
+              <li key={car.key}>
+                <b>{car.label}</b>
+                {car.missing.length > 0 && `: ${missingZText(car)}`}
+                {car.jumps.map((jump) => (
+                  <span key={jump.from} className="block">
+                    Μεγάλο κενό {jumpText(jump)}
+                  </span>
+                ))}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1">Καταχωρήστε τη βάρδια που λείπει ή διορθώστε τον αριθμό Ζ.</p>
+        </Notice>
+      )}
       {items.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted">
           {loading ? 'Φόρτωση…' : 'Δεν υπάρχουν βάρδιες για αυτή την περίοδο.'}

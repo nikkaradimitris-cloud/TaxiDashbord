@@ -1,5 +1,5 @@
 /** Κατέβασμα αρχείου από τον browser (Excel, αντίγραφο ασφαλείας). */
-export function saveFile(content: string, type: string, fileName: string) {
+export function saveFile(content: BlobPart, type: string, fileName: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const link = document.createElement('a');
   link.href = url;
