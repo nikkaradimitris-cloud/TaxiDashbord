@@ -43,6 +43,11 @@ function CountUp({
   return <>{format.format(reduced ? value : shown)}</>;
 }
 
+// Η βάρδια του παραδείγματος (Ζ 1024): 80,5 μισθωμένα και 40 ελεύθερα χλμ, καθαρά 160,39 €.
+const KM_PAID = 80.5;
+const KM_EMPTY = 40;
+const KM_PCT = (KM_PAID / (KM_PAID + KM_EMPTY)) * 100; // 66,8%· έσοδο ανά χλμ 160,39 / 120,5 = 1,33 €
+
 function DriverArt({ active }: { active: boolean }) {
   return (
     <div className="intro-driver">
@@ -64,25 +69,20 @@ function DriverArt({ active }: { active: boolean }) {
         <path d="M2 8h28M24 3l6 5-6 5" />
       </svg>
       <div className="intro-result intro-glass">
-        Καθαρό ταμείο
+        Καθαρά έσοδα
         <strong>
-          <CountUp value={146.23} active={active} delay={1700} /> €
+          <CountUp value={160.39} active={active} delay={1700} /> €
         </strong>
         <span style={order(0)}>
-          Καύσιμα <i>−40,00 €</i>
+          ΦΠΑ 13% <i>20,84 €</i>
         </span>
         <span style={order(1)}>
-          ΦΠΑ <i>20,84 €</i>
+          Αξιοποίηση <i>{decimal1.format(KM_PCT)}%</i>
         </span>
       </div>
     </div>
   );
 }
-
-// Η βάρδια του παραδείγματος (Ζ 1024): 80,5 μισθωμένα και 40 ελεύθερα χλμ, καθαρά 160,39 €.
-const KM_PAID = 80.5;
-const KM_EMPTY = 40;
-const KM_PCT = (KM_PAID / (KM_PAID + KM_EMPTY)) * 100; // 66,8%· έσοδο ανά χλμ 160,39 / 120,5 = 1,33 €
 
 function KmArt({ active }: { active: boolean }) {
   return (
@@ -123,35 +123,33 @@ function KmArt({ active }: { active: boolean }) {
   );
 }
 
-// Έξι μήνες τζίρου (ύψος στήλης) και η γραμμή της πορείας πάνω τους.
-const BARS = [48, 62, 55, 74, 80, 94];
-const TREND = BARS.map((h, i) => [22 + i * 36, 112 - h - 10] as const);
+// ΦΠΑ ενός μήνα (παράδειγμα): των εσόδων από τα Ζ μείον των εξόδων (καύσιμα, επισκευές, προμήθειες με ΦΠΑ).
+const VAT_IN = 452.86;
+const VAT_OUT = 297.43;
 
-function OwnerArt() {
+function VatArt({ active }: { active: boolean }) {
   return (
-    <div className="intro-owner">
-      <svg className="intro-chart intro-glass" viewBox="0 0 230 124">
-        <defs>
-          <linearGradient id="intro-bars" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0" stopColor="#6d8ff0" />
-            <stop offset="1" stopColor="#4a3aa7" />
-          </linearGradient>
-        </defs>
-        <line className="intro-axis" x1="4" y1="112" x2="226" y2="112" />
-        {BARS.map((h, i) => (
-          <rect key={i} className="intro-bar" style={order(i)} x={10 + i * 36} y={112 - h} width="24" height={h} rx="4" fill="url(#intro-bars)" />
-        ))}
-        <path className="intro-trend" d={`M${TREND.map(([x, y]) => `${x} ${y}`).join('L')}`} pathLength={100} />
-        {TREND.map(([x, y], i) => (
-          <circle key={i} className="intro-trend-dot" style={order(i)} cx={x} cy={y} r="3.2" />
-        ))}
-      </svg>
-      <div className="intro-chips">
-        {['Uber', 'FreeNow', 'Bolt', 'ΦΠΑ', 'Excel', 'WhatsApp'].map((chip, i) => (
-          <span key={chip} style={order(i)}>
-            {chip}
+    <div className="intro-vat">
+      <div className="intro-vat-sources">
+        {['Ζ βαρδιών', 'Έξοδα', 'Τιμολόγια εφαρμογών'].map((source, i) => (
+          <span key={source} style={order(i)}>
+            {source}
           </span>
         ))}
+      </div>
+      <div className="intro-vat-card intro-glass">
+        <p className="intro-vat-title">Προς Απόδοση ΦΠΑ · Σεπτέμβριος</p>
+        <p style={order(0)}>
+          ΦΠΑ εσόδων 13% <b>+ {euro.format(VAT_IN)} €</b>
+        </p>
+        <p style={order(1)}>
+          ΦΠΑ εξόδων 24% <b>− {euro.format(VAT_OUT)} €</b>
+        </p>
+        <strong className="intro-vat-total">
+          <CountUp value={VAT_IN - VAT_OUT} active={active} delay={1300} /> €
+        </strong>
+        <span className="intro-vat-status">Χρεωστικό — προς πληρωμή</span>
+        <span className="intro-vat-send">Για τον λογιστή: Excel · WhatsApp</span>
       </div>
     </div>
   );
@@ -229,7 +227,7 @@ const SLIDES: Slide[] = [
   {
     title: 'Καλώς ήρθατε',
     lines: [
-      'Το Taxi Fleet Tracker κρατά βάρδιες, χιλιόμετρα, ταμείο και ΦΠΑ του ταξί, σε ένα κινητό.',
+      'Το Taxi Fleet Tracker κρατά βάρδιες, χιλιόμετρα, έξοδα και τον ΦΠΑ του ταξί, σε ένα κινητό.',
       'Για τον ιδιοκτήτη του στόλου και για κάθε οδηγό.',
     ],
     // Νέο «κλειδί» σε κάθε ενεργοποίηση: η διαδρομή ξεκινά από την αρχή.
@@ -239,7 +237,7 @@ const SLIDES: Slide[] = [
     title: 'Για τον οδηγό',
     lines: [
       'Γράφει τη βάρδια από το Ζ της ταμειακής σε λίγα δευτερόλεπτα.',
-      'Βλέπει αμέσως καθαρά, ΦΠΑ και ταμείο τσέπης.',
+      'Βλέπει αμέσως τα έσοδα, τον ΦΠΑ της βάρδιας και την αξιοποίηση των χιλιομέτρων.',
     ],
     art: (active) => <DriverArt active={active} />,
   },
@@ -252,17 +250,17 @@ const SLIDES: Slide[] = [
     art: (active) => <KmArt active={active} />,
   },
   {
-    title: 'Για τον ιδιοκτήτη',
+    title: 'ΦΠΑ στο τέλος του μήνα',
     lines: [
-      'Όλος ο στόλος με μια ματιά: οδηγοί, αυτοκίνητα, έξοδα, Uber, FreeNow και Bolt.',
-      'ΦΠΑ, Excel για τον λογιστή και αποστολή στο WhatsApp.',
+      'Από τα Ζ, τα έξοδα και τα τιμολόγια των εφαρμογών (Uber, FreeNow, Bolt) βγαίνει ο ΦΠΑ του μήνα: Χρεωστικός ή Πιστωτικός.',
+      'Για κάθε οδηγό και για όλο τον στόλο, έτοιμος για τον λογιστή σε Excel και στο WhatsApp.',
     ],
-    art: () => <OwnerArt />,
+    art: (active) => <VatArt active={active} />,
   },
   {
     title: 'Γιατί φτιάχτηκε',
     lines: [
-      'Για να μη χάνεται καμία βάρδια και κανένα ευρώ: Ζ, έξοδα και εφαρμογές σε ένα μέρος, αντί για χαρτιά.',
+      'Για να βγαίνει σωστός ο ΦΠΑ του μήνα και να μη χάνεται καμία βάρδια: Ζ, έξοδα και τιμολόγια εφαρμογών σε ένα μέρος, αντί για χαρτιά.',
       'Δουλεύει και χωρίς σήμα: η βάρδια στέλνεται μόλις έρθει.',
     ],
     art: () => <WhyArt />,

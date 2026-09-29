@@ -207,12 +207,24 @@ await ip.waitForURL(`${BASE}/welcome?next=%2Flogin`);
 check(true, 'πρώτη φορά στη συσκευή → «Καλώς ήρθατε» (και μετά η σύνδεση)');
 await splash.waitFor({ state: 'hidden', timeout: 5000 });
 check(true, 'η κίνηση κλείνει μόνη της');
-const slideTitles = ['Καλώς ήρθατε', 'Για τον οδηγό', 'Αξιοποίηση χιλιομέτρων', 'Για τον ιδιοκτήτη', 'Γιατί φτιάχτηκε'];
+const slideTitles = ['Καλώς ήρθατε', 'Για τον οδηγό', 'Αξιοποίηση χιλιομέτρων', 'ΦΠΑ στο τέλος του μήνα', 'Γιατί φτιάχτηκε'];
 for (const [i, title] of slideTitles.entries()) {
   await activeSlide(ip).filter({ hasText: title }).waitFor();
   if (title === 'Για τον οδηγό') {
-    await ip.locator('.intro-result strong').filter({ hasText: '146,23 €' }).waitFor({ timeout: 6000 });
-    check(true, 'κάρτα οδηγού: το καθαρό ταμείο «μετράει» μέχρι 146,23 €');
+    await ip.locator('.intro-result strong').filter({ hasText: '160,39 €' }).waitFor({ timeout: 6000 });
+    const result = await ip.locator('.intro-result').innerText();
+    check(
+      result.includes('Καθαρά έσοδα') && result.includes('20,84 €') && result.includes('66,8%') && !result.includes('ταμείο'),
+      'κάρτα οδηγού: ό,τι φαίνεται αμέσως από το Ζ (καθαρά 160,39 €, ΦΠΑ 20,84 €, αξιοποίηση 66,8%), όχι ταμείο',
+    );
+  }
+  if (title === 'ΦΠΑ στο τέλος του μήνα') {
+    await ip.locator('.intro-vat-total').filter({ hasText: '155,43 €' }).waitFor({ timeout: 6000 });
+    const vat = await ip.locator('.intro-vat').innerText();
+    check(
+      vat.includes('452,86 €') && vat.includes('297,43 €') && vat.includes('Χρεωστικό') && vat.includes('Τιμολόγια εφαρμογών'),
+      'κάρτα ΦΠΑ: 452,86 − 297,43 = 155,43 € Χρεωστικό, από Ζ, έξοδα και τιμολόγια εφαρμογών',
+    );
   }
   if (title === 'Αξιοποίηση χιλιομέτρων') {
     await ip.locator('.intro-gauge strong').filter({ hasText: '66,8%' }).waitFor({ timeout: 6000 });
@@ -286,7 +298,7 @@ for (let n = 0; n < 3; n++) {
   await tab.close();
 }
 check(
-  openings[0].tip === 'Αξιοποίηση χιλιομέτρων: πόσα ήταν με πελάτη' &&
+  openings[0].tip === 'ΦΠΑ του μήνα: Χρεωστικό ή Πιστωτικό' &&
     new Set(openings.map((o) => o.tip)).size === 3 &&
     new Set(openings.map((o) => o.route)).size === 3 &&
     openings.every((o) => o.shown === o.route),
