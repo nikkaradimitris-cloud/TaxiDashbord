@@ -1001,6 +1001,9 @@ await hydrated(fpage);
 check(fpage.url() === `${BASE}/register`, 'σύνδεσμος του WhatsApp: ο φίλος ανοίγει κατευθείαν την εγγραφή');
 await register(fpage, { name: 'Κώστας Φίλος', email: 'kostas@example.com', password: 'KostasPass123' });
 await fpage.goto(await confirmationLink('kostas@example.com'));
+// Πρώτη φορά στην κεντρική σελίδα: μία φορά το «Καλώς ήρθατε» (με «Παράλειψη»), μετά η επιλογή.
+await fpage.waitForURL(/\/welcome\?next=/);
+await fpage.getByRole('button', { name: 'Παράλειψη' }).click();
 await fpage.waitForURL(`${BASE}/`);
 await fpage.getByRole('button', { name: /Έχω δικό μου ταξί/ }).click();
 await settled(fpage.getByRole('button', { name: /Έχω δικό μου ταξί/ }));
@@ -1014,11 +1017,12 @@ await fpage.getByRole('button', { name: /Νέα καταχώρηση/ }).waitFor
 await openPanel(fpage, 'fleet');
 await fpage.locator('#fleet').getByText('✓ Ο λογαριασμός σας').waitFor();
 const friendFleet = nbsp0(await fpage.locator('#fleet').innerText());
+const friendCars = await fpage.locator('#fleet ul > li').count();
 check(
   friendFleet.includes('Κώστας Φίλος · ΚΩΣ-1111') &&
-    friendFleet.includes('1 οδηγός') &&
+    friendCars === 1 &&
     !/Γιώργος|Μαρία|ΤΑΕ-1234|ΤΑΧ-9999|owner@example\.com|maria\.k@example\.com/.test(friendFleet),
-  'φίλος: ο στόλος του έχει μόνο το δικό του ταξί (κανένας οδηγός ή λογαριασμός του άλλου στόλου)',
+  `φίλος: ο στόλος του έχει μόνο το δικό του ταξί (${friendCars} αυτοκίνητο, κανένα του άλλου στόλου)`,
 );
 await fpage.getByRole('button', { name: /Νέα καταχώρηση/ }).click();
 const fform = fpage.locator('#shift-form');
