@@ -1620,6 +1620,34 @@ check(
     fnListText.includes('4 διαδρομές · έσοδα 150,00 € · φιλοδ./quest 10,00 €'),
   'FreeNow: μετράει το τιμολόγιο (21,00 €)· έσοδα 150 € και quest 10 € χωριστά',
 );
+// Πάτημα στην εβδομάδα που τρέχει (γκρι) ή λείπει (κόκκινη): η φόρμα «Εφαρμογή» σε αυτή την εφαρμογή και εβδομάδα.
+const fnCard = plist.getByRole('region', { name: 'FreeNow: εβδομάδες και τιμολόγιο' });
+check(
+  (await fnCard.getByRole('button', { name: /1–6 Σεπ/ }).count()) === 0 &&
+    (await fnCard.getByRole('button', { name: /28–30 Σεπ/ }).count()) === 1,
+  'εβδομάδες: οι καταχωρημένες (✓) δεν πατιούνται· η 28–30 που τρέχει πατιέται',
+);
+await fnCard.getByRole('button', { name: /28–30 Σεπ/ }).click();
+await page.waitForFunction(() => {
+  const top = document.getElementById('platform-form')?.getBoundingClientRect().top ?? -1;
+  return top >= 0 && top < 250;
+});
+check(
+  (await pform.getByRole('radio', { name: 'FreeNow' }).isChecked()) &&
+    (await pform.getByRole('radio', { name: 'Εβδομαδιαία κίνηση' }).isChecked()) &&
+    (await pform.getByLabel('Εβδομάδα (Δευτέρα–Κυριακή)').inputValue()) === '2026-09-28',
+  'πάτημα στο «28–30 Σεπ» (FreeNow) → πάνω η φόρμα «Εφαρμογή»: FreeNow, εβδομαδιαία κίνηση, 28–30 Σεπ',
+);
+const uberMissing = uberCard.getByRole('button', { name: /21–27 Σεπ · λείπει/ });
+await uberMissing.scrollIntoViewIfNeeded();
+await uberMissing.click();
+await pform.getByRole('radio', { name: 'Uber' }).waitFor();
+check(
+  (await pform.getByRole('radio', { name: 'Uber' }).isChecked()) &&
+    (await pform.getByLabel('Εβδομάδα (Δευτέρα–Κυριακή)').inputValue()) === '2026-09-21' &&
+    (await pform.getByLabel('Διαδρομές').inputValue()) === '',
+  'πάτημα στο «21–27 Σεπ · λείπει» (Uber) → Uber, 21–27 Σεπ, άδεια πεδία',
+);
 const boltListText = nbsp0(await plist.getByRole('region', { name: 'Bolt: εβδομάδες και τιμολόγιο' }).innerText());
 check(
   boltListText.includes('Κράτηση 5,00 €') && boltListText.includes('Ποσοστό: 20% χωρίς ΦΠΑ'),
@@ -1779,6 +1807,23 @@ check(
 const dpw = await dpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(dpw[0] === 390 && dpw[1] === 390, `κινητό: χωρίς οριζόντια κύλιση (${dpw})`);
 await dpage.screenshot({ path: `${OUT}/12-driver-platform-mobile.png`, fullPage: true });
+// Κινητό: πάτημα στην κόκκινη εβδομάδα → η φόρμα πάνω στην οθόνη, με την εφαρμογή και την εβδομάδα.
+const dUberCard = dplist.getByRole('region', { name: 'Uber: εβδομάδες και τιμολόγιο' });
+await shotBelowHeader(dUberCard, `${OUT}/12b-week-chips-mobile.png`);
+const dMissing = dUberCard.getByRole('button', { name: /14–20 Σεπ · λείπει/ });
+check((await dMissing.boundingBox()).height >= 32, 'κινητό: η εβδομάδα που λείπει είναι κουμπί που πατιέται εύκολα (ύψος ≥ 32px)');
+await dMissing.click();
+await dpage.waitForFunction(() => {
+  const top = document.getElementById('platform-form')?.getBoundingClientRect().top ?? -1;
+  return top >= 0 && top < 250;
+});
+check(
+  (await dpform.getByRole('radio', { name: 'Uber' }).isChecked()) &&
+    (await dpform.getByRole('radio', { name: 'Εβδομαδιαία κίνηση' }).isChecked()) &&
+    (await dpform.getByLabel('Εβδομάδα (Δευτέρα–Κυριακή)').inputValue()) === '2026-09-14',
+  'κινητό: πάτημα στο «14–20 Σεπ · λείπει» → η φόρμα πάνω στην οθόνη, με Uber και 14–20 Σεπ',
+);
+await dpage.screenshot({ path: `${OUT}/12c-week-chip-form-mobile.png` });
 await dpage.getByRole('button', { name: 'Βάρδια', exact: true }).click();
 
 console.log('9δ. Επιλογές με το ίδιο κίτρινο με τα κουμπιά· κίτρινο μόνο ό,τι πατιέται');

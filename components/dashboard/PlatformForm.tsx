@@ -30,6 +30,7 @@ import {
   toVatRate,
   weekCycles,
   type EntryRate,
+  type PlatformId,
   type RateFormValues,
   type StatementFormValues,
   type StatementKind,
@@ -82,6 +83,13 @@ function documentHints(platform: string) {
  * ποσοστό κάθε εφαρμογής ορίζεται μία φορά ανά αυτοκίνητο: δίνει τον ΦΠΑ και
  * ελέγχει ότι η προμήθεια που γράφτηκε είναι λογική.
  */
+/** Ποια εφαρμογή και εβδομάδα πατήθηκε στη λίστα «Εφαρμογές». */
+export interface WeekPreset {
+  platform: PlatformId;
+  weekStart: string;
+  nonce: number;
+}
+
 export function PlatformForm({
   supabase,
   isAdmin,
@@ -101,6 +109,7 @@ export function PlatformForm({
   onCancelEdit,
   switcher,
   onCollapse,
+  preset = null,
 }: {
   supabase: BrowserSupabase;
   isAdmin: boolean;
@@ -126,6 +135,8 @@ export function PlatformForm({
   switcher?: ReactNode;
   /** «Κλείσιμο» της φόρμας νέας καταχώρησης (η φόρμα μένει φορτωμένη, απλώς κρύβεται). */
   onCollapse?: () => void;
+  /** Πάτημα σε εβδομάδα της λίστας «Εφαρμογές»: η φόρμα πάει σε αυτή την εφαρμογή και εβδομάδα (νέο `nonce` = νέο πάτημα). */
+  preset?: WeekPreset | null;
 }) {
   const [values, setValues] = useState<StatementFormValues>(() =>
     editing ? statementToFormValues(editing) : EMPTY_STATEMENT_FORM,
@@ -133,6 +144,13 @@ export function PlatformForm({
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  const [presetNonce, setPresetNonce] = useState<number | null>(null);
+  if (preset && preset.nonce !== presetNonce) {
+    setPresetNonce(preset.nonce);
+    setValues({ ...EMPTY_STATEMENT_FORM, platform: preset.platform, kind: 'week', weekStart: preset.weekStart });
+    setShowErrors(false);
+    setMessage(null);
+  }
   const firstInput = useRef<HTMLInputElement>(null);
 
   const target = useEntryTarget({ isAdmin, drivers, prefs, driverFilter, onPrefsChange, editing });

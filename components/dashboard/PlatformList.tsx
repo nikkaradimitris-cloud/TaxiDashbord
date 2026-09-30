@@ -15,6 +15,7 @@ import {
   toVatRate,
   weekCycles,
   weekState,
+  type PlatformId,
   type PlatformMonth,
 } from '@/lib/platforms';
 import type { DriverRow, PlatformRateRow, StatementRow } from '@/lib/types';
@@ -67,6 +68,7 @@ export function PlatformList({
   editingId,
   onEdit,
   onDelete,
+  onAddWeek,
 }: {
   statements: StatementRow[];
   /** Ανά αυτοκίνητο, μήνα και εφαρμογή (κράτηση: τιμολόγιο ή εβδομάδες). */
@@ -86,6 +88,8 @@ export function PlatformList({
   editingId: string | null;
   onEdit: (row: StatementRow) => void;
   onDelete: (row: StatementRow) => void;
+  /** Πάτημα σε εβδομάδα που λείπει ή τρέχει: ανοίγει η φόρμα σε αυτή την εφαρμογή και εβδομάδα. */
+  onAddWeek: (platform: PlatformId, weekStart: string) => void;
 }) {
   // Ο οδηγός διορθώνει/διαγράφει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
   const canModify = (row: StatementRow) =>
@@ -166,6 +170,7 @@ export function PlatformList({
                 })()}
                 rows={statements.filter((row) => row.driver_id === carId && row.month === month && row.platform === id)}
                 group={months.find((group) => group.driverId === carId && group.month === month && group.platform === id) ?? null}
+                onAddWeek={(weekStart) => onAddWeek(id, weekStart)}
               />
             ))}
           </div>
@@ -347,8 +352,8 @@ export function PlatformList({
 
 const WEEK_STYLE = {
   done: 'border-good/30 bg-good-soft text-good',
-  missing: 'border-bad/30 bg-bad-soft text-bad',
-  open: 'border-line bg-bg text-muted',
+  missing: 'border-bad/30 bg-bad-soft text-bad hover:border-bad',
+  open: 'border-line bg-bg text-muted hover:border-accent-strong hover:text-fg',
 } as const;
 
 /** Μία εφαρμογή για ένα αυτοκίνητο και έναν μήνα: ποσοστό, εβδομάδες και τιμολόγιο. */
@@ -360,8 +365,9 @@ function PlatformMonthCard({
   rateText,
   rows,
   group,
+  onAddWeek,
 }: {
-  platform: string;
+  platform: PlatformId;
   year: number;
   month: number;
   today: string;
@@ -369,6 +375,7 @@ function PlatformMonthCard({
   rateText: string | null;
   rows: StatementRow[];
   group: PlatformMonth | null;
+  onAddWeek: (weekStart: string) => void;
 }) {
   const entered = new Set(rows.flatMap((row) => (row.kind === 'week' && row.week_start ? [row.week_start] : [])));
   const weeks = weekCycles(year, month);
@@ -396,13 +403,30 @@ function PlatformMonthCard({
       <ul className="mt-2 flex flex-wrap gap-1.5">
         {weeks.map((week) => {
           const state = weekState(week, entered, today);
+          const chip = cx(
+            'inline-flex min-h-8 items-center rounded-full border px-2.5 text-xs font-medium whitespace-nowrap',
+            WEEK_STYLE[state],
+          );
+          const label = `${formatWeek(week.start, week.end)}${state === 'done' ? ' ✓' : state === 'missing' ? ' · λείπει' : ''}`;
           return (
-            <li
-              key={week.start}
-              className={cx('rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap', WEEK_STYLE[state])}
-            >
-              {formatWeek(week.start, week.end)}
-              {state === 'done' ? ' ✓' : state === 'missing' ? ' · λείπει' : ''}
+            <li key={week.start}>
+              {state === 'done' ? (
+                <span className={chip}>{label}</span>
+              ) : (
+                // Εβδομάδα που λείπει ή τρέχει: ανοίγει τη φόρμα σε αυτή την εφαρμογή και εβδομάδα.
+                <button
+                  type="button"
+                  onClick={() => onAddWeek(week.start)}
+                  className={cx(
+                    chip,
+                    'cursor-pointer gap-1 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
+                  )}
+                >
+                  <span aria-hidden="true">+</span>
+                  <span className="sr-only">Καταχώρηση {platformLabel(platform)}:</span>
+                  {label}
+                </button>
+              )}
             </li>
           );
         })}

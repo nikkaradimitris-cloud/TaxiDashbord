@@ -63,7 +63,7 @@ import { ShareApp } from './ShareApp';
 import { LegacyImport } from './LegacyImport';
 import { OutboxPanel } from './OutboxPanel';
 import { PeriodBar } from './PeriodBar';
-import { PlatformForm } from './PlatformForm';
+import { PlatformForm, type WeekPreset } from './PlatformForm';
 import { PlatformList } from './PlatformList';
 import { ShiftForm } from './ShiftForm';
 import { ShiftList } from './ShiftList';
@@ -114,6 +114,26 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const closeEdit = useCallback(() => setEditing(null), []);
   const closeExpenseEdit = useCallback(() => setEditingExpense(null), []);
   const closeStatementEdit = useCallback(() => setEditingStatement(null), []);
+  // Πάτημα σε εβδομάδα που λείπει ή τρέχει (λίστα «Εφαρμογές»): η φόρμα «Εφαρμογή» σε αυτή την εφαρμογή και εβδομάδα.
+  const [weekPreset, setWeekPreset] = useState<WeekPreset | null>(null);
+  const addStatementWeek = useCallback(
+    (platform: WeekPreset['platform'], weekStart: string) => {
+      setEntryKind('platform');
+      setWeekPreset({ platform, weekStart, nonce: Date.now() });
+      setEntryOpen(true);
+      // Η φόρμα είναι πάνω στη σελίδα: πάμε εκεί (κάτω από τη σταθερή κεφαλίδα, `scroll-mt`).
+      requestAnimationFrame(() => {
+        entryRef.current?.focus({ preventScroll: true });
+        entryRef.current?.scrollIntoView({ block: 'start' });
+      });
+    },
+    [setEntryOpen],
+  );
+  /** Άλλο είδος καταχώρησης από τον διακόπτη: η εβδομάδα που πατήθηκε δεν ξαναεφαρμόζεται. */
+  const changeEntryKind = useCallback((kind: EntryKind) => {
+    setEntryKind(kind);
+    setWeekPreset(null);
+  }, []);
 
   /** Σύντομο μήνυμα κάτω στην οθόνη, ορατό όπου κι αν βρίσκεται ο χρήστης. */
   function showToast(text: string) {
@@ -712,7 +732,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,27rem)_minmax(0,1fr)] lg:items-start">
                 <div className="min-w-0">
                   {!entryOpen && <NewEntryButton ref={newEntryRef} onClick={openEntry} />}
-                  <div ref={entryRef} tabIndex={-1} hidden={!entryOpen} className="outline-none">
+                  <div ref={entryRef} tabIndex={-1} hidden={!entryOpen} className="scroll-mt-24 outline-none">
                     {entryKind === 'shift' ? (
                       <ShiftForm
                         supabase={supabase}
@@ -727,7 +747,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                         editing={null}
                         onUpdated={handleUpdated}
                         onCancelEdit={closeEdit}
-                        switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                        switcher={<EntryKindSwitch value={entryKind} onChange={changeEntryKind} />}
                         onCollapse={collapseEntry}
                       />
                     ) : entryKind === 'expense' ? (
@@ -743,7 +763,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                         editing={null}
                         onUpdated={handleExpenseUpdated}
                         onCancelEdit={closeExpenseEdit}
-                        switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                        switcher={<EntryKindSwitch value={entryKind} onChange={changeEntryKind} />}
                         onCollapse={collapseEntry}
                       />
                     ) : (
@@ -764,8 +784,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                         editing={null}
                         onUpdated={handleStatementUpdated}
                         onCancelEdit={closeStatementEdit}
-                        switcher={<EntryKindSwitch value={entryKind} onChange={setEntryKind} />}
+                        switcher={<EntryKindSwitch value={entryKind} onChange={changeEntryKind} />}
                         onCollapse={collapseEntry}
+                        preset={weekPreset}
                       />
                     )}
                   </div>
@@ -891,6 +912,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 editingId={editingStatement?.id ?? null}
                 onEdit={startStatementEdit}
                 onDelete={handleStatementDelete}
+                onAddWeek={addStatementWeek}
               />
 
               {editingStatement && (
