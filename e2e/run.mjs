@@ -1669,6 +1669,52 @@ check(
 );
 await plist.screenshot({ path: `${OUT}/11b-platform-list.png` });
 
+// «Δουλεύει με»: Bolt «εκτός» → χωρίς κάρτα, χωρίς «λείπει», όχι στη φόρμα· ξανά «μέσα» → όπως πριν.
+const choice = plist.getByTestId('platform-choice');
+const pressed = async () =>
+  (await choice.locator('button[aria-pressed="true"]').allInnerTexts()).map((t) => t.replace('✓', '').trim()).join(', ');
+const badgeCount = async () => {
+  const badge = plist.getByText(/^λείπ(ει|ουν) \d+ εβδ\.$/);
+  return (await badge.count()) ? Number((await badge.innerText()).match(/\d+/)[0]) : 0;
+};
+check((await pressed()) === 'Uber, FreeNow, Bolt', `«Δουλεύει με»: Uber, FreeNow, Bolt (όσες έχουν ποσοστό) — ${await pressed()}`);
+const missingBefore = await badgeCount();
+const boltMissing = await plist.getByRole('region', { name: 'Bolt: εβδομάδες και τιμολόγιο' }).getByText('· λείπει').count();
+await choice.getByRole('button', { name: /Bolt/ }).click();
+await plist.getByRole('region', { name: 'Bolt: εβδομάδες και τιμολόγιο' }).waitFor({ state: 'detached' });
+const missingAfter = await badgeCount();
+check(
+  (await pressed()) === 'Uber, FreeNow' &&
+    boltMissing > 0 &&
+    missingAfter === missingBefore - boltMissing &&
+    (await pform.getByRole('radio', { name: 'Bolt' }).count()) === 0 &&
+    (await pform.getByRole('radio', { name: 'Uber' }).count()) === 1,
+  `Bolt «εκτός»: χωρίς κάρτα και χωρίς «λείπει» (${missingBefore} → ${missingAfter} εβδ.), και όχι στη φόρμα`,
+);
+await shotBelowHeader(choice, `${OUT}/11d-platform-choice.png`);
+await page.reload();
+await plist.getByTestId('platform-choice').waitFor();
+await idle(page);
+check((await pressed()) === 'Uber, FreeNow', 'μετά από ανανέωση η Bolt μένει «εκτός» (αποθηκεύτηκε)');
+await choice.getByRole('button', { name: /Bolt/ }).click();
+await plist.getByRole('region', { name: 'Bolt: εβδομάδες και τιμολόγιο' }).waitFor();
+check(
+  (await pressed()) === 'Uber, FreeNow, Bolt' && (await badgeCount()) === missingBefore,
+  'Bolt ξανά «μέσα»: η κάρτα και οι εβδομάδες της ξαναφαίνονται',
+);
+// Αυτοκίνητο χωρίς ποσοστά (του ιδιοκτήτη): «Uber» → η φόρμα ζητά μία φορά το ποσοστό.
+await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Νίκος (Ιδιοκτήτης) · ΤΑΧ-9999' });
+await idle(page);
+check((await pressed()) === '', 'αυτοκίνητο χωρίς εφαρμογές: καμία επιλεγμένη');
+await choice.getByRole('button', { name: 'Uber' }).click();
+await page.locator('#platform-form').getByText('Ποσοστό Uber (μία φορά)').waitFor();
+check(
+  await page.locator('#platform-form').getByRole('radio', { name: 'Uber' }).isChecked(),
+  '«Uber» σε αυτοκίνητο χωρίς ποσοστό → η φόρμα «Εφαρμογή» ζητά το ποσοστό της Uber (μία φορά)',
+);
+await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Γιώργος Παπαδόπουλος · ΤΑΕ-1234' });
+await idle(page);
+
 const stats = page.locator('section[aria-busy]');
 // «Δρόμος & Εφαρμογές» είναι μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές» (μία κάρτα αντί για δύο).
 const detailsCard = page.locator('#stats-details');
@@ -1804,6 +1850,10 @@ check(
   (await dplist.locator('li').filter({ hasText: 'Τιμολόγιο FN-0925' }).getByRole('button').count()) === 0,
   'ο οδηγός δεν αλλάζει καταχώρηση του ιδιοκτήτη',
 );
+check(
+  (await dplist.getByTestId('platform-choice').locator('button[aria-pressed="true"]').count()) === 3,
+  'ο οδηγός βλέπει το «Δουλεύει με» του αυτοκινήτου του (Uber, FreeNow, Bolt)',
+);
 const dpw = await dpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(dpw[0] === 390 && dpw[1] === 390, `κινητό: χωρίς οριζόντια κύλιση (${dpw})`);
 await dpage.screenshot({ path: `${OUT}/12-driver-platform-mobile.png`, fullPage: true });
@@ -1908,6 +1958,10 @@ check(
   sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Μορφή αρχείου' && row[1] === 'taxi-fleet-tracker · 3') &&
     sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Στόλος' && row[1] === 'Νίκος (Ιδιοκτήτης)'),
   'καρτέλα «Πληροφορίες» με τον στόλο και τη μορφή του αρχείου',
+);
+check(
+  sheetOf('Ποσοστά εφαρμογών').rows[0].includes('Δουλεύει') && sheetOf('Ποσοστά εφαρμογών').rows[0].includes('active'),
+  'καρτέλα «Ποσοστά εφαρμογών»: στήλη «Δουλεύει» (και active για επαναφορά)',
 );
 const driverSheet = sheetOf('Οδηγοί');
 const mariaRow = driverSheet.rows.find((row) => row.includes('Μαρία Κωνσταντίνου')) ?? [];

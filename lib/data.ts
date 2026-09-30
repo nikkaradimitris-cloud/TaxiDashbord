@@ -228,6 +228,24 @@ export async function savePlatformRate(supabase: BrowserSupabase, payload: Platf
   return data;
 }
 
+/** «Δουλεύει με» μια εφαρμογή ή όχι, για ένα αυτοκίνητο που έχει ήδη ποσοστό (το ποσοστό μένει). */
+export async function setPlatformActive(
+  supabase: BrowserSupabase,
+  driverId: string,
+  platform: string,
+  active: boolean,
+): Promise<PlatformRateRow> {
+  const { data, error } = await supabase
+    .from('platform_rates')
+    .update({ active })
+    .eq('driver_id', driverId)
+    .eq('platform', platform)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data;
+}
+
 /** true αν διαγράφηκε· false αν δεν επιτρέπεται. */
 export async function deleteStatement(supabase: BrowserSupabase, id: string): Promise<boolean> {
   const { data, error } = await supabase.from('platform_statements').delete().eq('id', id).select('id');

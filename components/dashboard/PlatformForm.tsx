@@ -12,6 +12,7 @@ import {
   EMPTY_STATEMENT_FORM,
   findRate,
   fixedVatRate,
+  formPlatforms,
   formatWeek,
   isPlatform,
   MAX_REFERENCE,
@@ -155,6 +156,11 @@ export function PlatformForm({
 
   const target = useEntryTarget({ isAdmin, drivers, prefs, driverFilter, onPrefsChange, editing });
   const { isEditing, year, month, driver, inactiveSelf } = target;
+  // Μόνο οι εφαρμογές που δουλεύει το αυτοκίνητο («Δουλεύει με» στη λίστα «Εφαρμογές»)· η διόρθωση τις δείχνει όλες.
+  const platformOptions = isEditing ? PLATFORMS : formPlatforms(rates, driver?.id);
+  if (!platformOptions.some((platform) => platform.id === values.platform)) {
+    setValues((prev) => ({ ...prev, platform: platformOptions[0].id }));
+  }
   const isWeek = values.kind === 'week';
   const platformName = platformLabel(values.platform);
 
@@ -442,7 +448,7 @@ export function PlatformForm({
         <SegmentedField
           legend="Εφαρμογή"
           name="platform"
-          options={PLATFORMS}
+          options={platformOptions}
           value={values.platform}
           onChange={(platform) => update({ platform })}
           error={errors.platform}

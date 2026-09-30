@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { Panel } from '@/components/Panel';
 import { Badge, Button, cx } from '@/components/ui';
 import { toCents } from '@/lib/accounting';
@@ -15,6 +16,7 @@ import {
   toVatRate,
   weekCycles,
   weekState,
+  workedPlatforms,
   type PlatformId,
   type PlatformMonth,
 } from '@/lib/platforms';
@@ -69,6 +71,7 @@ export function PlatformList({
   onEdit,
   onDelete,
   onAddWeek,
+  onTogglePlatform,
 }: {
   statements: StatementRow[];
   /** Ανά αυτοκίνητο, μήνα και εφαρμογή (κράτηση: τιμολόγιο ή εβδομάδες). */
@@ -90,6 +93,8 @@ export function PlatformList({
   onDelete: (row: StatementRow) => void;
   /** Πάτημα σε εβδομάδα που λείπει ή τρέχει: ανοίγει η φόρμα σε αυτή την εφαρμογή και εβδομάδα. */
   onAddWeek: (platform: PlatformId, weekStart: string) => void;
+  /** «Δουλεύει με»: βάζει ή βγάζει μια εφαρμογή για το αυτοκίνητο της προβολής. */
+  onTogglePlatform: (platform: PlatformId, on: boolean) => Promise<void>;
 }) {
   // Ο οδηγός διορθώνει/διαγράφει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
   const canModify = (row: StatementRow) =>
@@ -107,14 +112,9 @@ export function PlatformList({
     { trips: 0, turnoverCents: 0, tipsCents: 0, commissionCents: 0, commissionVatCents: 0, commissionNoVatCents: 0 },
   );
   const checklist = month !== 'all' && carId !== null;
-  // Μόνο οι εφαρμογές που χρησιμοποιεί το αυτοκίνητο: με ποσοστό ή με καταχωρήσεις στον μήνα.
-  const usedPlatforms = checklist
-    ? PLATFORMS.filter(
-        ({ id }) =>
-          findRate(rates, carId, id) !== null ||
-          statements.some((row) => row.driver_id === carId && row.month === month && row.platform === id),
-      )
-    : [];
+  // Μόνο οι εφαρμογές που δουλεύει το αυτοκίνητο («Δουλεύει με»): για τις άλλες δεν ζητούνται εβδομάδες.
+  const worked = checklist ? workedPlatforms(rates, statements, carId, month) : [];
+  const usedPlatforms = PLATFORMS.filter(({ id }) => worked.includes(id));
 
   const vehicle = (row: StatementRow) => {
     const driver = driversById.get(row.driver_id);
@@ -154,6 +154,7 @@ export function PlatformList({
       }
       className={cx(loading && 'opacity-60')}
     >
+      {checklist && <PlatformChoice worked={worked} onToggle={onTogglePlatform} />}
       {checklist ? (
         usedPlatforms.length > 0 ? (
           <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -176,7 +177,8 @@ export function PlatformList({
           </div>
         ) : (
           <p className="mb-3 text-sm text-muted">
-            Για να ξεκινήσετε, πατήστε «Εφαρμογή» στη φόρμα και ορίστε το ποσοστό της Uber, της FreeNow ή της Bolt.
+            Χωρίς εφαρμογές: όλες οι διαδρομές είναι από τον δρόμο. Αν το αυτοκίνητο δουλεύει με κάποια, πατήστε την πιο
+            πάνω (την πρώτη φορά ζητά το ποσοστό της).
           </p>
         )
       ) : (
@@ -347,6 +349,62 @@ export function PlatformList({
         </>
       )}
     </Panel>
+  );
+}
+
+/**
+ * «Δουλεύει με»: ο οδηγός ή ο ιδιοκτήτης πατά τις εφαρμογές που δουλεύει το αυτοκίνητο. Για όσες είναι
+ * «εκτός» δεν ζητούνται εβδομάδες (δεν χρειάζονται μηδενικά) και δεν φαίνονται στη φόρμα.
+ */
+function PlatformChoice({
+  worked,
+  onToggle,
+}: {
+  worked: readonly PlatformId[];
+  onToggle: (platform: PlatformId, on: boolean) => Promise<void>;
+}) {
+  const [saving, setSaving] = useState<PlatformId | null>(null);
+
+  async function toggle(platform: PlatformId, on: boolean) {
+    setSaving(platform);
+    try {
+      await onToggle(platform, on);
+    } finally {
+      setSaving(null);
+    }
+  }
+
+  return (
+    <div className="mb-4 rounded-xl border border-line p-3" data-testid="platform-choice">
+      <p id="platform-choice-title" className="text-sm font-semibold">
+        Δουλεύει με
+      </p>
+      <div role="group" aria-labelledby="platform-choice-title" className="mt-2 flex flex-wrap gap-2">
+        {PLATFORMS.map(({ id, label }) => {
+          const on = worked.includes(id);
+          return (
+            <button
+              key={id}
+              type="button"
+              aria-pressed={on}
+              disabled={saving !== null}
+              onClick={() => toggle(id, !on)}
+              className={cx(
+                'min-h-11 rounded-xl border-2 px-4 text-sm font-semibold transition-colors',
+                'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
+                'disabled:cursor-wait disabled:opacity-60',
+                on ? 'border-accent bg-accent text-on-accent shadow-sm' : 'border-line bg-card text-muted hover:border-accent-strong',
+              )}
+            >
+              {on ? `✓ ${label}` : label}
+            </button>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-xs text-muted">
+        Πατήστε όσες δουλεύει το αυτοκίνητο. Για τις άλλες δεν ζητούνται εβδομάδες, ούτε μηδενικά.
+      </p>
+    </div>
   );
 }
 

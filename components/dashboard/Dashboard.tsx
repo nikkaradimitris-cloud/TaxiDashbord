@@ -23,6 +23,8 @@ import {
   fetchShifts,
   fetchStatements,
   insertShift,
+  savePlatformRate,
+  setPlatformActive,
   updateDriver,
 } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
@@ -33,10 +35,12 @@ import {
   formatWeek,
   groupStatements,
   platformLabel,
+  platformUse,
   statementRevenueCents,
   statementTitle,
   todayIso,
   toVatRate,
+  type PlatformId,
 } from '@/lib/platforms';
 import {
   emptyOutbox,
@@ -173,6 +177,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const storedFilter = prefs?.driverFilter ?? 'all';
   const driverFilter =
     isAdmin && storedFilter !== 'all' && (!driversState || driversById.has(storedFilter)) ? storedFilter : 'all';
+  /** Το αυτοκίνητο της λίστας «Εφαρμογές»: του φίλτρου (ιδιοκτήτης) ή του οδηγού· null = όλος ο στόλος. */
+  const platformCarId = isAdmin ? (driverFilter === 'all' ? null : driverFilter) : (ownDriver?.id ?? null);
 
   // ------------------------------------------------------------------
   // Βάρδιες της επιλεγμένης περιόδου
@@ -285,6 +291,39 @@ export function Dashboard({ session }: { session: SessionInfo }) {
       ],
       error: null,
     }));
+  }
+  /**
+   * «Δουλεύει με» (λίστα «Εφαρμογές»): βάζει ή βγάζει μια εφαρμογή για το αυτοκίνητο της προβολής. Χωρίς
+   * ποσοστό ακόμη, το «βάζω» ανοίγει τη φόρμα, που ζητά μία φορά το ποσοστό.
+   */
+  async function togglePlatform(platform: PlatformId, on: boolean) {
+    if (!platformCarId) return;
+    const use = platformUse(rates, platformCarId, platform);
+    if (on && use === 'unset') {
+      addStatementWeek(platform, '');
+      return;
+    }
+    try {
+      if (use !== 'unset') {
+        handleRateSaved(await setPlatformActive(supabase, platformCarId, platform, on));
+      } else {
+        // Παλιές καταχωρήσεις χωρίς ποσοστό: «εκτός» με το ποσοστό της τελευταίας καταχώρησης.
+        const last = statements.filter((row) => row.driver_id === platformCarId && row.platform === platform).at(-1);
+        if (!last?.rate_pct) return;
+        handleRateSaved(
+          await savePlatformRate(supabase, {
+            driver_id: platformCarId,
+            platform,
+            rate_pct: Number(last.rate_pct),
+            vat_rate: Number(last.vat_rate),
+            active: false,
+          }),
+        );
+      }
+      setMessage(null);
+    } catch (error) {
+      setMessage({ tone: 'error', text: dataErrorMessage(error) });
+    }
   }
   /** Ανά αυτοκίνητο, μήνα και εφαρμογή: η κράτηση από το τιμολόγιο, αλλιώς από τις εβδομάδες. */
   const platformMonths = useMemo(() => groupStatements(statements), [statements]);
@@ -907,12 +946,13 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 today={today}
                 year={prefs.year}
                 month={prefs.month}
-                carId={isAdmin ? (driverFilter === 'all' ? null : driverFilter) : (ownDriver?.id ?? null)}
+                carId={platformCarId}
                 periodText={periodLabel(prefs.year, prefs.month)}
                 editingId={editingStatement?.id ?? null}
                 onEdit={startStatementEdit}
                 onDelete={handleStatementDelete}
                 onAddWeek={addStatementWeek}
+                onTogglePlatform={togglePlatform}
               />
 
               {editingStatement && (

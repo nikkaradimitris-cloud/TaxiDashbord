@@ -93,6 +93,7 @@ export type Database = {
       };
       platform_rates: {
         Row: {
+          active: boolean;
           driver_id: string;
           platform: string;
           rate_pct: number;
@@ -101,6 +102,7 @@ export type Database = {
           vat_rate: number;
         };
         Insert: {
+          active?: boolean;
           driver_id: string;
           platform: string;
           rate_pct: number;
@@ -109,6 +111,7 @@ export type Database = {
           vat_rate: number;
         };
         Update: {
+          active?: boolean;
           driver_id?: string;
           platform?: string;
           rate_pct?: number;

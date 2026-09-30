@@ -87,7 +87,7 @@ describe('αντίγραφο ασφαλείας', () => {
         fleets: [{ id: 'f1', name: 'Νίκος', owner_id: 'u1', created_at: '2026-09-01T08:00:00Z' }],
         drivers: [giorgos],
         platform_rates: [
-          { driver_id: 'd1', platform: 'freenow', rate_pct: 12, vat_rate: 24, updated_by: 'u1', updated_at: '2026-09-03T08:00:00Z' },
+          { driver_id: 'd1', platform: 'freenow', rate_pct: 12, vat_rate: 24, active: false, updated_by: 'u1', updated_at: '2026-09-03T08:00:00Z' },
         ],
         shifts: [
           { id: 's2', driver_id: 'd1', year: 2026, month: 9, z_number: '102', trips: 11, paid_km: 70, empty_km: 30, net_revenue: 120, vat: 15.59, tips: 0, gross_receipts: 135.59, fuel: 35, other_expenses: 0, repairs: 0, net_cash: 100.59, created_by: 'u2', created_at: '2026-09-05T20:00:00Z', updated_at: '2026-09-05T20:00:00Z' },
@@ -140,6 +140,8 @@ describe('αντίγραφο ασφαλείας', () => {
     expect(apps.rows[0][column(apps, 'Έσοδα €')]).toBe(579.46);
     expect(apps.rows[0][column(apps, 'turnover')]).toBe(624.46);
     expect(rates.rows[0][column(rates, 'Ποσοστό %')]).toBe(12);
+    expect(rates.rows[0][column(rates, 'Δουλεύει')]).toBe('Όχι');
+    expect(rates.rows[0][column(rates, 'active')]).toBe('false');
     expect(drivers.rows[0][column(drivers, 'Ενεργός')]).toBe('Ναι');
     expect(drivers.rows[0][column(drivers, 'Λογαριασμός')]).toBe('Συνδεδεμένος');
     expect(drivers.rows[0][column(drivers, 'fleet_id')]).toBe('f1');

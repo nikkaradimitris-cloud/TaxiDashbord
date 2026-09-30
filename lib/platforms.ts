@@ -92,6 +92,44 @@ export function findRate(
   return row ? rateFromRow(row) : null;
 }
 
+/** «Δουλεύει με»: 'on' (με ποσοστό), 'off' (με ποσοστό, αλλά «εκτός») ή 'unset' (χωρίς ποσοστό ακόμη). */
+export type PlatformUse = 'on' | 'off' | 'unset';
+
+export function platformUse(
+  rows: readonly Pick<PlatformRateRow, 'driver_id' | 'platform' | 'active'>[],
+  driverId: string | null | undefined,
+  platform: string,
+): PlatformUse {
+  const row = rows.find((r) => r.driver_id === driverId && r.platform === platform);
+  return !row ? 'unset' : row.active === false ? 'off' : 'on';
+}
+
+/**
+ * Οι εφαρμογές που δουλεύει ένα αυτοκίνητο σε έναν μήνα (για τις εβδομάδες που λείπουν): όσες έχουν
+ * ποσοστό, ή δεν έχουν ποσοστό αλλά έχουν καταχωρήσεις στον μήνα. Όσες είναι «εκτός» δεν ζητούνται ποτέ.
+ */
+export function workedPlatforms(
+  rates: readonly Pick<PlatformRateRow, 'driver_id' | 'platform' | 'active'>[],
+  statements: readonly Pick<StatementRow, 'driver_id' | 'month' | 'platform'>[],
+  carId: string,
+  month: number,
+): PlatformId[] {
+  return PLATFORMS.map((platform) => platform.id).filter((id) => {
+    const use = platformUse(rates, carId, id);
+    if (use === 'off') return false;
+    return use === 'on' || statements.some((row) => row.driver_id === carId && row.month === month && row.platform === id);
+  });
+}
+
+/** Οι εφαρμογές της φόρμας για ένα αυτοκίνητο: όλες εκτός από όσες είναι «εκτός» (αν είναι όλες «εκτός», όλες). */
+export function formPlatforms(
+  rates: readonly Pick<PlatformRateRow, 'driver_id' | 'platform' | 'active'>[],
+  carId: string | null | undefined,
+): (typeof PLATFORMS)[number][] {
+  const allowed = PLATFORMS.filter((platform) => platformUse(rates, carId, platform.id) !== 'off');
+  return allowed.length > 0 ? allowed : [...PLATFORMS];
+}
+
 const percent = new Intl.NumberFormat('el-GR', { maximumFractionDigits: 2 });
 
 /** «15% + ΦΠΑ 24%» ή «12% χωρίς ΦΠΑ» */

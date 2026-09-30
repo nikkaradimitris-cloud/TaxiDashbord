@@ -6,6 +6,9 @@ import {
   defaultVatRate,
   EMPTY_STATEMENT_FORM,
   findRate,
+  formPlatforms,
+  platformUse,
+  workedPlatforms,
   fixedVatRate,
   formatWeek,
   groupStatements,
@@ -419,3 +422,38 @@ describe('groupStatements: το τιμολόγιο αντικαθιστά τις
     expect(totalsByPlatform([])).toEqual([]);
   });
 });
+
+describe('«Δουλεύει με»: ποιες εφαρμογές ζητούνται για κάθε αυτοκίνητο', () => {
+  const rates = [
+    { driver_id: 'a', platform: 'uber', active: true },
+    { driver_id: 'a', platform: 'freenow', active: false },
+    { driver_id: 'b', platform: 'bolt', active: false },
+  ];
+  const statements = [
+    { driver_id: 'a', month: 9, platform: 'bolt' },
+    { driver_id: 'a', month: 9, platform: 'freenow' },
+    { driver_id: 'b', month: 8, platform: 'uber' },
+  ];
+
+  it('με ποσοστό «μέσα», «εκτός», ή χωρίς ποσοστό', () => {
+    expect(platformUse(rates, 'a', 'uber')).toBe('on');
+    expect(platformUse(rates, 'a', 'freenow')).toBe('off');
+    expect(platformUse(rates, 'a', 'bolt')).toBe('unset');
+  });
+
+  it('εβδομάδες μόνο για όσες δουλεύει· η «εκτός» δεν ζητείται ούτε με καταχωρήσεις στον μήνα', () => {
+    // Uber (ποσοστό) και Bolt (χωρίς ποσοστό, με καταχώρηση)· FreeNow «εκτός» παρά την καταχώρηση.
+    expect(workedPlatforms(rates, statements, 'a', 9)).toEqual(['uber', 'bolt']);
+    // Άλλος μήνας: μόνο όσες έχουν ποσοστό.
+    expect(workedPlatforms(rates, statements, 'a', 10)).toEqual(['uber']);
+    expect(workedPlatforms(rates, statements, 'b', 9)).toEqual([]);
+  });
+
+  it('φόρμα: όλες εκτός από τις «εκτός»· αν είναι όλες «εκτός», όλες', () => {
+    expect(formPlatforms(rates, 'a').map((p) => p.id)).toEqual(['uber', 'bolt']);
+    expect(formPlatforms(rates, 'b').map((p) => p.id)).toEqual(['uber', 'freenow']);
+    const allOff = ['uber', 'freenow', 'bolt'].map((platform) => ({ driver_id: 'c', platform, active: false }));
+    expect(formPlatforms(allOff, 'c').map((p) => p.id)).toEqual(['uber', 'freenow', 'bolt']);
+  });
+});
+
