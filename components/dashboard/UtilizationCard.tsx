@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { FuelChoice } from '@/components/FuelChoice';
 import type { Totals } from '@/lib/accounting';
 import { dataErrorMessage } from '@/lib/errors';
@@ -41,10 +41,13 @@ export function UtilizationCard({
   onSetFuel: (driverId: string, fuel: Fuel) => Promise<void>;
 }) {
   const [saving, setSaving] = useState(false);
-  const [message, setMessage] = useState<{
-    tone: 'good' | 'bad';
-    text: string;
-  } | null>(null);
+  const [message, setMessage] = useState<{ tone: 'good' | 'bad'; text: string } | null>(null);
+  // Το «✓ … αποθηκεύτηκε» σβήνει μόνο του (αλλιώς θα έμενε και όταν αλλάξει το αυτοκίνητο στο φίλτρο).
+  useEffect(() => {
+    if (message?.tone !== 'good') return;
+    const timer = window.setTimeout(() => setMessage(null), 4000);
+    return () => window.clearTimeout(timer);
+  }, [message]);
 
   // Τα όρια: από τα αυτοκίνητα με χιλιόμετρα στην περίοδο (αλλιώς όλα της προβολής).
   const withKm = cars.filter((car) => car.km > 0);
