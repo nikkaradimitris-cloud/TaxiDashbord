@@ -352,3 +352,10 @@ export const VAT_STATUS_LABEL: Record<VatStatus, string> = {
   credit: 'Πιστωτικό',
   zero: 'Μηδενικό',
 };
+
+/** Η κατάσταση του ΦΠΑ με λίγα λόγια (κάρτα ΦΠΑ, εικόνα και μήνυμα WhatsApp). */
+export const VAT_STATUS_TEXT: Record<VatStatus, string> = {
+  debit: 'Χρεωστικό — προς πληρωμή',
+  credit: 'Πιστωτικό υπόλοιπο',
+  zero: 'Μηδενικό υπόλοιπο',
+};

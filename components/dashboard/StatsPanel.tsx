@@ -1,20 +1,19 @@
 'use client';
 
-import { useMemo, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { Chevron, Panel, usePanelOpen } from '@/components/Panel';
 import { Badge, cx, Notice } from '@/components/ui';
-import { summarize, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
-import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
+import { summarize, VAT_STATUS_TEXT, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
+import { DISCLAIMER_SHORT } from '@/lib/disclaimer';
+import { saveFile } from '@/lib/download';
+import { formatEuro, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
 import { platformLabel, totalsByPlatform, type PlatformMonth } from '@/lib/platforms';
 import type { DriverRow, ExpenseRow, ShiftRow } from '@/lib/types';
-import { buildVatMessage, whatsappLink } from '@/lib/whatsapp';
-
-const STATUS_TEXT = {
-  debit: 'Χρεωστικό — προς πληρωμή',
-  credit: 'Πιστωτικό υπόλοιπο',
-  zero: 'Μηδενικό υπόλοιπο',
-} as const;
+import type { Fuel } from '@/lib/utilization';
+import { buildVatMessage, vatCardData, vatImageFileName, whatsappLink, whatsappShareLink } from '@/lib/whatsapp';
+import { UtilizationCard, type CarKm } from './UtilizationCard';
+import { renderVatImage } from './vatImage';
 
 export function StatsPanel({
   totals,
@@ -29,6 +28,7 @@ export function StatsPanel({
   driversById,
   showPerDriver,
   onSelectDriver,
+  onSetFuel,
   analysis,
 }: {
   totals: Totals;
@@ -45,6 +45,8 @@ export function StatsPanel({
   driversById: Map<string, DriverRow>;
   showPerDriver: boolean;
   onSelectDriver: (driverId: string) => void;
+  /** Ο ιδιοκτήτης δηλώνει το καύσιμο ενός αυτοκινήτου (όρια του μετρητή αξιοποίησης). */
+  onSetFuel: (driverId: string, fuel: Fuel) => Promise<void>;
   /** Η κάρτα «Αναλυτικά» (πίνακας/γράφημα), κάτω από τις κάρτες απόδοσης. */
   analysis: ReactNode;
 }) {
@@ -58,6 +60,15 @@ export function StatsPanel({
     totals.appCommissionCents > 0 ? `Κρατήσεις εφαρμογών ${formatEuro(totals.appCommissionCents)}` : null,
   ];
   const [vatOpen, setVatOpen] = usePanelOpen('vat-details', false);
+
+  // Αυτοκίνητα της προβολής και τα χιλιόμετρά τους (για τα όρια του μετρητή ανάλογα με το καύσιμο).
+  const cars = useMemo<CarKm[]>(() => {
+    if (selectedDriver) return [{ driver: selectedDriver, km: totals.totalKm }];
+    const km = new Map<string, number>();
+    for (const { row, figures } of items) km.set(row.driver_id, (km.get(row.driver_id) ?? 0) + figures.totalKm);
+    for (const driver of driversById.values()) if (driver.active && !km.has(driver.id)) km.set(driver.id, 0);
+    return [...km].map(([driverId, total]) => ({ driver: driversById.get(driverId), km: total }));
+  }, [selectedDriver, totals.totalKm, items, driversById]);
 
   return (
     <section aria-busy={loading} className={cx('min-w-0 space-y-4 transition-opacity', loading && 'opacity-50')}>
@@ -83,6 +94,8 @@ export function StatsPanel({
         />
       </div>
 
+      <UtilizationCard totals={totals} cars={cars} isAdmin={isAdmin} onSetFuel={onSetFuel} />
+
       <div
         className={cx(
           'rounded-2xl border p-4 shadow-sm',
@@ -100,13 +113,22 @@ export function StatsPanel({
                 status === 'debit' && 'text-bad',
                 status === 'credit' && 'text-good',
               )}
+              data-testid="vat-amount"
             >
               {formatEuro(Math.abs(totals.vatBalanceCents))}
             </p>
-            <p className="text-sm font-semibold">{STATUS_TEXT[status]}</p>
+            <p className="text-sm font-semibold">{VAT_STATUS_TEXT[status]}</p>
+            <p className="mt-1 text-xs text-muted">{DISCLAIMER_SHORT}</p>
           </div>
           {isAdmin && (
-            <WhatsAppShare driver={selectedDriver} year={year} month={month} totals={totals} loading={loading} />
+            <VatShare
+              // Στόλος με ένα αυτοκίνητο: αυτό· αλλιώς ο ΦΠΑ στέλνεται ανά οδηγό (χωριστά φορολογικά στοιχεία).
+              driver={selectedDriver ?? (driversById.size === 1 ? [...driversById.values()][0] : null)}
+              year={year}
+              month={month}
+              totals={totals}
+              loading={loading}
+            />
           )}
         </div>
         <button
@@ -138,11 +160,17 @@ export function StatsPanel({
         </div>
       </div>
 
+      {/* Έσοδα, χιλιόμετρα, διαδρομές και (αν υπάρχουν εφαρμογές) δρόμος & εφαρμογές, σε ένα πάνελ. */}
       <Panel
         id="stats-details"
         headingLevel={3}
         title="Έσοδα, χιλιόμετρα & διαδρομές"
-        summary={`καθαρά ${formatEuro(totals.netRevenueCents)} · ${formatKm(totals.totalKm)} χλμ · ${formatInteger(totals.trips)} διαδρομές`}
+        summary={`καθαρά ${formatEuro(totals.netRevenueCents)} · ${formatKm(totals.totalKm)} χλμ · ${formatInteger(totals.trips)} διαδρομές${
+          platformMonths.length > 0
+            ? ` · δρόμος ${formatInteger(totals.streetTrips)} · κρατήσεις ${formatEuro(totals.appCommissionCents)}`
+            : ''
+        }`}
+        badge={platformMonths.length > 0 && totals.streetTrips < 0 ? <Badge tone="warn">έλεγχος</Badge> : null}
       >
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 text-sm tabular-nums">
           <Detail label="Καθαρά έσοδα" value={formatEuro(totals.netRevenueCents)} />
@@ -153,17 +181,14 @@ export function StatsPanel({
             sub={`μισθωμένα ${formatKm(totals.paidKm)} · ελεύθερα ${formatKm(totals.emptyKm)}`}
             value={formatKm(totals.totalKm)}
           />
-          <Detail label="Αξιοποίηση" sub="μισθωμένα / συνολικά χλμ" value={formatPercent(totals.utilizationPct)} />
-          <Detail label="Έσοδο ανά χλμ" sub="καθαρά / συνολικά χλμ" value={formatEuroPerKm(totals.revenuePerKm)} />
           <Detail
             label="Διαδρομές"
             sub={`${totals.shifts} βάρδιες${platformMonths.length > 0 ? ` · δρόμος ${formatInteger(totals.streetTrips)}` : ''}`}
             value={formatInteger(totals.trips)}
           />
         </dl>
+        {platformMonths.length > 0 && <StreetAndApps totals={totals} platformMonths={platformMonths} />}
       </Panel>
-
-      {platformMonths.length > 0 && <StreetAndApps totals={totals} platformMonths={platformMonths} />}
 
       {analysis}
 
@@ -181,8 +206,8 @@ export function StatsPanel({
 }
 
 /**
- * Δρόμος & Εφαρμογές: οι κούρσες των εφαρμογών είναι μέσα στα Ζ, οι υπόλοιπες
- * είναι από τον δρόμο. Κράτηση ανά εφαρμογή (τιμολόγιο ή, προσωρινά, εβδομάδες).
+ * Δρόμος & Εφαρμογές (μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές»): οι κούρσες των εφαρμογών είναι
+ * μέσα στα Ζ, οι υπόλοιπες είναι από τον δρόμο. Κράτηση ανά εφαρμογή (τιμολόγιο ή, προσωρινά, εβδομάδες).
  */
 function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMonths: PlatformMonth[] }) {
   const platforms = totalsByPlatform(platformMonths);
@@ -191,13 +216,8 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
     invoiced === months ? 'τιμολόγιο' : invoiced === 0 ? 'προσωρινή' : `τιμολόγια ${invoiced}/${months}`;
 
   return (
-    <Panel
-      id="street-apps"
-      headingLevel={3}
-      title="Δρόμος & Εφαρμογές"
-      summary={`δρόμος ${formatInteger(totals.streetTrips)} από ${formatInteger(totals.trips)} διαδρομές · κρατήσεις ${formatEuro(totals.appCommissionCents)}`}
-      badge={totals.streetTrips < 0 ? <Badge tone="warn">έλεγχος</Badge> : null}
-    >
+    <div id="street-apps" className="mt-4 border-t border-line pt-3">
+      <h4 className="text-sm font-semibold">Δρόμος & Εφαρμογές</h4>
       <p className="text-xs text-muted">Οι κούρσες των εφαρμογών είναι μέσα στα Ζ· οι υπόλοιπες είναι από τον δρόμο.</p>
       <div className="-mx-4 mt-3 overflow-x-auto px-4 sm:-mx-5 sm:px-5">
         <table className="w-full min-w-[19rem] text-sm tabular-nums">
@@ -260,7 +280,7 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
         Τζίρος δρόμου = μικτή είσπραξη των Ζ − έσοδα εφαρμογών. «Προσωρινή» κράτηση: από τις εβδομάδες, μέχρι να
         καταχωρηθεί το τιμολόγιο του μήνα.
       </p>
-    </Panel>
+    </div>
   );
 }
 
@@ -316,7 +336,12 @@ function Stat({
   );
 }
 
-function WhatsAppShare({
+/**
+ * «Αποστολή WhatsApp»: εικόνα με τον ΦΠΑ της περιόδου και σύντομο μήνυμα (μόνο ο ΦΠΑ). Στο κινητό ανοίγει
+ * το μενού κοινοποίησης (WhatsApp → παραλήπτης)· όπου δεν στέλνονται εικόνες (π.χ. υπολογιστής), ανοίγει το
+ * WhatsApp με το μήνυμα και η εικόνα κατεβαίνει με το «Λήψη εικόνας».
+ */
+function VatShare({
   driver,
   year,
   month,
@@ -330,40 +355,78 @@ function WhatsAppShare({
   loading: boolean;
 }) {
   // Όσο φορτώνουν τα δεδομένα του νέου φίλτρου τα σύνολα είναι του προηγούμενου: όχι αποστολή.
-  const link =
-    driver && !loading
-      ? whatsappLink(driver.phone, buildVatMessage({ driverName: driver.name, plate: driver.plate, year, month, totals }))
-      : null;
+  const input = driver && !loading ? { driverName: driver.name, plate: driver.plate, year, month, totals } : null;
+  const text = input ? buildVatMessage(input) : '';
+  const card = input ? vatCardData(input) : null;
+  const key = card ? JSON.stringify(card) : '';
+  // Η εικόνα ετοιμάζεται από πριν: το μενού κοινοποίησης ανοίγει μόνο αμέσως μετά το πάτημα.
+  const [image, setImage] = useState<{ key: string; file: File | null; canShare: boolean } | null>(null);
+  useEffect(() => {
+    if (!card) return;
+    let cancelled = false;
+    renderVatImage(card).then(
+      (blob) => {
+        if (cancelled) return;
+        const file = new File([blob], vatImageFileName(year, month), { type: 'image/png' });
+        setImage({ key, file, canShare: navigator.canShare?.({ files: [file] }) ?? false });
+      },
+      () => {
+        if (!cancelled) setImage({ key, file: null, canShare: false });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+    // `key` αλλάζει μόνο όταν αλλάζει κάτι από όσα φαίνονται στην εικόνα.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+  const ready = image?.key === key ? image : null;
+  const imageFile = ready?.file ?? null;
+
+  async function send() {
+    if (!driver) return;
+    if (ready?.file && ready.canShare) {
+      try {
+        await navigator.share({ files: [ready.file], text });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+      }
+    }
+    window.open(whatsappLink(driver.phone, text) ?? whatsappShareLink(text), '_blank', 'noopener,noreferrer');
+  }
+
   const hint = !driver
     ? 'Επιλέξτε οδηγό στο φίλτρο για αποστολή.'
     : loading
       ? 'Φόρτωση δεδομένων…'
-      : !link
-        ? 'Ο οδηγός δεν έχει έγκυρο κινητό (69XXXXXXXX).'
-        : `Προς ${driver.name}`;
+      : !ready
+        ? 'Ετοιμάζεται η εικόνα…'
+        : `Εικόνα με τον ΦΠΑ · ${driver.plate ?? driver.name}`;
 
   return (
     <div className="flex flex-col items-end gap-1">
-      {link ? (
-        <a
-          href={link}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-[#0b3d20] hover:bg-[#1fbd5a]"
+      <button
+        type="button"
+        onClick={send}
+        disabled={!input || !ready}
+        className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#25D366] px-4 py-2 text-sm font-semibold text-[#0b3d20] hover:bg-[#1fbd5a] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong disabled:cursor-not-allowed disabled:bg-[#25D366]/40 disabled:text-[#0b3d20]/70"
+      >
+        <WhatsAppIcon />
+        Αποστολή WhatsApp
+      </button>
+      <span className="max-w-56 text-right text-xs text-muted" data-testid="vat-share-hint">
+        {hint}
+      </span>
+      {imageFile && !ready?.canShare && (
+        <button
+          type="button"
+          onClick={() => saveFile(imageFile, 'image/png', imageFile.name)}
+          className="text-xs font-semibold underline"
         >
-          <WhatsAppIcon />
-          Αποστολή WhatsApp
-        </a>
-      ) : (
-        <span
-          aria-disabled="true"
-          className="inline-flex min-h-11 cursor-not-allowed items-center gap-2 rounded-xl bg-[#25D366]/40 px-4 py-2 text-sm font-semibold text-[#0b3d20]/70"
-        >
-          <WhatsAppIcon />
-          Αποστολή WhatsApp
-        </span>
+          Λήψη εικόνας
+        </button>
       )}
-      <span className="max-w-56 text-right text-xs text-muted">{hint}</span>
     </div>
   );
 }

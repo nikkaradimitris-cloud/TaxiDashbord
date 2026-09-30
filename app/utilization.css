@@ -1,0 +1,288 @@
+/*
+ * Κάρτα «Αξιοποίηση χιλιομέτρων» μέσα στην εφαρμογή: το ίδιο σκούρο, κρυστάλλινο στυλ και ο ίδιος
+ * κυκλικός μετρητής με το «Καλώς ήρθατε» (app/intro.css). Χρώμα ανάλογα με το επίπεδο:
+ * κόκκινο = χαμηλή, γαλάζιο = ικανοποιητική, πράσινο = πολύ ικανοποιητική. Όχι κίτρινο: είναι μόνο
+ * για ό,τι πατιέται (τα κουμπιά καυσίμου μέσα στην κάρτα).
+ */
+
+.util-card {
+  container-type: inline-size;
+  --util-text: #f8fafc;
+  --util-muted: #cbd5e1;
+  --util-track: rgba(148, 163, 184, 0.22);
+  --util-low: #f87171;
+  --util-ok: #67e8f9;
+  --util-great: #34d399;
+  --util-color: rgba(148, 163, 184, 0.7);
+  --util-glow: transparent;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 1rem;
+  padding: 16px;
+  color: var(--util-text);
+  background:
+    radial-gradient(120% 85% at 15% 0%, #1c2b58 0%, rgba(11, 16, 32, 0) 62%),
+    radial-gradient(90% 70% at 100% 115%, #0d3b4a 0%, rgba(11, 16, 32, 0) 62%),
+    #0b1020;
+  box-shadow: 0 10px 30px rgba(2, 6, 23, 0.25);
+}
+
+/* Κουκκίδες στο φόντο, σαν ψηφιακός χάρτης. */
+.util-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(148, 163, 184, 0.2) 1px, transparent 1.3px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(80% 70% at 30% 35%, #000 20%, transparent 80%);
+}
+
+.util-card[data-level='low'] {
+  --util-color: var(--util-low);
+  --util-glow: rgba(248, 113, 113, 0.6);
+}
+
+.util-card[data-level='ok'] {
+  --util-color: var(--util-ok);
+  --util-glow: rgba(103, 232, 249, 0.6);
+}
+
+.util-card[data-level='great'] {
+  --util-color: var(--util-great);
+  --util-glow: rgba(52, 211, 153, 0.6);
+}
+
+.util-glass {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.util-muted {
+  color: var(--util-muted);
+}
+
+/* --- Μετρητής και υπόμνημα· στο κινητό το ένα κάτω από το άλλο, σε φαρδιά οθόνη δίπλα-δίπλα --- */
+
+.util-layout {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+@container (min-width: 40rem) {
+  .util-layout {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    gap: 20px;
+    align-items: center;
+  }
+
+  .util-layout .util-gauge {
+    width: 148px;
+  }
+}
+
+.util-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.util-gauge {
+  position: relative;
+  width: 124px;
+  flex: none;
+}
+
+.util-gauge svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  transform: rotate(-90deg);
+}
+
+.util-gauge circle {
+  fill: none;
+  stroke-width: 12;
+}
+
+.util-track {
+  stroke: var(--util-track);
+}
+
+/* Τα τρία επίπεδα, αχνά πάνω στον κύκλο: φαίνεται πόσο απέχει το επόμενο. */
+.util-zone {
+  stroke-dasharray: 0 var(--from) var(--len) 100;
+  opacity: 0.3;
+}
+
+.util-zone[data-level='low'] {
+  stroke: var(--util-low);
+}
+
+.util-zone[data-level='ok'] {
+  stroke: var(--util-ok);
+}
+
+.util-zone[data-level='great'] {
+  stroke: var(--util-great);
+}
+
+.util-fill {
+  stroke: var(--util-color);
+  stroke-linecap: round;
+  stroke-dasharray: var(--pct) 100;
+  filter: drop-shadow(0 0 5px var(--util-glow));
+  transition:
+    stroke-dasharray 0.6s ease,
+    stroke 0.3s ease;
+  animation: util-fill 1.1s cubic-bezier(0.3, 0.1, 0.2, 1) 0.15s backwards;
+}
+
+.util-card[data-level='none'] .util-fill {
+  display: none;
+}
+
+@keyframes util-fill {
+  from {
+    stroke-dasharray: 0 100;
+  }
+}
+
+.util-gauge p {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: var(--util-muted);
+  font-size: 12px;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.util-gauge strong {
+  color: var(--util-text);
+  font-size: 25px;
+  font-variant-numeric: tabular-nums;
+}
+
+.util-legend {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 8px;
+  margin: 0;
+  padding: 12px;
+  border-radius: 16px;
+  font-size: 13px;
+}
+
+/* Όταν δεν χωράει (πολλά χιλιόμετρα, «Α+»), η τιμή πάει στην επόμενη γραμμή, δεξιά. */
+.util-legend div {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  column-gap: 6px;
+  color: var(--util-muted);
+}
+
+.util-legend dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.util-legend dd {
+  margin-left: auto;
+  color: var(--util-text);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.util-key {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 3px;
+  background: var(--util-color);
+}
+
+.util-key[data-kind='empty'] {
+  background: rgba(148, 163, 184, 0.45);
+}
+
+/* --- Επίπεδο και κλίμακα σύγκρισης --- */
+
+.util-verdict-title {
+  color: var(--util-color);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.util-card[data-level='none'] .util-verdict-title {
+  color: var(--util-text);
+}
+
+.util-scale {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.util-scale li {
+  --step: var(--util-low);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  color: var(--util-muted);
+  font-size: 13px;
+}
+
+.util-scale li[data-level='ok'] {
+  --step: var(--util-ok);
+}
+
+.util-scale li[data-level='great'] {
+  --step: var(--util-great);
+}
+
+.util-scale i {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--step);
+}
+
+.util-scale b {
+  margin-left: auto;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Το επίπεδο όπου βρίσκεστε. */
+.util-scale li[aria-current='true'] {
+  border-color: color-mix(in srgb, var(--step) 70%, transparent);
+  background: color-mix(in srgb, var(--step) 14%, transparent);
+  box-shadow: 0 0 14px color-mix(in srgb, var(--step) 30%, transparent);
+  color: var(--util-text);
+  font-weight: 700;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .util-fill {
+    animation: none;
+    transition: none;
+  }
+}

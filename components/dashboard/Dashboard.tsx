@@ -10,6 +10,7 @@ import { TextSizeToggle } from '@/components/TextSizeToggle';
 import { Badge, Notice } from '@/components/ui';
 import { expenseFromStored, figuresFromStored, summarize, toCents } from '@/lib/accounting';
 import { buildShiftsCsv, csvFileName } from '@/lib/csv';
+import { DISCLAIMER } from '@/lib/disclaimer';
 import { saveFile } from '@/lib/download';
 import {
   deleteExpense,
@@ -22,6 +23,7 @@ import {
   fetchShifts,
   fetchStatements,
   insertShift,
+  updateDriver,
 } from '@/lib/data';
 import { dataErrorMessage, isNetworkError } from '@/lib/errors';
 import { categoryLabel } from '@/lib/expenses';
@@ -781,6 +783,10 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   driversById={driversById}
                   showPerDriver={isAdmin && driverFilter === 'all'}
                   onSelectDriver={(id) => setPrefs({ driverFilter: id })}
+                  onSetFuel={async (driverId, fuel) => {
+                    await updateDriver(supabase, driverId, { fuel });
+                    setDriversVersion((v) => v + 1);
+                  }}
                   analysis={
                     <AnalysisCard
                       items={items}
@@ -925,7 +931,10 @@ export function Dashboard({ session }: { session: SessionInfo }) {
 
               {isAdmin && <ShareApp />}
 
-              <p className="pt-2 text-center text-sm">
+              <p className="mx-auto max-w-2xl pt-2 text-center text-xs text-muted" data-testid="disclaimer">
+                {DISCLAIMER}
+              </p>
+              <p className="text-center text-sm">
                 <Link href="/welcome?next=/" className="text-muted underline">
                   Τι κάνει η εφαρμογή
                 </Link>

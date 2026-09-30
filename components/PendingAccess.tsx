@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useState, type FormEvent } from 'react';
+import { FuelChoice } from '@/components/FuelChoice';
 import { Logo } from '@/components/Logo';
 import { SignOutButton } from '@/components/SignOutButton';
 import { TextSizeToggle } from '@/components/TextSizeToggle';
@@ -10,6 +11,7 @@ import { acceptInvite, createFleet } from '@/lib/data';
 import { dataErrorMessage } from '@/lib/errors';
 import { createClient } from '@/lib/supabase/client';
 import type { Invite } from '@/lib/types';
+import type { Fuel } from '@/lib/utilization';
 
 type Choice = 'own' | 'driver';
 
@@ -51,6 +53,7 @@ export function PendingAccess({ email, fullName, invites }: { email: string; ful
   const [choice, setChoice] = useState<Choice | null>(null);
   const [name, setName] = useState(fullName);
   const [plate, setPlate] = useState('');
+  const [fuel, setFuel] = useState<Fuel | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,10 +79,14 @@ export function PendingAccess({ email, fullName, invites }: { email: string; ful
       setError('Γράψτε το όνομά σας.');
       return;
     }
+    if (!fuel) {
+      setError('Διαλέξτε το καύσιμο του ταξί.');
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      await createFleet(createClient(), { name, plate });
+      await createFleet(createClient(), { name, plate, fuel });
       router.refresh();
     } catch (err) {
       setError(dataErrorMessage(err));
@@ -175,6 +182,23 @@ export function PendingAccess({ email, fullName, invites }: { email: string; ful
                 maxLength={20}
               />
             </Field>
+            <div className="space-y-2">
+              <p id="fuel-title" className="text-sm font-medium">
+                Καύσιμο
+              </p>
+              <FuelChoice
+                value={fuel}
+                labelledBy="fuel-title"
+                onChange={(value) => {
+                  setFuel(value);
+                  setError(null);
+                }}
+              />
+              <p className="text-xs text-muted">
+                Για τον μετρητή αξιοποίησης: το υβριδικό και το ηλεκτρικό κάνουν φθηνότερο χιλιόμετρο, γι&apos; αυτό
+                έχουν χαμηλότερα όρια.
+              </p>
+            </div>
             <Button type="submit" variant="primary" className="w-full" disabled={busy}>
               {busy ? 'Δημιουργία…' : 'Δημιουργία'}
             </Button>

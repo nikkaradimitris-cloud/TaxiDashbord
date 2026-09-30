@@ -1,4 +1,5 @@
-import { VAT_STATUS_LABEL, vatStatus, type Totals } from './accounting';
+import { VAT_STATUS_TEXT, vatStatus, type Totals } from './accounting';
+import { DISCLAIMER_SHORT } from './disclaimer';
 import { formatEuro } from './format';
 import { periodLabel, type MonthFilter } from './period';
 
@@ -24,34 +25,37 @@ export interface VatMessageInput {
   totals: Totals;
 }
 
-/** Προσυμπληρωμένο κείμενο ενημέρωσης ΦΠΑ για WhatsApp. */
-export function buildVatMessage({ driverName, plate, year, month, totals }: VatMessageInput): string {
+/** Τα στοιχεία της κάρτας ΦΠΑ (εικόνα για WhatsApp): μόνο ο ΦΠΑ, με την ένδειξη «ενδεικτικός». */
+export function vatCardData({ driverName, plate, year, month, totals }: VatMessageInput) {
   const status = vatStatus(totals.vatBalanceCents);
-  // Ανάλυση εξόδων μόνο όταν υπάρχουν κι άλλα εκτός από καύσιμα.
-  const expenseParts = [
-    `καύσιμα ${formatEuro(totals.fuelCents)}`,
-    totals.vehicleExpensesCents > 0 ? `οχήματος ${formatEuro(totals.vehicleExpensesCents)}` : null,
-    totals.appCommissionCents > 0 ? `κρατήσεις εφαρμογών ${formatEuro(totals.appCommissionCents)}` : null,
-  ].filter(Boolean);
+  return {
+    period: periodLabel(year, month),
+    car: plate ? `${plate} · ${driverName}` : driverName,
+    vatIn: `+ ${formatEuro(totals.vatCents)}`,
+    vatOut: `− ${formatEuro(totals.expensesVatCents)}`,
+    amount: formatEuro(Math.abs(totals.vatBalanceCents)),
+    status,
+    statusText: VAT_STATUS_TEXT[status],
+    note: DISCLAIMER_SHORT,
+  };
+}
+
+export type VatCardData = ReturnType<typeof vatCardData>;
+
+/** Σύντομο μήνυμα που συνοδεύει την εικόνα: μόνο ο ΦΠΑ. */
+export function buildVatMessage(input: VatMessageInput): string {
+  const card = vatCardData(input);
   return [
-    '*Ενημέρωση ΦΠΑ – Taxi Fleet*',
-    `Οδηγός: ${driverName}`,
-    `Όχημα: ${plate || '-'}`,
-    `${month === 'all' ? 'Περίοδος' : 'Μήνας'}: ${periodLabel(year, month)}`,
-    '',
-    `Είσπραξη (μικτή): ${formatEuro(totals.grossReceiptsCents)}`,
-    expenseParts.length > 1
-      ? `Έξοδα: ${formatEuro(totals.totalExpensesCents)} (${expenseParts.join(' + ')})`
-      : `Έξοδα: ${formatEuro(totals.totalExpensesCents)}`,
-    `ΦΠΑ εσόδων 13%: ${formatEuro(totals.vatCents)}`,
-    `ΦΠΑ εξόδων 24%: ${formatEuro(totals.expensesVatCents)}`,
-    `*Προς απόδοση ΦΠΑ: ${formatEuro(Math.abs(totals.vatBalanceCents))} (${VAT_STATUS_LABEL[status]})*`,
-    `Καθαρό ταμείο: ${formatEuro(totals.netCashCents)}`,
-    `Βάρδιες: ${totals.shifts}`,
-    ...(totals.appTrips > 0
-      ? [`Διαδρομές: ${totals.trips} (δρόμος ${totals.streetTrips}, εφαρμογές ${totals.appTrips})`]
-      : []),
+    `*Προς απόδοση ΦΠΑ · ${card.period}*`,
+    card.car,
+    `*${card.amount} · ${card.statusText}*`,
+    '_Ενδεικτικός υπολογισμός_',
   ].join('\n');
+}
+
+/** Όνομα αρχείου της εικόνας, π.χ. «fpa-2026-09.png». */
+export function vatImageFileName(year: number, month: MonthFilter): string {
+  return `fpa-${year}${month === 'all' ? '' : `-${String(month).padStart(2, '0')}`}.png`;
 }
 
 /** Σύνδεσμος wa.me με έτοιμο κείμενο, ή null αν το τηλέφωνο δεν είναι έγκυρο. */
@@ -68,7 +72,7 @@ export function whatsappLink(phone: string | null | undefined, text: string): st
 export function buildShareMessage(appUrl: string): string {
   return (
     'Γεια! Με αυτή την εφαρμογή γράφω τις βάρδιες του ταξί από το Ζ, βλέπω αμέσως την αξιοποίηση των ' +
-    'χιλιομέτρων, και στο τέλος του μήνα βγαίνει ο ΦΠΑ: Χρεωστικός ή Πιστωτικός. Γράψου κι εσύ:\n' +
+    'χιλιομέτρων, και στο τέλος του μήνα βλέπω ενδεικτικά τον ΦΠΑ: Χρεωστικός ή Πιστωτικός. Γράψου κι εσύ:\n' +
     appUrl
   );
 }

@@ -19,6 +19,7 @@ import { dataErrorMessage } from '@/lib/errors';
 import { formatDate } from '@/lib/format';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import { buildXlsx, XLSX_MIME } from '@/lib/xlsx';
+import { SheetsApp } from './SheetsApp';
 
 type Origin = 'reminder' | 'panel';
 /** `saved`: το αρχείο κατέβηκε (το μήνυμα λέει και πού θα το βρει). */
@@ -94,10 +95,14 @@ export type BackupState = ReturnType<typeof useBackup>;
 
 function BackupMessage({ message }: { message: Message }) {
   return (
-    <Notice tone={message.tone}>
-      <p>{message.text}</p>
-      {message.saved && <p className="mt-1">{SAVED_HINT}</p>}
-    </Notice>
+    <div className="space-y-2">
+      <Notice tone={message.tone}>
+        <p>{message.text}</p>
+        {message.saved && <p className="mt-1">{SAVED_HINT}</p>}
+      </Notice>
+      {/* Από την υπενθύμιση κατεβαίνει χωρίς το «Πρώτα: η εφαρμογή» του πάνελ: εδώ τα κουμπιά για την εφαρμογή. */}
+      {message.saved && message.origin === 'reminder' && <SheetsApp compact />}
+    </div>
   );
 }
 
@@ -145,7 +150,7 @@ export function BackupPanel({ backup }: { backup: BackupState }) {
           </li>
           <li>
             <b>Με τι ανοίγει:</b> Excel ή «Υπολογιστικά φύλλα Google». Αν στο κινητό έχει λευκό εικονίδιο και δεν
-            ανοίγει, λείπει η εφαρμογή: βάλτε τη μία από τις δύο, δωρεάν από το Play Store ή το App Store.
+            ανοίγει, λείπει η εφαρμογή (κουμπιά πιο κάτω).
           </li>
           <li>
             <b>Πού να το κρατάτε:</b> στείλτε το με email στον εαυτό σας ή βάλτε το στο Google Drive. Έχει τα στοιχεία
@@ -155,6 +160,7 @@ export function BackupPanel({ backup }: { backup: BackupState }) {
         <p className="text-muted">
           Καλό είναι να γίνεται μία φορά τον μήνα· μετά από {BACKUP_REMINDER_DAYS} μέρες η εφαρμογή το θυμίζει.
         </p>
+        <SheetsApp />
         <Button variant="primary" onClick={() => run('panel')} disabled={busy}>
           {busy ? 'Ετοιμάζεται…' : 'Κατέβασμα αντιγράφου'}
         </Button>

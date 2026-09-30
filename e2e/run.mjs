@@ -103,6 +103,11 @@ async function isFocused(locator) {
   }
 }
 const idle = (p) => p.waitForFunction(() => !document.querySelector('section[aria-busy="true"]'));
+/** Εικόνα ενός στοιχείου χωρίς να το κρύβει η σταθερή κεφαλίδα της σελίδας. */
+async function shotBelowHeader(locator, file) {
+  await locator.evaluate((el) => window.scrollTo(0, el.getBoundingClientRect().top + window.scrollY - 88));
+  await locator.screenshot({ path: file });
+}
 /** Περιμένει να τελειώσει η αλλαγή χρώματος (transition) ενός στοιχείου, π.χ. πριν από μια εικόνα. */
 const settled = (locator) => locator.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
 
@@ -209,6 +214,8 @@ await ip.waitForURL(`${BASE}/welcome?next=%2Flogin`);
 check(true, 'πρώτη φορά στη συσκευή → «Καλώς ήρθατε» (και μετά η σύνδεση)');
 await splash.waitFor({ state: 'hidden', timeout: 5000 });
 check(true, 'η κίνηση κλείνει μόνη της');
+/** «…το στέλνετε στον λογιστή» (ή «στον λογιστή … στείλτε»): δεν πρέπει να υπάρχει πουθενά. */
+const SEND_TO_ACCOUNTANT = /στ(είλ|έλν)[^.]*λογιστ|λογιστ[^.]*στ(είλ|έλν)/i;
 const slideTitles = ['Καλώς ήρθατε', 'Για τον οδηγό', 'Αξιοποίηση χιλιομέτρων', 'ΦΠΑ στο τέλος του μήνα', 'Γιατί φτιάχτηκε'];
 for (const [i, title] of slideTitles.entries()) {
   await activeSlide(ip).filter({ hasText: title }).waitFor();
@@ -226,6 +233,21 @@ for (const [i, title] of slideTitles.entries()) {
     check(
       vat.includes('452,86 €') && vat.includes('297,43 €') && vat.includes('Χρεωστικό') && vat.includes('Τιμολόγια εφαρμογών'),
       'κάρτα ΦΠΑ: 452,86 − 297,43 = 155,43 € Χρεωστικό, από Ζ, έξοδα και τιμολόγια εφαρμογών',
+    );
+    const vatSlide = nbsp0(await activeSlide(ip).locator('..').innerText());
+    check(
+      vat.includes('Ενδεικτικός υπολογισμός') && vatSlide.includes('Ενδεικτικά') && !SEND_TO_ACCOUNTANT.test(vatSlide),
+      'κάρτα ΦΠΑ: «Ενδεικτικός υπολογισμός», χωρίς «το στέλνετε στον λογιστή»',
+    );
+  }
+  if (title === 'Γιατί φτιάχτηκε') {
+    const why = nbsp0(await activeSlide(ip).locator('..').innerText());
+    check(
+      why.includes('Είναι βοηθητικό εργαλείο') &&
+        why.includes('δεν αντικαθιστούν τη δουλειά του λογιστή σας') &&
+        why.includes('όλα τα οικονομικά του ταξί σε ένα μέρος') &&
+        !SEND_TO_ACCOUNTANT.test(why),
+      'τελευταία κάρτα: βοηθητικό εργαλείο, ενδεικτικά ποσά, δεν αντικαθιστά τον λογιστή (όχι «το στέλνετε στον λογιστή»)',
     );
   }
   if (title === 'Αξιοποίηση χιλιομέτρων') {
@@ -379,7 +401,23 @@ check(
 );
 await createFleetForm.getByLabel('Το όνομά σας').fill('Νίκος (Ιδιοκτήτης)');
 await createFleetForm.getByLabel('Πινακίδα ταξί').fill('ταχ-9999');
+const fuelChoice = createFleetForm.getByRole('group', { name: 'Καύσιμο' });
+check(
+  JSON.stringify(await fuelChoice.getByRole('button').allInnerTexts()) ===
+    JSON.stringify(['Βενζίνη', 'Πετρέλαιο', 'Αέριο', 'Υβριδικό', 'Ηλεκτρικό']),
+  '«Έχω δικό μου ταξί»: καύσιμο — Βενζίνη, Πετρέλαιο, Αέριο, Υβριδικό, Ηλεκτρικό',
+);
+await createFleetForm.getByRole('button', { name: 'Δημιουργία' }).click();
+await page.getByText('Διαλέξτε το καύσιμο του ταξί.').waitFor();
+check(!(await page.locator('#fleet').isVisible()), 'χωρίς καύσιμο: «Διαλέξτε το καύσιμο του ταξί.» (δεν δημιουργείται στόλος)');
+const diesel = fuelChoice.getByRole('button', { name: 'Πετρέλαιο' });
+await diesel.click();
+check(
+  (await diesel.getAttribute('aria-pressed')) === 'true' && !(await page.getByText('Διαλέξτε το καύσιμο του ταξί.').isVisible()),
+  'επιλογή «Πετρέλαιο» (το μήνυμα φεύγει)',
+);
 await settled(ownTaxi);
+await settled(diesel);
 const choiceYellow = await yellowNotPressable(page);
 check(choiceYellow.length === 0, `οθόνη επιλογής: κίτρινο μόνο σε ό,τι πατιέται${choiceYellow.length ? ` ✘ ${choiceYellow.join(' | ')}` : ''}`);
 check(
@@ -387,12 +425,24 @@ check(
     (await createFleetForm.getByRole('button', { name: 'Δημιουργία' }).evaluate((el) => getComputedStyle(el).backgroundColor)),
   'η επιλογή «Έχω δικό μου ταξί» με το ίδιο κίτρινο που έχουν τα κουμπιά',
 );
+check(
+  (await diesel.evaluate((el) => getComputedStyle(el).backgroundColor)) ===
+    (await ownTaxi.evaluate((el) => getComputedStyle(el).backgroundColor)),
+  'το επιλεγμένο καύσιμο με το ίδιο κίτρινο',
+);
 await page.screenshot({ path: `${OUT}/03b-create-fleet.png` });
 await createFleetForm.getByRole('button', { name: 'Δημιουργία' }).click();
 await page.locator('#fleet').waitFor();
 check(await page.getByText('Admin', { exact: true }).isVisible(), 'ο ιδιοκτήτης έχει πλέον τον δικό του στόλο (Admin)');
 
 console.log('1β. Πάνελ: προεπιλογές του ιδιοκτήτη');
+const disclaimer = nbsp0(await page.getByTestId('disclaimer').innerText());
+check(
+  disclaimer.includes('βοηθητικό εργαλείο') &&
+    disclaimer.includes('κρατά όλα τα οικονομικά του ταξί σε ένα μέρος') &&
+    disclaimer.includes('Τα ποσά είναι ενδεικτικά και δεν αντικαθιστούν τη δουλειά του λογιστή σας.'),
+  'κάτω στη σελίδα: βοηθητικό εργαλείο, ενδεικτικά ποσά, δεν αντικαθιστά τον λογιστή',
+);
 // Ο νέος στόλος έχει ήδη το αυτοκίνητο του ιδιοκτήτη.
 await page.locator('#fleet').getByText('1 οδηγός · 1 με λογαριασμό').waitFor();
 check(
@@ -431,10 +481,11 @@ async function addDriver(d) {
   await fleet.getByLabel('Πινακίδα').first().fill(d.plate);
   await fleet.getByLabel('Κινητό').first().fill(d.phone);
   await fleet.getByLabel('Email σύνδεσης').first().fill(d.email);
+  if (d.fuel) await fleet.getByLabel('Καύσιμο').first().selectOption({ label: d.fuel });
   await fleet.getByRole('button', { name: '+ Προσθήκη οδηγού' }).click();
   await fleet.getByText(`Ο οδηγός «${d.name}» προστέθηκε.`).waitFor();
 }
-await addDriver({ name: 'Γιώργος Παπαδόπουλος', plate: 'ταε-1234', phone: '691 234 5678', email: 'Giorgos@Example.com' });
+await addDriver({ name: 'Γιώργος Παπαδόπουλος', plate: 'ταε-1234', phone: '691 234 5678', email: 'Giorgos@Example.com', fuel: 'Υβριδικό' });
 check(
   (await panelOpen(page, 'fleet')) && (await fleet.getByLabel('Όνομα Οδηγού').isVisible()),
   'μετά τον πρώτο οδηγό το πάνελ και η φόρμα μένουν ανοιχτά',
@@ -445,6 +496,13 @@ check(
 );
 await addDriver({ name: 'Μαρία Κωνσταντίνου', plate: 'ΙΚΒ-5678', phone: '6987654321', email: '' });
 check(await fleet.getByText('ΤΑΕ-1234').isVisible(), 'η πινακίδα αποθηκεύτηκε με κεφαλαία');
+const fuelsInList = await fleet.locator('ul > li').evaluateAll((items) =>
+  items.map((li) => (li.innerText.match(/Καύσιμο: ([^\n]+)/) ?? [])[1]),
+);
+check(
+  JSON.stringify(fuelsInList) === JSON.stringify(['Υβριδικό', 'δεν έχει δηλωθεί', 'Πετρέλαιο']),
+  `καύσιμο στη λίστα: Γιώργος υβριδικό, Μαρία χωρίς, ιδιοκτήτης πετρέλαιο (${fuelsInList.join(', ')})`,
+);
 check(
   (await fleet.getByText('Πρόσκληση: περιμένει εγγραφή και «Αποδοχή»').count()) === 1 &&
     (await fleet.getByText('✓ Συνδεδεμένος λογαριασμός').count()) === 0,
@@ -603,6 +661,105 @@ check(body.includes('Ανά οδηγό'), 'πίνακας ανά οδηγό γι
 await page.screenshot({ path: `${OUT}/05-admin-desktop.png`, fullPage: true });
 
 // ---------------------------------------------------------------------
+console.log('3δ. Αξιοποίηση χιλιομέτρων: μετρητής με χρώμα ανά επίπεδο, όρια ανάλογα με το καύσιμο');
+const util = page.getByTestId('utilization');
+/** Ό,τι δείχνει ο μετρητής: ποσοστό, επίπεδο, χρώμα του κύκλου, κλίμακα και σημείωση. */
+async function gauge(p = page) {
+  const card = p.getByTestId('utilization');
+  await settled(card.locator('.util-fill'));
+  return card.evaluate((el) => ({
+    level: el.dataset.level,
+    pct: el.querySelector('.util-gauge strong')?.textContent,
+    legend: el.querySelector('.util-legend')?.innerText.replace(/\s+/g, ' '),
+    verdict: el.querySelector('[data-testid="utilization-verdict"]')?.innerText.replace(/\s+/g, ' '),
+    stroke: getComputedStyle(el.querySelector('.util-fill')).stroke,
+    title: getComputedStyle(el.querySelector('.util-verdict-title')).color,
+    current: el.querySelector('.util-scale [aria-current="true"]')?.innerText.replace(/\s+/g, ' '),
+    scale: [...el.querySelectorAll('.util-scale li b')].map((b) => b.textContent),
+    text: el.innerText.replace(/\s+/g, ' '),
+  }));
+}
+const GREEN = 'rgb(52, 211, 153)';
+const CYAN = 'rgb(103, 232, 249)';
+const RED = 'rgb(248, 113, 113)';
+const amountsTop = await page.locator('section[aria-busy]').getByText('Μικτή Είσπραξη (Τζίρος)').boundingBox();
+const utilBox = await util.boundingBox();
+const vatBox = await page.getByText('Προς Απόδοση ΦΠΑ').first().boundingBox();
+check(amountsTop.y < utilBox.y && utilBox.y < vatBox.y, 'ο μετρητής είναι μέσα στα στατιστικά, μετά τα ποσά και πριν από τον ΦΠΑ');
+// Όλος ο στόλος: 140,5 μισθωμένα από 200,5 χλμ = 70,1%· όρια ανάλογα με τα χλμ (υβριδικό 120,5 + χωρίς καύσιμο 80).
+let g = await gauge();
+check(
+  g.pct === '70,1%' && nbsp0(g.legend).includes('Μισθωμένα 140,5 χλμ') && nbsp0(g.legend).includes('Ελεύθερα 60 χλμ') &&
+    nbsp0(g.legend).includes('Έσοδο ανά χλμ 1,30 €'),
+  `όλος ο στόλος: 70,1% (140,5 μισθωμένα, 60 ελεύθερα), έσοδο ανά χλμ 1,30 € (${nbsp0(g.legend)})`,
+);
+check(
+  JSON.stringify(g.scale) === JSON.stringify(['κάτω από 59%', '59% – 64%', '64% και πάνω']) &&
+    g.text.includes('Όρια ανάλογα με το καύσιμο και τα χιλιόμετρα κάθε αυτοκινήτου.') &&
+    g.text.includes('διάφορα καύσιμα'),
+  `στόλος με διάφορα καύσιμα: όρια ανάλογα με τα χλμ κάθε αυτοκινήτου (${g.scale.join(' / ')})`,
+);
+check(
+  g.level === 'great' && g.verdict.startsWith('Πολύ ικανοποιητική αξιοποίηση') && g.stroke === GREEN && g.title === GREEN &&
+    g.current?.startsWith('Πολύ ικανοποιητική'),
+  `70,1% ≥ 64%: «Πολύ ικανοποιητική», πράσινο (${g.stroke})`,
+);
+// Ο ιδιοκτήτης διαλέγει μία φορά το καύσιμο όσων αυτοκινήτων δεν το έχουν.
+const fuelPrompt = util.getByTestId('fuel-prompt');
+check(
+  nbsp0(await fuelPrompt.innerText()).includes('Τι καύσιμο καίει το ΙΚΒ-5678 (Μαρία Κωνσταντίνου);'),
+  'ερώτηση καυσίμου για το αυτοκίνητο χωρίς καύσιμο (ΙΚΒ-5678)',
+);
+await util.screenshot({ path: `${OUT}/05b-utilization-fleet.png` });
+await fuelPrompt.getByRole('button', { name: 'Ηλεκτρικό' }).click();
+await util.getByText('✓ ΙΚΒ-5678 (Μαρία Κωνσταντίνου): Ηλεκτρικό').waitFor();
+await fuelPrompt.waitFor({ state: 'detached' });
+await page.locator('#fleet').getByText('Καύσιμο: Ηλεκτρικό').waitFor();
+g = await gauge();
+check(
+  JSON.stringify(g.scale) === JSON.stringify(['κάτω από 55%', '55% – 60%', '60% και πάνω']) &&
+    g.text.includes('Όρια για υβριδικό, ηλεκτρικό.'),
+  '«Ηλεκτρικό» → η ερώτηση φεύγει, όρια υβριδικού/ηλεκτρικού 55% / 60%, και στην «Υποδομή Στόλου»',
+);
+// Ένα αυτοκίνητο: το δικό του καύσιμο. Γιώργος (υβριδικό): 80,5 από 120,5 = 66,8% ≥ 60%.
+await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Γιώργος Παπαδόπουλος · ΤΑΕ-1234' });
+await idle(page);
+await util.locator('.util-gauge strong').filter({ hasText: '66,8%' }).waitFor();
+g = await gauge();
+check(g.level === 'great' && g.text.includes('Υβριδικό') && g.stroke === GREEN, 'Γιώργος (υβριδικό): 66,8% → πολύ ικανοποιητική');
+// Αλλαγή σε πετρέλαιο από την «Υποδομή Στόλου»: τα όρια ανεβαίνουν (65% / 70%) → «Ικανοποιητική», γαλάζιο.
+const giorgosRow = page.locator('#fleet ul > li').filter({ hasText: 'Γιώργος Παπαδόπουλος' });
+await giorgosRow.getByRole('button', { name: 'Επεξεργασία' }).click();
+const giorgosEdit = page.locator('#fleet ul > li').filter({ has: page.getByLabel('Όνομα *') });
+check((await giorgosEdit.getByLabel('Καύσιμο').inputValue()) === 'hybrid', 'επεξεργασία: το καύσιμο (Υβριδικό) είναι ήδη επιλεγμένο');
+await giorgosEdit.getByLabel('Καύσιμο').selectOption({ label: 'Πετρέλαιο' });
+await giorgosEdit.getByRole('button', { name: 'Αποθήκευση' }).click();
+await page.locator('#fleet').getByText('Τα στοιχεία αποθηκεύτηκαν.').waitFor();
+await util.locator('.util-verdict-title').filter({ hasText: /^Ικανοποιητική αξιοποίηση$/ }).waitFor();
+g = await gauge();
+check(
+  g.level === 'ok' && g.stroke === CYAN && g.title === CYAN && g.current?.startsWith('Ικανοποιητική') &&
+    JSON.stringify(g.scale) === JSON.stringify(['κάτω από 65%', '65% – 70%', '70% και πάνω']) &&
+    g.verdict.includes('από 70% και πάνω γίνεται πολύ ικανοποιητική') &&
+    g.text.includes('Όρια για βενζίνη, πετρέλαιο, αέριο.'),
+  `πετρέλαιο: 66,8% ανάμεσα σε 65% και 70% → «Ικανοποιητική», γαλάζιο (${g.stroke})`,
+);
+await util.screenshot({ path: `${OUT}/05c-utilization-ok.png` });
+// Χωρίς χιλιόμετρα (το αυτοκίνητο του ιδιοκτήτη): «—» και τι να γράψει.
+await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Νίκος (Ιδιοκτήτης) · ΤΑΧ-9999' });
+await idle(page);
+await util.locator('.util-gauge strong').filter({ hasText: '—' }).waitFor();
+g = await gauge();
+check(
+  g.level === 'none' && g.verdict.includes('Χωρίς χιλιόμετρα ακόμη') && g.verdict.includes('μισθωμένα και τα ελεύθερα χιλιόμετρα'),
+  'χωρίς βάρδιες: «—», «Χωρίς χιλιόμετρα ακόμη» και τι να γράψει',
+);
+await page.locator('#filters').getByLabel('Οδηγός').selectOption('all');
+await idle(page);
+const utilYellow = await yellowNotPressable(page);
+check(utilYellow.length === 0, `μετρητής: χωρίς κίτρινο (κίτρινο μόνο ό,τι πατιέται)${utilYellow.length ? ` ✘ ${utilYellow.join(' | ')}` : ''}`);
+
+// ---------------------------------------------------------------------
 console.log('3β. Αναλυτικά: Πίνακας (προεπιλογή) · Ανά μήνα · Γράφημα');
 const chart = page.getByTestId('analysis-card');
 await chart.scrollIntoViewIfNeeded();
@@ -668,21 +825,51 @@ check(true, 'θυμάται «Γράφημα» και «Μέση αξία» με
 await page.getByTestId('analysis-card').getByRole('button', { name: 'Τζίρος' }).click();
 
 // ---------------------------------------------------------------------
-console.log('4. WhatsApp & CSV');
-await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Γιώργος Παπαδόπουλος · ΤΑΕ-1234' });
-const wa = page.getByRole('link', { name: /Αποστολή WhatsApp/ });
-await wa.waitFor();
-const href = await wa.getAttribute('href');
-const waText = decodeURIComponent(href.split('?text=')[1] ?? '');
-check(href.startsWith('https://wa.me/306912345678?text='), `σύνδεσμος wa.me σωστός (${href.slice(0, 40)}…)`);
+console.log('4. WhatsApp (μόνο ο ΦΠΑ, με εικόνα) & CSV');
+const wa = page.getByRole('button', { name: 'Αποστολή WhatsApp' });
 check(
-  ['Οδηγός: Γιώργος Παπαδόπουλος', 'Όχημα: ΤΑΕ-1234', 'Μήνας: Σεπτέμβριος 2026', '186,23', '50,00', '11,16', 'Χρεωστικό'].every((t) =>
-    waText.includes(t),
-  ),
-  'κείμενο WhatsApp με όνομα, πινακίδα, μήνα, είσπραξη, έξοδα, ΦΠΑ, ένδειξη',
+  (await wa.isDisabled()) && (await page.getByTestId('vat-share-hint').innerText()) === 'Επιλέξτε οδηγό στο φίλτρο για αποστολή.',
+  'όλος ο στόλος (3 αυτοκίνητα): ο ΦΠΑ στέλνεται ανά οδηγό — «Επιλέξτε οδηγό στο φίλτρο»',
+);
+await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Γιώργος Παπαδόπουλος · ΤΑΕ-1234' });
+await page.getByTestId('vat-share-hint').filter({ hasText: 'Εικόνα με τον ΦΠΑ · ΤΑΕ-1234' }).waitFor();
+// Στον υπολογιστή δεν στέλνονται εικόνες: ανοίγει το WhatsApp με το μήνυμα και η εικόνα κατεβαίνει χωριστά.
+await page.evaluate(() => {
+  window.__opened = [];
+  window.open = (url) => {
+    window.__opened.push(url);
+    return null;
+  };
+});
+await wa.click();
+const href = await page.evaluate(() => window.__opened.at(-1) ?? '');
+const waText = nbsp0(decodeURIComponent(href.split('?text=')[1] ?? ''));
+check(href.startsWith('https://wa.me/306912345678?text='), `υπολογιστής: WhatsApp προς τον οδηγό (${href.slice(0, 40)}…)`);
+check(
+  waText ===
+    [
+      '*Προς απόδοση ΦΠΑ · Σεπτέμβριος 2026*',
+      'ΤΑΕ-1234 · Γιώργος Παπαδόπουλος',
+      '*11,16 € · Χρεωστικό — προς πληρωμή*',
+      '_Ενδεικτικός υπολογισμός_',
+    ].join('\n'),
+  'μήνυμα WhatsApp: μόνο ο ΦΠΑ — περίοδος, αυτοκίνητο, 11,16 € Χρεωστικό, «Ενδεικτικός υπολογισμός»',
 );
 console.log(waText.split('\n').map((l) => `      ${l}`).join('\n'));
-check(nbsp0(waText).includes('Έξοδα: 50,00 € (καύσιμα 40,00 € + οχήματος 10,00 €)'), 'WhatsApp: έξοδα με ανάλυση καύσιμα + οχήματος');
+const [vatImage] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Λήψη εικόνας' }).click()]);
+await vatImage.saveAs(`${OUT}/07a-vat-image.png`);
+const vatPng = fs.readFileSync(`${OUT}/07a-vat-image.png`);
+check(
+  vatImage.suggestedFilename() === 'fpa-2026-09.png' &&
+    vatPng.subarray(1, 4).toString() === 'PNG' &&
+    vatPng.readUInt32BE(16) === 1080 &&
+    vatPng.readUInt32BE(20) === 1080,
+  'υπολογιστής: «Λήψη εικόνας» → fpa-2026-09.png, 1080×1080',
+);
+check(
+  nbsp0(await page.locator('section[aria-busy]').innerText()).includes('Ενδεικτικός υπολογισμός· δεν αντικαθιστά τον λογιστή σας.'),
+  'κάρτα ΦΠΑ: «Ενδεικτικός υπολογισμός· δεν αντικαθιστά τον λογιστή σας.»',
+);
 
 await page.locator('#filters').getByLabel('Οδηγός').selectOption('all');
 
@@ -789,6 +976,19 @@ for (const origin of ownerState.origins) {
   origin.localStorage = origin.localStorage.filter((item) => !item.name.startsWith('taxi-tracker:panels:'));
 }
 const ownerMobile = await newContext({ ...ctxOptions, storageState: ownerState, viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+// Σαν κινητό με μενού κοινοποίησης (Android/iPhone): κρατάμε ό,τι θα έπαιρνε το WhatsApp.
+await ownerMobile.addInitScript(() => {
+  navigator.canShare = (data) => Array.isArray(data?.files) && data.files.length > 0;
+  navigator.share = async (data) => {
+    const file = data.files[0];
+    const url = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+    window.__shared = { text: data.text, files: data.files.length, name: file.name, type: file.type, url };
+  };
+});
 const mpage = await ownerMobile.newPage();
 watch(mpage, 'owner-mobile');
 await mpage.goto(BASE);
@@ -829,6 +1029,35 @@ check(await mpage.evaluate(() => document.documentElement.dataset.textSize === '
 check((await mpage.getByRole('button', { name: 'Μεγαλύτερα γράμματα' }).getAttribute('aria-pressed')) === 'true', 'Α+: το κουμπί δείχνει ότι είναι ενεργό');
 await mpage.getByRole('button', { name: 'Μεγαλύτερα γράμματα' }).click();
 check(await mpage.evaluate(() => !document.documentElement.dataset.textSize), 'Α+: ξανά κανονικά γράμματα');
+const mUtil = mpage.getByTestId('utilization');
+const mUtilBox = await mUtil.boundingBox();
+check(mUtilBox.x >= 0 && mUtilBox.x + mUtilBox.width <= 390, 'κινητό: ο μετρητής αξιοποίησης χωράει στην οθόνη');
+await settled(mUtil.locator('.util-fill'));
+await shotBelowHeader(mUtil, `${OUT}/06d-utilization-mobile.png`);
+// «Αποστολή WhatsApp» στο κινητό: μενού κοινοποίησης με την εικόνα του ΦΠΑ και το σύντομο μήνυμα.
+await mpage.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Γιώργος Παπαδόπουλος · ΤΑΕ-1234' });
+await mpage.getByTestId('vat-share-hint').filter({ hasText: 'Εικόνα με τον ΦΠΑ · ΤΑΕ-1234' }).waitFor();
+await mpage.getByRole('button', { name: 'Αποστολή WhatsApp' }).click();
+await mpage.waitForFunction(() => window.__shared);
+const mShared = await mpage.evaluate(() => window.__shared);
+fs.writeFileSync(`${OUT}/07b-vat-image-phone.png`, Buffer.from(mShared.url.split(',')[1], 'base64'));
+// Μετά τη διόρθωση του εξόδου (4γ) ο ΦΠΑ του Γιώργου είναι 20,84 − 7,74 − 3,87 = 9,23 € χρεωστικό.
+const mVat = nbsp0(await mpage.getByTestId('vat-amount').innerText());
+check(
+  mShared.files === 1 &&
+    mShared.name === 'fpa-2026-09.png' &&
+    mShared.type === 'image/png' &&
+    mVat === '9,23 €' &&
+    nbsp0(mShared.text) ===
+      [
+        '*Προς απόδοση ΦΠΑ · Σεπτέμβριος 2026*',
+        'ΤΑΕ-1234 · Γιώργος Παπαδόπουλος',
+        `*${mVat} · Χρεωστικό — προς πληρωμή*`,
+        '_Ενδεικτικός υπολογισμός_',
+      ].join('\n') &&
+    (await mpage.getByRole('button', { name: 'Λήψη εικόνας' }).count()) === 0,
+  `κινητό: «Αποστολή WhatsApp» → κοινοποίηση με την εικόνα ΦΠΑ (fpa-2026-09.png) και σύντομο μήνυμα μόνο με τον ΦΠΑ (${mVat})`,
+);
 await ownerMobile.close();
 
 // ---------------------------------------------------------------------
@@ -862,10 +1091,13 @@ check(
     (await dpage.locator('#shift-form').getByRole('button', { name: 'Αλλαγή μήνα' }).count()) === 1,
   'οδηγός: «Για: Σεπτέμβριος 2026 / Γιώργος Παπαδόπουλος · ΤΑΕ-1234 — Αλλαγή» (μόνο ο μήνας αλλάζει)',
 );
-check(
-  !(await panelOpen(dpage, 'shifts')) && nbsp0(await dpage.locator('#shifts').innerText()).includes('1 βάρδια · μικτή είσπραξη'),
-  'οδηγός: κλειστό ιστορικό βαρδιών με σύνοψη',
-);
+// Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι βάρδιες (λίγο μετά τη φόρμα).
+const dShiftsSummary = await dpage
+  .locator('#shifts')
+  .getByText(/^1 βάρδια · μικτή είσπραξη/)
+  .waitFor({ timeout: 10000 })
+  .then(() => true, () => false);
+check(!(await panelOpen(dpage, 'shifts')) && dShiftsSummary, 'οδηγός: κλειστό ιστορικό βαρδιών με σύνοψη');
 const dwidth = await dpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(dwidth[0] === 390 && dwidth[1] === 390, `οδηγός: πλάτος 390px στο κινητό (${dwidth})`);
 const dtext = await dpage.locator('body').innerText();
@@ -879,6 +1111,15 @@ check(
   'ο οδηγός δεν έχει «Αντίγραφο ασφαλείας»',
 );
 check(dtext.includes('160,39') && !dtext.includes('260,39'), 'στατιστικά μόνο από τις δικές του βάρδιες');
+const dg = await gauge(dpage);
+check(
+  dg.pct === '66,8%' &&
+    dg.level === 'ok' &&
+    dg.text.includes('Πετρέλαιο') &&
+    dg.text.includes('Όρια για βενζίνη, πετρέλαιο, αέριο.') &&
+    (await dpage.getByTestId('fuel-prompt').count()) === 0,
+  'οδηγός: ο μετρητής του αυτοκινήτου του (πετρέλαιο: 66,8% → ικανοποιητική), χωρίς ερώτηση καυσίμου',
+);
 const driverYellow = await yellowNotPressable(dpage);
 check(driverYellow.length === 0, `οδηγός: κίτρινο μόνο σε ό,τι πατιέται${driverYellow.length ? ` ✘ ${driverYellow.join(' | ')}` : ''}`);
 
@@ -1011,6 +1252,11 @@ await fpage.goto(`${BASE}/register`);
 await fpage.getByRole('button', { name: 'Δημιουργία λογαριασμού' }).waitFor();
 await hydrated(fpage);
 check(fpage.url() === `${BASE}/register`, 'σύνδεσμος του WhatsApp: ο φίλος ανοίγει κατευθείαν την εγγραφή');
+check(
+  nbsp0(await fpage.getByTestId('disclaimer').innerText()).includes('Το Taxi Fleet Tracker είναι βοηθητικό εργαλείο') &&
+    nbsp0(await fpage.getByTestId('disclaimer').innerText()).includes('δεν αντικαθιστούν τη δουλειά του λογιστή σας'),
+  'εγγραφή: «βοηθητικό εργαλείο … δεν αντικαθιστά τη δουλειά του λογιστή»',
+);
 await register(fpage, { name: 'Κώστας Φίλος', email: 'kostas@example.com', password: 'KostasPass123' });
 await fpage.goto(await confirmationLink('kostas@example.com'));
 // Πρώτη φορά στην κεντρική σελίδα: μία φορά το «Καλώς ήρθατε» (με «Παράλειψη»), μετά η επιλογή.
@@ -1021,6 +1267,7 @@ await fpage.getByRole('button', { name: /Έχω δικό μου ταξί/ }).cli
 await settled(fpage.getByRole('button', { name: /Έχω δικό μου ταξί/ }));
 const friendForm = fpage.locator('#create-fleet');
 await friendForm.getByLabel('Πινακίδα ταξί').fill('κωσ-1111');
+await friendForm.getByRole('group', { name: 'Καύσιμο' }).getByRole('button', { name: 'Βενζίνη' }).click();
 const friendWidth = await fpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(friendWidth[0] === 390 && friendWidth[1] === 390, `«Έχω δικό μου ταξί»: πλάτος 390px στο κινητό (${friendWidth})`);
 await fpage.screenshot({ path: `${OUT}/09b-friend-create-mobile.png`, fullPage: true });
@@ -1043,10 +1290,25 @@ check(
   nbsp0(await fform.innerText()).replace(/\s+/g, ' ').includes('Κώστας Φίλος · ΚΩΣ-1111'),
   'φίλος: η βάρδια πάει στο δικό του ταξί χωρίς να διαλέξει',
 );
-await fillShift(fform, { 'Αριθμός Ζ': '7001', 'Αποφορολογημένα Έσοδα': '77' });
+await fillShift(fform, { 'Αριθμός Ζ': '7001', 'Μισθωμένα Χλμ': '30', 'Ελεύθερα Χλμ': '30', 'Αποφορολογημένα Έσοδα': '77' });
 await fform.getByRole('button', { name: /^Καταχώρηση/ }).click();
 await fform.getByText('✓ Καταχωρήθηκε: Ζ 7001').waitFor();
 check(true, 'φίλος: καταχώρησε βάρδια στο δικό του ταξί');
+// Βενζίνη, 30 μισθωμένα από 60 χλμ = 50% < 65%: κόκκινο και προτροπή για περισσότερα μισθωμένα.
+await fpage.getByTestId('utilization').locator('.util-gauge strong').filter({ hasText: '50%' }).waitFor();
+const fg = await gauge(fpage);
+check(
+  fg.level === 'low' &&
+    fg.stroke === RED &&
+    fg.title === RED &&
+    fg.verdict.includes('Χαμηλή αξιοποίηση') &&
+    fg.verdict.includes('Στόχος 65% και πάνω: προσπαθήστε για περισσότερα μισθωμένα χιλιόμετρα') &&
+    fg.current?.startsWith('Χαμηλή') &&
+    fg.text.includes('Βενζίνη'),
+  `φίλος (βενζίνη): 50% → «Χαμηλή αξιοποίηση», κόκκινο και «Στόχος 65% και πάνω» (${fg.stroke})`,
+);
+await settled(fpage.getByTestId('utilization').locator('.util-fill'));
+await shotBelowHeader(fpage.getByTestId('utilization'), `${OUT}/09d-utilization-low.png`);
 await openAll(fpage);
 const ftext = nbsp0(await fpage.locator('body').innerText());
 check(
@@ -1375,13 +1637,19 @@ check(
 await plist.screenshot({ path: `${OUT}/11b-platform-list.png` });
 
 const stats = page.locator('section[aria-busy]');
-const streetCard = page.locator('#street-apps');
-const streetSummary = nbsp0(await streetCard.innerText()).replace(/\s+/g, ' ');
+// «Δρόμος & Εφαρμογές» είναι μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές» (μία κάρτα αντί για δύο).
+const detailsCard = page.locator('#stats-details');
+if (await panelOpen(page, 'stats-details')) await panelButton(page, 'stats-details').click();
+const detailsClosed = nbsp0(await detailsCard.innerText()).replace(/\s+/g, ' ');
 check(
-  !(await panelOpen(page, 'street-apps')) && /δρόμος \d+ από \d+ διαδρομές · κρατήσεις 38,20 €/.test(streetSummary),
-  `κλειστό «Δρόμος & Εφαρμογές»: «${streetSummary}»`,
+  !(await panelOpen(page, 'stats-details')) &&
+    /διαδρομές · δρόμος \d+ · κρατήσεις 38,20 €/.test(detailsClosed) &&
+    (await page.locator('section#street-apps').count()) === 0 &&
+    (await detailsCard.locator('#street-apps').count()) === 1,
+  `«Δρόμος & Εφαρμογές» μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές» — κλειστό: «${detailsClosed}»`,
 );
-await openPanel(page, 'street-apps');
+await openPanel(page, 'stats-details');
+const streetCard = detailsCard.locator('#street-apps');
 const streetRows = await streetCard.locator('tbody tr').allInnerTexts();
 const firstNumber = (text) => Number((nbsp0(text).match(/-?\d+/) ?? ['NaN'])[0]);
 const street = streetRows.find((r) => r.startsWith('Δρόμος')) ?? '';
@@ -1407,14 +1675,21 @@ check(
   'ΦΠΑ: οι κρατήσεις χωρίς ΦΠΑ (Uber, Bolt) δεν συμψηφίζονται',
 );
 check(statsText.includes(`δρόμος ${zTrips - appTrips}`), 'κάρτα «Διαδρομές»: πόσες από τον δρόμο');
-await streetCard.screenshot({ path: `${OUT}/11c-street-apps.png` });
+await shotBelowHeader(detailsCard, `${OUT}/11c-street-apps.png`);
 
-const pwa = page.getByRole('link', { name: /Αποστολή WhatsApp/ });
-const pwaText = nbsp0(decodeURIComponent((await pwa.getAttribute('href')).split('?text=')[1] ?? ''));
+await page.evaluate(() => {
+  window.__opened = [];
+  window.open = (url) => {
+    window.__opened.push(url);
+    return null;
+  };
+});
+await page.getByRole('button', { name: 'Αποστολή WhatsApp' }).click();
+const pwaText = nbsp0(decodeURIComponent((await page.evaluate(() => window.__opened.at(-1) ?? '')).split('?text=')[1] ?? ''));
+const vatAmount = nbsp0(await page.getByTestId('vat-amount').innerText());
 check(
-  pwaText.includes('κρατήσεις εφαρμογών 38,20 €') &&
-    pwaText.includes(`Διαδρομές: ${zTrips} (δρόμος ${zTrips - appTrips}, εφαρμογές ${appTrips})`),
-  'WhatsApp: κρατήσεις και διαδρομές δρόμου / εφαρμογών',
+  pwaText.split('\n').length === 4 && pwaText.includes(`*${vatAmount} · `) && !/κρατήσεις|Διαδρομές|Έξοδα/.test(pwaText),
+  `WhatsApp με εφαρμογές: πάλι μόνο ο ΦΠΑ (${vatAmount}, όσο δείχνει η κάρτα), χωρίς κρατήσεις και διαδρομές`,
 );
 
 const [pdownload] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: /Εξαγωγή Excel/ }).click()]);
@@ -1584,6 +1859,12 @@ check(
     sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Στόλος' && row[1] === 'Νίκος (Ιδιοκτήτης)'),
   'καρτέλα «Πληροφορίες» με τον στόλο και τη μορφή του αρχείου',
 );
+const driverSheet = sheetOf('Οδηγοί');
+const mariaRow = driverSheet.rows.find((row) => row.includes('Μαρία Κωνσταντίνου')) ?? [];
+check(
+  mariaRow[headerOf(driverSheet, 'Καύσιμο')] === 'Ηλεκτρικό' && mariaRow[headerOf(driverSheet, 'fuel')] === 'electric',
+  'καρτέλα «Οδηγοί»: το καύσιμο («Ηλεκτρικό») και η στήλη fuel για επαναφορά',
+);
 check(
   !/kostas@example\.com|Κώστας|ΚΩΣ-1111/.test(JSON.stringify(workbook)) &&
     sheetOf('Οδηγοί').rows[0].includes('fleet_id'),
@@ -1604,11 +1885,37 @@ check(
     .isVisible(),
   'μήνυμα: πού θα βρει το αρχείο και με τι ανοίγει',
 );
+// Από την υπενθύμιση: κουμπιά για την εφαρμογή, αν το αρχείο δεν ανοίγει στο κινητό.
+const afterReminder = page.getByTestId('sheets-app').first();
+check(
+  nbsp0(await afterReminder.innerText()).includes('Δεν ανοίγει; η εφαρμογή «Υπολογιστικά φύλλα Google»') &&
+    (await afterReminder.getByRole('link', { name: /Google Play/ }).isVisible()) &&
+    (await afterReminder.getByRole('link', { name: /App Store/ }).isVisible()),
+  'μετά το κατέβασμα από την υπενθύμιση: «Δεν ανοίγει;» με κουμπιά Google Play και App Store',
+);
 await page.screenshot({ path: `${OUT}/13b-backup-done.png` });
+// Στο πάνελ: πρώτα η εφαρμογή (Google Play / App Store), μετά το κατέβασμα.
+const sheetsBox = backupPanel.getByTestId('sheets-app');
+const playLink = sheetsBox.getByRole('link', { name: /Google Play/ });
+const appStoreLink = sheetsBox.getByRole('link', { name: /App Store/ });
+check(
+  nbsp0(await sheetsBox.innerText()).includes('Πρώτα: η εφαρμογή «Υπολογιστικά φύλλα Google»') &&
+    (await playLink.getAttribute('href')).startsWith(
+      'https://play.google.com/store/apps/details?id=com.google.android.apps.docs.editors.sheets',
+    ) &&
+    /^https:\/\/apps\.apple\.com\/.+\/id842849113$/.test(await appStoreLink.getAttribute('href')) &&
+    (await playLink.getAttribute('target')) === '_blank' &&
+    (await appStoreLink.getAttribute('target')) === '_blank',
+  'πάνελ: «Πρώτα: η εφαρμογή «Υπολογιστικά φύλλα Google»» με Google Play και App Store (νέα καρτέλα)',
+);
+const sheetsBoxY = (await sheetsBox.boundingBox()).y;
+const downloadY = (await backupPanel.getByRole('button', { name: 'Κατέβασμα αντιγράφου' }).boundingBox()).y;
+check(sheetsBoxY < downloadY, 'πάνελ: τα κουμπιά για την εφαρμογή είναι πριν από το «Κατέβασμα αντιγράφου»');
+await shotBelowHeader(sheetsBox, `${OUT}/13c-backup-sheets.png`);
 const backupText = nbsp0(await backupPanel.innerText());
 check(
   backupText.includes('Πού πάει: στις «Λήψεις»') &&
-    backupText.includes('Αν στο κινητό έχει λευκό εικονίδιο και δεν ανοίγει, λείπει η εφαρμογή') &&
+    backupText.includes('Αν στο κινητό έχει λευκό εικονίδιο και δεν ανοίγει, λείπει η εφαρμογή (κουμπιά πιο κάτω)') &&
     backupText.includes('μην το στέλνετε σε άλλους'),
   'πάνελ: πού πάει το αρχείο, τι σημαίνει το λευκό εικονίδιο, πού να το κρατάει',
 );

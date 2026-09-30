@@ -75,6 +75,7 @@ describe('αντίγραφο ασφαλείας', () => {
       active: true,
       user_id: 'u2',
       fleet_id: 'f1',
+      fuel: 'diesel',
       created_at: '2026-09-01T08:00:00Z',
     };
     const file = buildBackup(
@@ -142,6 +143,8 @@ describe('αντίγραφο ασφαλείας', () => {
     expect(drivers.rows[0][column(drivers, 'Ενεργός')]).toBe('Ναι');
     expect(drivers.rows[0][column(drivers, 'Λογαριασμός')]).toBe('Συνδεδεμένος');
     expect(drivers.rows[0][column(drivers, 'fleet_id')]).toBe('f1');
+    expect(drivers.rows[0][column(drivers, 'Καύσιμο')]).toBe('Πετρέλαιο');
+    expect(drivers.rows[0][column(drivers, 'fuel')]).toBe('diesel');
     // Πρώτα ο ιδιοκτήτης.
     expect(accounts.rows.map((row) => row[column(accounts, 'Ρόλος')])).toEqual(['Ιδιοκτήτης', 'Οδηγός']);
     // Ο στόλος: όνομα και οι στήλες για επαναφορά.

@@ -5,6 +5,7 @@ import { Splash } from '@/components/intro/Splash';
 import { SPLASH_KEY, SPLASH_TIP_KEY, TEXT_SIZE_KEY, WELCOME_KEY } from '@/lib/storage';
 import './globals.css';
 import './intro.css';
+import './utilization.css';
 
 export const metadata: Metadata = {
   title: 'Taxi Fleet Tracker',

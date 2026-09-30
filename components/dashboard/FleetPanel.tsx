@@ -2,16 +2,33 @@
 
 import { useRef, useState, type FormEvent } from 'react';
 import { Panel, usePanelOpen } from '@/components/Panel';
-import { Badge, Button, Field, Input, Notice } from '@/components/ui';
+import { Badge, Button, Field, Input, Notice, Select } from '@/components/ui';
 import { createDriver, deleteDriver, updateDriver, type DriverInput } from '@/lib/data';
 import { dataErrorMessage } from '@/lib/errors';
 import type { BrowserSupabase } from '@/lib/supabase/client';
 import type { DriverRow } from '@/lib/types';
+import { FUELS, fuelLabel, isFuel } from '@/lib/utilization';
 import { toWhatsAppNumber, whatsappLink } from '@/lib/whatsapp';
 
 type Message = { tone: 'success' | 'error'; text: string };
 
-const EMPTY: DriverInput = { name: '', plate: '', phone: '', email: '' };
+const EMPTY: DriverInput = { name: '', plate: '', phone: '', email: '', fuel: '' };
+
+/** Καύσιμο του αυτοκινήτου (για τα όρια του μετρητή αξιοποίησης). */
+function FuelSelect({ value, onChange }: { value: DriverInput['fuel']; onChange: (fuel: DriverInput['fuel']) => void }) {
+  return (
+    <Field label="Καύσιμο">
+      <Select value={value} onChange={(e) => onChange(isFuel(e.target.value) ? e.target.value : '')}>
+        <option value="">—</option>
+        {FUELS.map((fuel) => (
+          <option key={fuel.id} value={fuel.id}>
+            {fuel.label}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
 
 /** Μετά από νέο email οδηγού: τι γίνεται στη συνέχεια. */
 const INVITE_NOTE = ' Μόλις κάνει εγγραφή με αυτό το email, θα δει την πρόσκληση και θα πατήσει «Αποδοχή».';
@@ -108,7 +125,13 @@ export function FleetPanel({
 
   function startEdit(driver: DriverRow) {
     setEditingId(driver.id);
-    setEditForm({ name: driver.name, plate: driver.plate ?? '', phone: driver.phone ?? '', email: driver.email ?? '' });
+    setEditForm({
+      name: driver.name,
+      plate: driver.plate ?? '',
+      phone: driver.phone ?? '',
+      email: driver.email ?? '',
+      fuel: isFuel(driver.fuel) ? driver.fuel : '',
+    });
   }
 
   function handleDelete(driver: DriverRow) {
@@ -151,7 +174,7 @@ export function FleetPanel({
             Οι οδηγοί που προσθέτετε εμφανίζονται αυτόματα στα μενού. Αν δηλώσετε email, ο οδηγός κάνει εγγραφή με
             αυτό, πατά «Αποδοχή» στην πρόσκληση και βλέπει/καταχωρεί μόνο τις δικές του βάρδιες.
           </p>
-          <form onSubmit={handleAdd} className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2 lg:grid-cols-5">
+          <form onSubmit={handleAdd} className="grid gap-3 rounded-xl border border-line p-3 sm:grid-cols-2 lg:grid-cols-3">
             <Field label="Όνομα Οδηγού *">
               <Input
                 value={form.name}
@@ -168,6 +191,7 @@ export function FleetPanel({
                 autoComplete="off"
               />
             </Field>
+            <FuelSelect value={form.fuel} onChange={(fuel) => setForm({ ...form, fuel })} />
             <Field label="Κινητό" error={phoneWarning(form.phone)}>
               <Input
                 type="tel"
@@ -225,13 +249,14 @@ export function FleetPanel({
         )}
         {drivers.map((driver) =>
           editingId === driver.id ? (
-            <li key={driver.id} className="grid gap-3 py-3 sm:grid-cols-2 lg:grid-cols-5">
+            <li key={driver.id} className="grid gap-3 py-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Όνομα *">
                 <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
               </Field>
               <Field label="Πινακίδα">
                 <Input value={editForm.plate} onChange={(e) => setEditForm({ ...editForm, plate: e.target.value })} />
               </Field>
+              <FuelSelect value={editForm.fuel} onChange={(fuel) => setEditForm({ ...editForm, fuel })} />
               <Field label="Κινητό" error={phoneWarning(editForm.phone)}>
                 <Input
                   type="tel"
@@ -263,6 +288,9 @@ export function FleetPanel({
                 </p>
                 <p className="text-sm text-muted">
                   {driver.phone || 'χωρίς κινητό'} · {driver.email || 'χωρίς email σύνδεσης'}
+                </p>
+                <p className="text-sm text-muted">
+                  Καύσιμο: {driver.fuel ? fuelLabel(driver.fuel) : 'δεν έχει δηλωθεί'}
                 </p>
                 <div className="mt-1 flex flex-wrap gap-1">
                   {!driver.active && <Badge tone="bad">Ανενεργός</Badge>}

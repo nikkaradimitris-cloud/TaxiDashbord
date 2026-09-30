@@ -55,6 +55,7 @@ export function LegacyImport({
           plate: driver.plate ?? '',
           phone: driver.phone ?? '',
           email: '',
+          fuel: '',
         });
         idByName.set(key, created.id);
         createdDrivers++;

@@ -8,6 +8,7 @@ import { categoryLabel } from './expenses';
 import { formatDateTime, formatInteger } from './format';
 import { platformLabel, statementRevenueCents } from './platforms';
 import type { DriverRow, ExpenseRow, FleetRow, PlatformRateRow, ProfileRow, ShiftRow, StatementRow } from './types';
+import { fuelLabel } from './utilization';
 import type { Cell, Sheet, SheetColumn } from './xlsx';
 
 /** Οι πίνακες του αντιγράφου, με τη σειρά που θα ξαναμπαίνουν σε μια βάση. */
@@ -278,6 +279,7 @@ export function backupSheets(file: BackupFile): Sheet[] {
       [
         { header: 'Όνομα', width: 24, value: (r) => r.name },
         { header: 'Πινακίδα', width: 11, value: (r) => r.plate },
+        { header: 'Καύσιμο', width: 11, value: (r) => (r.fuel ? fuelLabel(r.fuel) : '') },
         { header: 'Κινητό', width: 13, value: (r) => r.phone },
         { header: 'Email', width: 28, value: (r) => r.email },
         { header: 'Ενεργός', width: 9, value: (r) => yesNo(r.active) },
@@ -286,6 +288,7 @@ export function backupSheets(file: BackupFile): Sheet[] {
         raw('id'),
         raw('fleet_id'),
         raw('user_id'),
+        raw('fuel'),
         raw('created_at'),
       ],
       [...drivers].sort((a, b) => byText(a.name, b.name)),

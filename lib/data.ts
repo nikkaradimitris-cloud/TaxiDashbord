@@ -8,6 +8,7 @@ import type { MonthFilter } from './period';
 import type { BrowserSupabase } from './supabase/client';
 import type { TablesUpdate } from './database.types';
 import type { MonthSummaryRow } from './table';
+import type { Fuel } from './utilization';
 import type {
   DriverRow,
   ExpenseInsert,
@@ -245,6 +246,8 @@ export interface DriverInput {
   plate: string;
   phone: string;
   email: string;
+  /** Καύσιμο του αυτοκινήτου (όρια του μετρητή αξιοποίησης)· κενό = δεν δηλώθηκε. */
+  fuel: Fuel | '';
 }
 
 function driverPayload(input: DriverInput) {
@@ -253,6 +256,7 @@ function driverPayload(input: DriverInput) {
     plate: input.plate.trim() || null,
     phone: input.phone.trim() || null,
     email: input.email.trim().toLowerCase() || null,
+    fuel: input.fuel || null,
   };
 }
 
@@ -272,6 +276,7 @@ export async function updateDriver(
   if (changes.plate !== undefined) payload.plate = changes.plate.trim() || null;
   if (changes.phone !== undefined) payload.phone = changes.phone.trim() || null;
   if (changes.email !== undefined) payload.email = changes.email.trim().toLowerCase() || null;
+  if (changes.fuel !== undefined) payload.fuel = changes.fuel || null;
   if (changes.active !== undefined) payload.active = changes.active;
 
   const { data, error } = await supabase.from('drivers').update(payload).eq('id', id).select('*').single();
@@ -286,12 +291,16 @@ export async function deleteDriver(supabase: BrowserSupabase, id: string): Promi
 
 /**
  * «Έχω δικό μου ταξί»: νέος στόλος με τον χρήστη ιδιοκτήτη και το πρώτο αυτοκίνητο
- * (το όνομά του και η πινακίδα), συνδεδεμένο με τον λογαριασμό του.
+ * (το όνομά του, η πινακίδα και το καύσιμο), συνδεδεμένο με τον λογαριασμό του.
  */
-export async function createFleet(supabase: BrowserSupabase, input: { name: string; plate: string }): Promise<void> {
+export async function createFleet(
+  supabase: BrowserSupabase,
+  input: { name: string; plate: string; fuel: Fuel },
+): Promise<void> {
   const { error } = await supabase.rpc('create_fleet', {
     p_name: input.name.trim(),
     p_plate: input.plate.trim() || undefined,
+    p_fuel: input.fuel,
   });
   if (error) throw error;
 }

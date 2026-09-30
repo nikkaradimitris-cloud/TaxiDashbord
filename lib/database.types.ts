@@ -29,6 +29,7 @@ export type Database = {
           created_at: string;
           email: string | null;
           fleet_id: string;
+          fuel: string | null;
           id: string;
           name: string;
           phone: string | null;
@@ -40,6 +41,7 @@ export type Database = {
           created_at?: string;
           email?: string | null;
           fleet_id?: string;
+          fuel?: string | null;
           id?: string;
           name: string;
           phone?: string | null;
@@ -51,6 +53,7 @@ export type Database = {
           created_at?: string;
           email?: string | null;
           fleet_id?: string;
+          fuel?: string | null;
           id?: string;
           name?: string;
           phone?: string | null;
@@ -400,7 +403,7 @@ export type Database = {
     };
     Functions: {
       accept_invite: { Args: { p_driver_id: string }; Returns: boolean };
-      create_fleet: { Args: { p_name: string; p_plate?: string }; Returns: string };
+      create_fleet: { Args: { p_fuel?: string; p_name: string; p_plate?: string }; Returns: string };
       my_invites: {
         Args: Record<PropertyKey, never>;
         Returns: {
