@@ -9,6 +9,7 @@ import { dataErrorMessage, isNetworkError } from '@/lib/errors';
 import { formatEuro, formatSignedEuro } from '@/lib/format';
 import { periodLabel } from '@/lib/period';
 import {
+  autoCommissionText,
   EMPTY_STATEMENT_FORM,
   findRate,
   fixedVatRate,
@@ -69,10 +70,12 @@ function documentHints(platform: string) {
   return platform === 'freenow'
     ? {
         commission: 'Η «Προμήθεια προς Freenow», χωρίς το μείον.',
+        commissionOther: 'Αν η «Προμήθεια προς Freenow» είναι άλλη, γράψτε εκείνη.',
         tips: 'Οι «Λοιπές Επιστροφές / Επιβραβεύσεις». Χωρίς προμήθεια.',
       }
     : {
         commission: 'Όπως στο έγγραφο, χωρίς το μείον.',
+        commissionOther: 'Αν το έγγραφο γράφει άλλη, γράψτε εκείνη.',
         tips: 'Ό,τι δίνει η εφαρμογή χωρίς προμήθεια, έξω από τα έσοδα.',
       };
 }
@@ -145,10 +148,16 @@ export function PlatformForm({
   const [showErrors, setShowErrors] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<Message | null>(null);
+  /**
+   * Εβδομάδα: η προμήθεια βγαίνει μόνη της από το ποσοστό· «χειροκίνητη» μόνο όταν ο χρήστης γράψει άλλη
+   * (όπως στο έγγραφο). Η διόρθωση κρατά το ποσό που είχε αποθηκευτεί.
+   */
+  const [commissionManual, setCommissionManual] = useState(editing !== null);
   const [presetNonce, setPresetNonce] = useState<number | null>(null);
   if (preset && preset.nonce !== presetNonce) {
     setPresetNonce(preset.nonce);
     setValues({ ...EMPTY_STATEMENT_FORM, platform: preset.platform, kind: 'week', weekStart: preset.weekStart });
+    setCommissionManual(false);
     setShowErrors(false);
     setMessage(null);
   }
@@ -260,7 +269,13 @@ export function PlatformForm({
       : suggestedWeek(cycles, enteredWeeks, today);
   const selectedWeek = cycles.find((week) => week.start === weekStart) ?? null;
 
-  const parsed = parseStatementForm({ ...values, weekStart }, { year, month }, rate);
+  // Η προμήθεια της εβδομάδας: αυτόματα από το ποσοστό, εκτός αν ο χρήστης έγραψε άλλη. Κενό πεδίο (π.χ. ενώ
+  // σβήνει για να γράψει το ποσό του εγγράφου) μετράει ως αυτόματη.
+  const autoCommission = isWeek ? autoCommissionText(values.revenue, rate) : '';
+  const commissionAuto = isWeek && !commissionManual;
+  const commissionShown = commissionAuto ? autoCommission : values.commission;
+  const commissionUsed = isWeek && !commissionShown.trim() ? autoCommission : commissionShown;
+  const parsed = parseStatementForm({ ...values, weekStart, commission: commissionUsed }, { year, month }, rate);
   const errors = showErrors ? parsed.errors : {};
   const { preview } = parsed;
   const hints = documentHints(values.platform);
@@ -269,6 +284,8 @@ export function PlatformForm({
 
   function update(changes: Partial<StatementFormValues>) {
     setValues((prev) => ({ ...prev, ...changes }));
+    // Άλλη εφαρμογή ή είδος: η προμήθεια υπολογίζεται ξανά από το ποσοστό.
+    if (changes.platform !== undefined || changes.kind !== undefined) setCommissionManual(false);
     if (message?.tone !== 'error') setMessage(null);
   }
 
@@ -298,6 +315,7 @@ export function PlatformForm({
       onSaved(saved);
       // Επόμενη καταχώρηση: ίδια εφαρμογή και είδος, η επόμενη εβδομάδα που λείπει.
       setValues((prev) => ({ ...EMPTY_STATEMENT_FORM, platform: prev.platform, kind: prev.kind }));
+      setCommissionManual(false);
       setShowErrors(false);
       const amount = formatEuro(toCents(row.commission));
       setMessage({ tone: 'success', text: `✓ Καταχωρήθηκε: ${label} · ${isWeek ? `προμήθεια ${amount}` : amount}` });
@@ -333,12 +351,26 @@ export function PlatformForm({
         inputMode="decimal"
         autoComplete="off"
         placeholder="0,00"
-        value={values.commission}
+        value={commissionShown}
         aria-invalid={Boolean(errors.commission)}
-        onChange={(e) => update({ commission: sanitizeAmount(e.target.value) })}
+        onChange={(e) => {
+          setCommissionManual(true);
+          update({ commission: sanitizeAmount(e.target.value) });
+        }}
+        // Το πεδίο έμεινε άδειο: ξανά η αυτόματη προμήθεια.
+        onBlur={() => {
+          if (!values.commission.trim()) setCommissionManual(false);
+        }}
       />
     </Field>
   );
+  // Η οδηγία κάτω από την προμήθεια: από πού βγήκε το ποσό και τι κάνει ο οδηγός αν το έγγραφο γράφει άλλο.
+  const weekCommissionHint =
+    commissionAuto && rate && rate.ratePct !== null
+      ? `Αυτόματα από το ποσοστό ${entryRateText(rate)}. ${hints.commissionOther}`
+      : hints.commission;
+  /** Γράφτηκε άλλη προμήθεια: ένα πάτημα ξαναφέρνει τον υπολογισμό από το ποσοστό. */
+  const canRestoreAuto = isWeek && commissionManual && autoCommission !== '' && autoCommission !== values.commission.trim();
 
   const rateSection = !ratesLoaded ? (
     <p className="text-sm text-muted">Φόρτωση ποσοστών…</p>
@@ -350,7 +382,7 @@ export function PlatformForm({
       {!setting && (
         <p className="text-sm">
           Γράψτε το ποσοστό που κρατά η {platformName}
-          {driver ? ` για το ${vehicleOptionLabel(driver)}` : ''}. Με αυτό ελέγχεται η προμήθεια κάθε εβδομάδας.
+          {driver ? ` για το ${vehicleOptionLabel(driver)}` : ''}. Με αυτό υπολογίζεται η προμήθεια κάθε εβδομάδας.
         </p>
       )}
       <Field label="Ποσοστό κράτησης (%)" hint="Χωρίς τον ΦΠΑ, π.χ. 12." error={shownRateErrors.rate}>
@@ -520,9 +552,14 @@ export function PlatformForm({
                   </Field>
                 </FieldRow>
                 <FieldRow>
-                  {amountInput('Προμήθεια (€) *', hints.commission)}
+                  {amountInput('Προμήθεια (€) *', weekCommissionHint)}
                   {vatField}
                 </FieldRow>
+                {canRestoreAuto && (
+                  <Button className="min-h-9 px-3 py-1" onClick={() => setCommissionManual(false)}>
+                    Αυτόματα από το ποσοστό: {autoCommission}&nbsp;€
+                  </Button>
+                )}
                 {preview.unusual && preview.expected && rate.ratePct !== null && (
                   <Notice tone="warning">
                     Ελέγξτε την προμήθεια: με {entryRateText(rate)} θα ήταν περίπου{' '}

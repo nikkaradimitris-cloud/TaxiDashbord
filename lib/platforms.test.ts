@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { includedExpenseVatCents } from './accounting';
 import {
+  autoCommissionText,
   commissionVatCents,
   computeCommission,
   defaultVatRate,
@@ -454,6 +455,28 @@ describe('«Δουλεύει με»: ποιες εφαρμογές ζητούν�
     expect(formPlatforms(rates, 'b').map((p) => p.id)).toEqual(['uber', 'freenow']);
     const allOff = ['uber', 'freenow', 'bolt'].map((platform) => ({ driver_id: 'c', platform, active: false }));
     expect(formPlatforms(allOff, 'c').map((p) => p.id)).toEqual(['uber', 'freenow', 'bolt']);
+  });
+});
+
+describe('αυτόματη προμήθεια της εβδομάδας από το ποσοστό', () => {
+  const freenow = { ratePct: 12, vatRate: 24 as const };
+  const uber = { ratePct: 12, vatRate: 0 as const };
+
+  it('ποσοστό × «Συνολικά έσοδα», + ΦΠΑ 24% όπου υπάρχει', () => {
+    // 99 € × 12% = 11,88 € + ΦΠΑ 2,85 € = 14,73 €
+    expect(autoCommissionText('99', freenow)).toBe('14,73');
+    expect(autoCommissionText('150', freenow)).toBe('22,32');
+    expect(autoCommissionText('99,5', freenow)).toBe('14,81');
+    expect(autoCommissionText('60', uber)).toBe('7,20');
+    expect(autoCommissionText('30', uber)).toBe('3,60');
+    expect(autoCommissionText('0', freenow)).toBe('0,00');
+  });
+
+  it('χωρίς ποσοστό ή χωρίς έγκυρα έσοδα: κενό', () => {
+    expect(autoCommissionText('', freenow)).toBe('');
+    expect(autoCommissionText('αβγ', freenow)).toBe('');
+    expect(autoCommissionText('99', null)).toBe('');
+    expect(autoCommissionText('99', { ratePct: null, vatRate: 24 })).toBe('');
   });
 });
 

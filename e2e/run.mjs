@@ -1406,7 +1406,7 @@ await ychart.getByRole('button', { name: 'Πίνακας' }).click();
 await page.locator('#filters').getByLabel('Μήνας').selectOption('9');
 
 // ---------------------------------------------------------------------
-console.log('9γ. Εφαρμογές (Uber / FreeNow / Bolt): από το έγγραφο, έλεγχος με το ποσοστό, τιμολόγιο, διαδρομές δρόμου');
+console.log('9γ. Εφαρμογές (Uber / FreeNow / Bolt): προμήθεια από το ποσοστό ή το έγγραφο, τιμολόγιο, διαδρομές δρόμου');
 await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 'Γιώργος Παπαδόπουλος · ΤΑΕ-1234' });
 await idle(page);
 await page.getByRole('button', { name: 'Εφαρμογή', exact: true }).click();
@@ -1425,9 +1425,9 @@ await rateBox.waitFor();
 check(
   (await pform.getByLabel('Διαδρομές').count()) === 0 &&
     (await rateBox.innerText()).includes('σταθερό για την Uber') &&
-    (await rateBox.innerText()).includes('Με αυτό ελέγχεται η προμήθεια κάθε εβδομάδας.') &&
+    (await rateBox.innerText()).includes('Με αυτό υπολογίζεται η προμήθεια κάθε εβδομάδας.') &&
     (await rateBox.getByRole('radio').count()) === 0,
-  'Uber: πρώτα ορίζεται το ποσοστό (για έλεγχο)· ΦΠΑ σταθερά «χωρίς ΦΠΑ»',
+  'Uber: πρώτα ορίζεται το ποσοστό (υπολογίζει την προμήθεια)· ΦΠΑ σταθερά «χωρίς ΦΠΑ»',
 );
 await rateBox.getByLabel('Ποσοστό κράτησης (%)').fill('12');
 await rateBox.getByRole('button', { name: 'Αποθήκευση ποσοστού' }).click();
@@ -1436,7 +1436,7 @@ check(nbsp0(await pform.innerText()).includes('Ποσοστό Uber: 12% χωρί
 check(
   (await pform.getByRole('button', { name: /Άλλο ποσό/ }).count()) === 0 &&
     (await pform.getByText('Κράτηση (αυτόματα)').count()) === 0,
-  'χωρίς «Άλλο ποσό» και χωρίς αυτόματη κράτηση',
+  'χωρίς «Άλλο ποσό»: η προμήθεια είναι ένα πεδίο, αυτόματα ή όπως στο έγγραφο',
 );
 
 const weekSelect = pform.getByLabel('Εβδομάδα (Δευτέρα–Κυριακή)');
@@ -1452,26 +1452,35 @@ const commissionInput = pform.getByLabel(/^Προμήθεια/);
 const tipsInput = pform.getByLabel(/^Φιλοδωρήματα \/ Quest/);
 const warning = pform.getByText(/Ελέγξτε την προμήθεια/);
 await tripsInput.fill('3');
+check((await commissionInput.inputValue()) === '', 'χωρίς έσοδα η προμήθεια είναι ακόμη κενή');
 await revenueInput.fill('60');
 await tipsInput.fill('5');
-await pform.getByRole('button', { name: 'Καταχώρηση εβδομάδας · 1–6 Σεπ' }).click();
 check(
-  await pform.getByText('Γράψτε την προμήθεια όπως στο έγγραφο (ή 0).').isVisible(),
-  'η προμήθεια του εγγράφου είναι υποχρεωτική',
+  (await commissionInput.inputValue()) === '7,20' &&
+    nbsp0(await pform.innerText()).includes(
+      'Αυτόματα από το ποσοστό 12% χωρίς ΦΠΑ. Αν το έγγραφο γράφει άλλη, γράψτε εκείνη.',
+    ),
+  'η προμήθεια βγαίνει μόνη της από το ποσοστό: 12% × 60 € = 7,20 €',
 );
 await commissionInput.fill('70');
+await pform.getByRole('button', { name: 'Καταχώρηση εβδομάδας · 1–6 Σεπ' }).click();
 check(
   await pform.getByText('Η προμήθεια δεν μπορεί να είναι μεγαλύτερη από τα έσοδα.').isVisible(),
   'η προμήθεια δεν ξεπερνά τα έσοδα',
 );
-await commissionInput.fill('7,20');
+await pform.getByRole('button', { name: /Αυτόματα από το ποσοστό: 7,20/ }).click();
+check(
+  (await commissionInput.inputValue()) === '7,20' &&
+    !(await pform.getByText('Η προμήθεια δεν μπορεί να είναι μεγαλύτερη από τα έσοδα.').isVisible()),
+  '«Αυτόματα από το ποσοστό: 7,20 €» → ξανά ο υπολογισμός, χωρίς σφάλμα',
+);
 check((await pform.locator('output').last().innerText()).includes('Χωρίς ΦΠΑ'), 'Uber: προμήθεια χωρίς ΦΠΑ');
 check((await warning.count()) === 0, 'Uber 7,20 € = 12% × 60 €: χωρίς προειδοποίηση');
 await pform.getByRole('button', { name: 'Καταχώρηση εβδομάδας · 1–6 Σεπ' }).click();
 await pform
   .getByText(/✓ Καταχωρήθηκε: Uber · εβδομάδα 1–6 Σεπ · ΤΑΕ-1234 · Γιώργος Παπαδόπουλος · προμήθεια 7,20.€/)
   .waitFor();
-check(true, 'εβδομάδα Uber 1–6 Σεπ: προμήθεια 7,20 € όπως στο έγγραφο');
+check(true, 'εβδομάδα Uber 1–6 Σεπ: προμήθεια 7,20 € χωρίς να γραφτεί (αυτόματα)');
 check((await weekSelect.inputValue()) === '2026-09-07', 'μετά την καταχώρηση προτείνεται η επόμενη εβδομάδα (7–13 Σεπ)');
 check(
   (await weekSelect.locator('option[value="2026-09-01"]').textContent()).includes('✓ καταχωρημένη') &&
@@ -1485,6 +1494,10 @@ check(
 
 await tripsInput.fill('2');
 await revenueInput.fill('40');
+check((await commissionInput.inputValue()) === '4,80', 'επόμενη εβδομάδα: πάλι αυτόματα (12% × 40 € = 4,80 €)');
+await commissionInput.fill('');
+await tipsInput.focus();
+check((await commissionInput.inputValue()) === '4,80', 'σβησμένη προμήθεια → ξανά η αυτόματη (4,80 €)');
 await commissionInput.fill('5');
 check((await warning.count()) === 0, 'Uber 5,00 € με 12% × 40 € = 4,80 €: λίγη διαφορά, χωρίς προειδοποίηση');
 await pform.getByRole('button', { name: 'Καταχώρηση εβδομάδας · 7–13 Σεπ' }).click();
@@ -1502,15 +1515,26 @@ await pform.getByText(/✓ Αποθηκεύτηκε: FreeNow 12% \+ ΦΠΑ 24%/)
 check((await weekSelect.inputValue()) === '2026-09-01', 'FreeNow: οι εβδομάδες μετράνε χωριστά (πάλι 1–6 Σεπ)');
 const fnHints = nbsp0(await pform.innerText());
 check(
-  fnHints.includes('Η «Προμήθεια προς Freenow», χωρίς το μείον.') &&
+  fnHints.includes('Αυτόματα από το ποσοστό 12% + ΦΠΑ 24%. Αν η «Προμήθεια προς Freenow» είναι άλλη, γράψτε εκείνη.') &&
     fnHints.includes('Οι «Λοιπές Επιστροφές / Επιβραβεύσεις». Χωρίς προμήθεια.'),
   'FreeNow: οι οδηγίες λένε ποια γραμμή του εγγράφου μπαίνει σε κάθε πεδίο',
 );
 await tripsInput.fill('4');
 await revenueInput.fill('150');
+check(
+  (await commissionInput.inputValue()) === '22,32' && (await pform.locator('output').last().innerText()).includes('4,32'),
+  'FreeNow: αυτόματα 12% + ΦΠΑ × 150 € = 22,32 € (ΦΠΑ μέσα 4,32 €)',
+);
+await settled(commissionInput);
+await pform.screenshot({ path: `${OUT}/11a-platform-auto-commission.png` });
 await commissionInput.fill('-20,83');
 check((await commissionInput.inputValue()) === '20,83', 'το μείον του εγγράφου φεύγει μόνο του (−20,83 → 20,83)');
 check((await pform.locator('output').last().innerText()).includes('4,03'), 'ΦΠΑ μέσα στην προμήθεια: 20,83 € → 4,03 €');
+check(
+  (await pform.getByRole('button', { name: /Αυτόματα από το ποσοστό: 22,32/ }).isVisible()) &&
+    nbsp0(await pform.innerText()).includes('Η «Προμήθεια προς Freenow», χωρίς το μείον.'),
+  'γράφτηκε η προμήθεια του εγγράφου (20,83 €): μένει αυτή, με κουμπί για τον υπολογισμό (22,32 €)',
+);
 await tipsInput.fill('10');
 check((await warning.count()) === 0, '20,83 € (λίγο κάτω από 12% + ΦΠΑ × 150 € = 22,32 €): χωρίς προειδοποίηση');
 await commissionInput.fill('139,17');
@@ -1564,6 +1588,7 @@ await fnChange.getByLabel('Ποσοστό κράτησης (%)').fill('14');
 await fnChange.getByRole('button', { name: 'Αποθήκευση ποσοστού' }).click();
 await pform.getByText(/✓ Αποθηκεύτηκε: FreeNow 14% \+ ΦΠΑ 24%/).waitFor();
 await revenueInput.fill('100');
+check((await commissionInput.inputValue()) === '17,36', 'νέο ποσοστό FreeNow: αυτόματα 14% + ΦΠΑ × 100 € = 17,36 €');
 await commissionInput.fill('30');
 check(
   nbsp0(await pform.innerText()).includes('με 14% + ΦΠΑ 24% θα ήταν περίπου 17,36 €'),
@@ -1836,7 +1861,11 @@ check(
 );
 await dpform.getByLabel('Διαδρομές').fill('2');
 await dpform.getByLabel('Συνολικά έσοδα').fill('30');
-await dpform.getByLabel(/^Προμήθεια/).fill('3,60');
+check(
+  (await dpform.getByLabel(/^Προμήθεια/).inputValue()) === '3,60',
+  'οδηγός (κινητό): η προμήθεια βγαίνει μόνη της (12% × 30 € = 3,60 €)',
+);
+await dpform.screenshot({ path: `${OUT}/12d-auto-commission-mobile.png` });
 await dpform.getByRole('button', { name: 'Καταχώρηση εβδομάδας · 7–13 Σεπ' }).click();
 await dpform.getByText(/✓ Καταχωρήθηκε: Uber · εβδομάδα 7–13 Σεπ · ΤΑΕ-1234 .* προμήθεια 3,60.€/).waitFor();
 check(true, 'ο οδηγός καταχώρησε την εβδομάδα Uber 7–13 Σεπ (έσοδα 30 €, προμήθεια 3,60 €)');

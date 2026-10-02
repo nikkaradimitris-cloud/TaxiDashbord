@@ -375,6 +375,19 @@ export function isUnusualCommission(commissionCents: number, expected: Commissio
   return commissionCents > expected.totalCents * 1.05 + 5 || commissionCents < expected.totalCents * 0.7;
 }
 
+/**
+ * Εβδομάδα: η προμήθεια που δίνει το ποσοστό του αυτοκινήτου πάνω στα «Συνολικά έσοδα» (με τον ΦΠΑ 24%
+ * όπου υπάρχει), ως κείμενο για το πεδίο της φόρμας, π.χ. FreeNow 12% + ΦΠΑ, 99 € → «14,73».
+ * '' όταν δεν υπάρχει ποσοστό ή τα έσοδα δεν είναι έγκυρο ποσό.
+ */
+export function autoCommissionText(revenue: string, rate: EntryRate | null): string {
+  if (!rate || rate.ratePct === null || !revenue.trim()) return '';
+  const value = parseDecimal(revenue);
+  if (value === null || value < 0 || value >= MAX_AMOUNT) return '';
+  const { totalCents } = computeCommission(toCents(round2(value)), 0, { ratePct: rate.ratePct, vatRate: rate.vatRate });
+  return (totalCents / 100).toFixed(2).replace('.', ',');
+}
+
 export function parseStatementForm(
   values: StatementFormValues,
   period: { year: number; month: number },
