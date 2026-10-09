@@ -63,7 +63,7 @@ export function ShiftList({
           ? 'Φόρτωση…'
           : items.length === 0
             ? 'Καμία βάρδια'
-            : `${items.length === 1 ? '1 βάρδια' : `${items.length} βάρδιες`} · μικτή είσπραξη ${formatEuro(grossCents)}`
+            : `${items.length === 1 ? '1 βάρδια' : `${items.length} βάρδιες`} · ταμείο ${formatEuro(grossCents)}`
       }
       badge={zBadge ? <Badge tone="warn">{zBadge}</Badge> : null}
       className={cx(loading && 'opacity-60')}
@@ -114,12 +114,11 @@ export function ShiftList({
                     </div>
                     <p className="shrink-0 text-right font-bold tabular-nums">
                       <span className="block text-xs font-normal text-muted">Ταμείο</span>
-                      {formatEuro(figures.netCashCents)}
+                      {formatEuro(figures.grossReceiptsCents)}
                     </p>
                   </div>
-                  {/* Η πράξη του ταμείου, γραμμή-γραμμή: καθαρά + ΦΠΑ + φιλοδωρήματα = μικτή είσπραξη, − καύσιμα = ταμείο.
-                      Η μικτή είσπραξη (με ΦΠΑ) φαίνεται χωριστά: το ταμείο βγαίνει κάτω από τα καθαρά όταν τα
-                      καύσιμα είναι περισσότερα από τον ΦΠΑ και τα φιλοδωρήματα. */}
+                  {/* Γραμμή-γραμμή: καθαρά + ΦΠΑ + φιλοδωρήματα = ταμείο (ό,τι εισπράχθηκε, με ΦΠΑ)· μετά − ΦΠΑ προς
+                      απόδοση (συμψηφισμένος με τον ΦΠΑ των καυσίμων) − καύσιμα = καθαρό κέρδος. */}
                   <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-sm tabular-nums" data-testid="shift-cash">
                     <dt className="text-muted">Καθαρά (χωρίς ΦΠΑ)</dt>
                     <dd className="text-right">{formatEuro(figures.netRevenueCents)}</dd>
@@ -128,12 +127,14 @@ export function ShiftList({
                     <dt className="text-muted">+ Φιλοδωρήματα</dt>
                     <dd className="text-right">{formatEuro(figures.tipsCents)}</dd>
                     {/* Η γραμμή πάνω από κάθε αποτέλεσμα συνεχίζει και στο κενό ανάμεσα στις στήλες (-mr-3 pr-3). */}
-                    <dt className="-mr-3 border-t border-line pt-0.5 pr-3 font-medium">= Είσπραξη με ΦΠΑ</dt>
-                    <dd className="border-t border-line pt-0.5 text-right font-medium">{formatEuro(figures.grossReceiptsCents)}</dd>
+                    <dt className="-mr-3 border-t border-line pt-0.5 pr-3 font-semibold">= Ταμείο</dt>
+                    <dd className="border-t border-line pt-0.5 text-right font-semibold">{formatEuro(figures.grossReceiptsCents)}</dd>
+                    <dt className="text-muted">− ΦΠΑ προς απόδοση</dt>
+                    <dd className="text-right">{formatEuro(figures.vatBalanceCents)}</dd>
                     <dt className="text-muted">− {expensesLabel}</dt>
                     <dd className="text-right">{formatEuro(figures.totalExpensesCents)}</dd>
-                    <dt className="-mr-3 border-t border-line pt-0.5 pr-3 font-semibold">= Ταμείο</dt>
-                    <dd className="border-t border-line pt-0.5 text-right font-semibold">{formatEuro(figures.netCashCents)}</dd>
+                    <dt className="-mr-3 border-t border-line pt-0.5 pr-3 font-semibold">= Καθαρό κέρδος</dt>
+                    <dd className="border-t border-line pt-0.5 text-right font-semibold">{formatEuro(figures.profitCents)}</dd>
                     <dt className="mt-1 text-muted">Χλμ (μισθ./σύν.)</dt>
                     <dd className="mt-1 text-right">
                       {formatKm(figures.paidKm)} / {formatKm(figures.totalKm)}
@@ -169,9 +170,10 @@ export function ShiftList({
                   <th className="py-2 pr-3 text-right font-medium">Καθαρά</th>
                   <th className="py-2 pr-3 text-right font-medium">+ ΦΠΑ 13%</th>
                   <th className="py-2 pr-3 text-right font-medium">+ Φιλοδ.</th>
-                  <th className="py-2 pr-3 text-right font-medium">= Μικτή</th>
-                  <th className="py-2 pr-3 text-right font-medium">− {expensesLabel}</th>
                   <th className="py-2 pr-3 text-right font-medium">= Ταμείο</th>
+                  <th className="py-2 pr-3 text-right font-medium">− ΦΠΑ απόδ.</th>
+                  <th className="py-2 pr-3 text-right font-medium">− {expensesLabel}</th>
+                  <th className="py-2 pr-3 text-right font-medium">= Κέρδος</th>
                   <th className="py-2 pr-3 font-medium">Καταχώρηση</th>
                   <th className="py-2" />
                 </tr>
@@ -196,11 +198,12 @@ export function ShiftList({
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.netRevenueCents)}</td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.vatCents)}</td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.tipsCents)}</td>
-                      <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.grossReceiptsCents)}</td>
-                      <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.totalExpensesCents)}</td>
                       <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">
-                        {formatEuro(figures.netCashCents)}
+                        {formatEuro(figures.grossReceiptsCents)}
                       </td>
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.vatBalanceCents)}</td>
+                      <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.totalExpensesCents)}</td>
+                      <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">{formatEuro(figures.profitCents)}</td>
                       <td className="py-2 pr-3 text-xs whitespace-nowrap text-muted">{formatDateTime(row.created_at)}</td>
                       <td className="py-2 text-right whitespace-nowrap">
                         {canModify(row) && (

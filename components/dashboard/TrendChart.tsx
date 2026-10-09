@@ -34,7 +34,7 @@ const METRIC_TITLE: Record<ChartMetric, string> = {
 };
 
 const METRIC_NOTE: Record<ChartMetric, string> = {
-  gross: 'Μικτή είσπραξη: καθαρά + ΦΠΑ 13% + φιλοδωρήματα.',
+  gross: 'Ταμείο (τζίρος): καθαρά + ΦΠΑ 13% + φιλοδωρήματα.',
   trips: 'Πλήθος διαδρομών όπως καταχωρήθηκαν.',
   avgTrip: '(Καθαρά + ΦΠΑ 13%) ÷ διαδρομές — χωρίς φιλοδωρήματα.',
 };

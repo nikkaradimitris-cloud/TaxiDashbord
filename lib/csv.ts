@@ -10,7 +10,7 @@ import { monthName } from './period';
  *   με ελληνικές τοπικές ρυθμίσεις (αλλιώς όλα πέφτουν σε μία στήλη).
  * - Βάρδιες (με τα καύσιμα), μετά τα Έξοδα Οχήματος εκτός βάρδιας, οι
  *   Εφαρμογές (εβδομάδες / τιμολόγια), και στο τέλος η σύνοψη της περιόδου
- *   (όλα τα έξοδα, ΦΠΑ, ταμείο, διαδρομές δρόμου / εφαρμογών).
+ *   (όλα τα έξοδα, ΦΠΑ, κέρδος, διαδρομές δρόμου / εφαρμογών).
  */
 export const CSV_BOM = '﻿';
 const SEPARATOR = ';';
@@ -77,11 +77,11 @@ const HEADERS = [
   'Καθαρά Έσοδα (€)',
   'ΦΠΑ 13% (€)',
   'Φιλοδωρήματα / Άλλα Έσοδα (€)',
-  'Μικτή Είσπραξη (€)',
+  'Ταμείο (€)',
   'Καύσιμα (€)',
   'ΦΠΑ Καυσίμων 24% (€)',
   'Υπόλοιπο ΦΠΑ Βάρδιας (€)',
-  'Καθαρό Ταμείο Βάρδιας (€)',
+  'Καθαρό Κέρδος Βάρδιας (€)',
   'Καταχώρηση',
 ];
 
@@ -134,7 +134,7 @@ function figureCells(f: ShiftFigures): string[] {
     formatCentsPlain(f.totalExpensesCents),
     formatCentsPlain(f.expensesVatCents),
     formatCentsPlain(f.vatBalanceCents),
-    formatCentsPlain(f.netCashCents),
+    formatCentsPlain(f.profitCents),
   ];
 }
 
@@ -235,7 +235,7 @@ export function buildShiftsCsv(
   lines.push([textCell('Διαδρομές (Ζ)'), String(totals.trips)]);
   lines.push([textCell('Διαδρομές Εφαρμογών'), String(totals.appTrips)]);
   lines.push([textCell('Διαδρομές Δρόμου'), String(totals.streetTrips)]);
-  lines.push([textCell('Μικτή Είσπραξη (€)'), formatCentsPlain(totals.grossReceiptsCents)]);
+  lines.push([textCell('Ταμείο (Τζίρος) (€)'), formatCentsPlain(totals.grossReceiptsCents)]);
   lines.push([textCell('Έσοδα Εφαρμογών (€)'), formatCentsPlain(totals.appTurnoverCents)]);
   lines.push([textCell('Καύσιμα (€)'), formatCentsPlain(totals.fuelCents)]);
   lines.push([textCell('Έξοδα Οχήματος (€)'), formatCentsPlain(totals.vehicleExpensesCents)]);
@@ -251,7 +251,7 @@ export function buildShiftsCsv(
     formatCentsPlain(Math.abs(totals.vatBalanceCents)),
     textCell(VAT_STATUS_LABEL[status]),
   ]);
-  lines.push([textCell('Καθαρό Ταμείο (€)'), formatCentsPlain(totals.netCashCents)]);
+  lines.push([textCell('Καθαρό Κέρδος (€)'), formatCentsPlain(totals.profitCents)]);
   lines.push([textCell('Αξιοποίηση %'), formatDecimalPlain(totals.utilizationPct, 1)]);
   lines.push([textCell('Έσοδο ανά χλμ (€)'), formatDecimalPlain(totals.revenuePerKm, 2)]);
 

@@ -556,7 +556,10 @@ check(
 );
 const vatText = await form.locator('output').innerText();
 check(vatText.includes('20,84'), `ζωντανός ΦΠΑ 13%: ${vatText}`);
-check((await form.innerText()).includes('146,23'), 'προεπισκόπηση ταμείου βάρδιας 146,23 € (μόνο καύσιμα)');
+check(
+  (await form.innerText()).includes('186,23') && (await form.innerText()).includes('133,13'),
+  'προεπισκόπηση: ταμείο 186,23 €, καθαρό κέρδος 186,23 − 13,10 − 40,00 = 133,13 €',
+);
 await page.screenshot({ path: `${OUT}/04-admin-form-filled.png` });
 await form.getByRole('button', { name: /^Καταχώρηση/ }).click();
 await form.getByText('✓ Καταχωρήθηκε: Ζ 101').waitFor();
@@ -595,14 +598,14 @@ check(
 );
 const categoryNote = () => xform.getByTestId('expense-category-note').innerText();
 check(
-  (await categoryNote()) === 'Επισκευές / Συντήρηση: μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο του μήνα.',
-  'σημείωση «Επισκευές / Συντήρηση»: μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο',
+  (await categoryNote()) === 'Επισκευές / Συντήρηση: μετράνε στα έξοδα, στον ΦΠΑ και στο κέρδος του μήνα.',
+  'σημείωση «Επισκευές / Συντήρηση»: μετράνε στα έξοδα, στον ΦΠΑ και στο κέρδος',
 );
 await xform.getByText('Άλλα έξοδα', { exact: true }).click();
 check(await xform.getByLabel('Άλλα έξοδα').isChecked(), 'επιλογή «Άλλα έξοδα»');
 check(
-  (await categoryNote()) === 'Άλλα έξοδα: μετράει μόνο ο ΦΠΑ τους (συμψηφίζεται). Το ποσό δεν αφαιρείται από το ταμείο.',
-  'σημείωση «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ, το ποσό δεν αφαιρείται από το ταμείο',
+  (await categoryNote()) === 'Άλλα έξοδα: μετράει μόνο ο ΦΠΑ τους (συμψηφίζεται). Το ποσό δεν αφαιρείται από το κέρδος.',
+  'σημείωση «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ, το ποσό δεν αφαιρείται από το κέρδος',
 );
 await xform.getByLabel('Ποσό με ΦΠΑ').fill('10');
 await xform.getByLabel('Περιγραφή').fill('Λογιστής');
@@ -633,17 +636,17 @@ check(
   'λίστα: σήμανση «μόνο ΦΠΑ» στα «Άλλα έξοδα», όχι στις επισκευές',
 );
 check(
-  /Στα έξοδα και στο ταμείο\s+Επισκευές \/ Συντήρηση\s+124,00 €/.test(expCard) &&
-    /Άλλα έξοδα\s+μετράει μόνο ο ΦΠΑ, όχι στο ταμείο\s+10,00 €/.test(expCard) &&
+  /Στα έξοδα \(αφαιρούνται από το κέρδος\)\s+Επισκευές \/ Συντήρηση\s+124,00 €/.test(expCard) &&
+    /Άλλα έξοδα\s+μετράει μόνο ο ΦΠΑ, όχι στο κέρδος\s+10,00 €/.test(expCard) &&
     /ΦΠΑ 24% \(συμψηφίζεται, όλα\)\s+25,94 €/.test(expCard),
-  'σύνολα λίστας: στο ταμείο 124,00 € (επισκευή) · «Άλλα έξοδα» 10,00 € μόνο για τον ΦΠΑ · ΦΠΑ όλων 25,94 €',
+  'σύνολα λίστας: στα έξοδα 124,00 € (επισκευή) · «Άλλα έξοδα» 10,00 € μόνο για τον ΦΠΑ · ΦΠΑ όλων 25,94 €',
 );
 await page.getByRole('button', { name: 'Βάρδια', exact: true }).click();
 await form.waitFor();
 
 console.log('3γ. Πάνελ: σύνοψη όταν είναι κλειστά, άνοιγμα, μνήμη');
 const shiftsSummary = nbsp0(await page.locator('#shifts').innerText()).replace(/\s+/g, ' ');
-check(shiftsSummary.includes('2 βάρδιες · μικτή είσπραξη 299,22 €'), `κλειστό πάνελ βαρδιών: «${shiftsSummary}»`);
+check(shiftsSummary.includes('2 βάρδιες · ταμείο 299,22 €'), `κλειστό πάνελ βαρδιών: «${shiftsSummary}»`);
 const detailsSummary = nbsp0(await page.locator('#stats-details').innerText()).replace(/\s+/g, ' ');
 check(detailsSummary.includes('καθαρά 260,39 € · 200,5 χλμ · 23 διαδρομές'), `κλειστό «Έσοδα, χιλιόμετρα & διαδρομές»: «${detailsSummary}»`);
 check(!(await page.getByText('ΦΠΑ εξόδων 24%').first().isVisible()), 'η «Ανάλυση ΦΠΑ» είναι κλειστή');
@@ -680,10 +683,14 @@ check(
   flatBody.includes('Συνολικά Έξοδα 164,00 € Καύσιμα 40,00 € · Έξοδα οχήματος 124,00 €'),
   'Συνολικά Έξοδα 164 €: καύσιμα 40 € + επισκευή 124 € (τα «Άλλα έξοδα» 10 € όχι)',
 );
-check(flatBody.includes('Καθαρό Ταμείο (Τσέπη) 135,22 €'), 'Καθαρό Ταμείο: 299,22 − 164,00 = 135,22 € (τα «Άλλα έξοδα» δεν αφαιρούνται)');
+check(flatBody.includes('Ταμείο (Τζίρος) 299,22 € Ό,τι εισπράχθηκε, με ΦΠΑ'), 'Ταμείο (Τζίρος) 299,22 €: ό,τι εισπράχθηκε, με ΦΠΑ');
+check(
+  flatBody.includes('Καθαρό Κέρδος 135,07 € Ταμείο − ΦΠΑ προς απόδοση − έξοδα'),
+  'Καθαρό Κέρδος: 299,22 − ΦΠΑ 0,15 − έξοδα 164,00 = 135,07 € (τα «Άλλα έξοδα» δεν αφαιρούνται)',
+);
 const vatOnlyNote = nbsp0(await page.getByTestId('vat-only-note').innerText());
 check(
-  vatOnlyNote === 'Μέσα και ο ΦΠΑ των «Άλλων εξόδων»: 1,94 € από 10,00 €. Από αυτά μετράει μόνο ο ΦΠΑ· δεν αφαιρούνται από το ταμείο.',
+  vatOnlyNote === 'Μέσα και ο ΦΠΑ των «Άλλων εξόδων»: 1,94 € από 10,00 €. Από αυτά μετράει μόνο ο ΦΠΑ· δεν αφαιρούνται από το κέρδος.',
   `Ανάλυση ΦΠΑ: σημείωση για τα «Άλλα έξοδα» (${vatOnlyNote})`,
 );
 check(body.includes('0,15') && body.includes('Χρεωστικό — προς πληρωμή'), 'προς απόδοση ΦΠΑ 0,15 € χρεωστικό');
@@ -712,7 +719,7 @@ async function gauge(p = page) {
 const GREEN = 'rgb(52, 211, 153)';
 const CYAN = 'rgb(103, 232, 249)';
 const RED = 'rgb(248, 113, 113)';
-const amountsTop = await page.locator('section[aria-busy]').getByText('Μικτή Είσπραξη (Τζίρος)').boundingBox();
+const amountsTop = await page.locator('section[aria-busy]').getByText('Ταμείο (Τζίρος)').boundingBox();
 const utilBox = await util.boundingBox();
 const vatBox = await page.getByText('Προς Απόδοση ΦΠΑ').first().boundingBox();
 check(amountsTop.y < utilBox.y && utilBox.y < vatBox.y, 'ο μετρητής είναι μέσα στα στατιστικά, μετά τα ποσά και πριν από τον ΦΠΑ');
@@ -960,7 +967,8 @@ check(
   csv.includes('Έξοδα Οχήματος (€);124,00') &&
     csv.includes('Άλλα Έξοδα — μόνο ΦΠΑ (€);10,00') &&
     csv.includes('Σύνολο Εξόδων (€);164,00') &&
-    csv.includes('Καθαρό Ταμείο (€);135,22'),
+    csv.includes('Ταμείο (Τζίρος) (€);299,22') &&
+    csv.includes('Καθαρό Κέρδος (€);135,07'),
   'CSV: σύνοψη με καύσιμα + επισκευή· τα «Άλλα έξοδα» χωριστά, μόνο για τον ΦΠΑ',
 );
 
@@ -977,17 +985,20 @@ check((await edit.getByLabel('Αποφορολογημένα Έσοδα').inputV
 check((await edit.getByLabel('Καύσιμα').inputValue()) === '40', 'τα καύσιμα της βάρδιας στη φόρμα');
 await page.screenshot({ path: `${OUT}/05b-admin-editing.png` });
 await edit.getByLabel('Φιλοδωρήματα').fill('7');
-check((await edit.innerText()).includes('148,23'), 'ζωντανό ταμείο βάρδιας μετά τη διόρθωση (φιλοδωρήματα 7 € → 148,23 €)');
+check(
+  (await edit.innerText()).includes('188,23') && (await edit.innerText()).includes('135,13'),
+  'ζωντανά μετά τη διόρθωση (φιλοδωρήματα 7 €): ταμείο 188,23 €, κέρδος 135,13 €',
+);
 await edit.getByRole('button', { name: 'Αποθήκευση διορθώσεων' }).click();
 await page.getByText('✓ Αποθηκεύτηκαν οι διορθώσεις στη βάρδια Ζ 101.').waitFor();
 check((await page.locator('#shift-edit-form').count()) === 0, 'το παράθυρο κλείνει μετά την αποθήκευση');
 const yAfter = await page.evaluate(() => window.scrollY);
 check(Math.abs(yAfter - yBefore) < 5, `η σελίδα έμεινε στην ίδια θέση (${yBefore} → ${yAfter})`);
 const afterEdit = await page.locator('main').innerText();
-check(afterEdit.includes('148,23'), 'το ιστορικό δείχνει το νέο ταμείο της βάρδιας (148,23)');
+check(afterEdit.includes('188,23') && afterEdit.includes('135,13'), 'το ιστορικό δείχνει το νέο ταμείο (188,23) και κέρδος (135,13) της βάρδιας');
 const shiftHead = (await page.locator('#shifts thead').innerText()).replace(/\s+/g, ' ');
 check(
-  shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. = Μικτή − Καύσιμα = Ταμείο'),
+  shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. = Ταμείο − ΦΠΑ απόδ. − Καύσιμα = Κέρδος'),
   `υπολογιστής: οι στήλες του ιστορικού δείχνουν την πράξη του ταμείου (${shiftHead})`,
 );
 await page.getByRole('button', { name: 'Επεξεργασία βάρδιας Ζ 55' }).click();
@@ -1109,18 +1120,18 @@ check(
     (await mpage.getByRole('button', { name: 'Λήψη εικόνας' }).count()) === 0,
   `κινητό: «Αποστολή WhatsApp» → κοινοποίηση με την εικόνα ΦΠΑ (fpa-2026-09.png) και σύντομο μήνυμα μόνο με τον ΦΠΑ (${mVat})`,
 );
-// Ιστορικό στο κινητό: η πράξη του ταμείου γραμμή-γραμμή (Ζ 101 μετά τη διόρθωση του 4β). Τα καύσιμα (40 €)
-// είναι περισσότερα από ΦΠΑ + φιλοδωρήματα (27,84 €): το ταμείο βγαίνει κάτω από τα καθαρά, η μικτή πάνω.
+// Ιστορικό στο κινητό, γραμμή-γραμμή (Ζ 101 μετά τη διόρθωση του 4β): ταμείο = ό,τι εισπράχθηκε με ΦΠΑ,
+// μετά − ΦΠΑ προς απόδοση (20,84 − 7,74 των καυσίμων) − καύσιμα = καθαρό κέρδος.
 await openPanel(mpage, 'shifts');
 const mShiftCard = mpage.locator('#shifts li').filter({ hasText: 'Ζ 101' });
 const mCash = nbsp0(await mShiftCard.getByTestId('shift-cash').innerText()).replace(/\s+/g, ' ');
 check(
   mCash.startsWith(
-    'Καθαρά (χωρίς ΦΠΑ) 160,39 € + ΦΠΑ 13% 20,84 € + Φιλοδωρήματα 7,00 € = Είσπραξη με ΦΠΑ 188,23 € ' +
-      '− Καύσιμα 40,00 € = Ταμείο 148,23 €',
+    'Καθαρά (χωρίς ΦΠΑ) 160,39 € + ΦΠΑ 13% 20,84 € + Φιλοδωρήματα 7,00 € = Ταμείο 188,23 € ' +
+      '− ΦΠΑ προς απόδοση 13,10 € − Καύσιμα 40,00 € = Καθαρό κέρδος 135,13 €',
   ) &&
-    nbsp0(await mShiftCard.locator('p').filter({ hasText: /^Ταμείο/ }).innerText()).replace(/\s+/g, ' ') === 'Ταμείο 148,23 €',
-  `κινητό: η βάρδια δείχνει «Ταμείο» και την πράξη του (${mCash})`,
+    nbsp0(await mShiftCard.locator('p').filter({ hasText: /^Ταμείο/ }).innerText()).replace(/\s+/g, ' ') === 'Ταμείο 188,23 €',
+  `κινητό: η βάρδια δείχνει «Ταμείο» και την πράξη ως το καθαρό κέρδος (${mCash})`,
 );
 await shotBelowHeader(mShiftCard, `${OUT}/06e-shift-cash-mobile.png`);
 await ownerMobile.close();
@@ -1159,7 +1170,7 @@ check(
 // Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι βάρδιες (λίγο μετά τη φόρμα).
 const dShiftsSummary = await dpage
   .locator('#shifts')
-  .getByText(/^1 βάρδια · μικτή είσπραξη/)
+  .getByText(/^1 βάρδια · ταμείο/)
   .waitFor({ timeout: 10000 })
   .then(() => true, () => false);
 check(!(await panelOpen(dpage, 'shifts')) && dShiftsSummary, 'οδηγός: κλειστό ιστορικό βαρδιών με σύνοψη');
@@ -1968,10 +1979,10 @@ await dpage.getByRole('button', { name: 'Βάρδια', exact: true }).click();
 console.log('9δ. Επιλογές με το ίδιο κίτρινο με τα κουμπιά· κίτρινο μόνο ό,τι πατιέται');
 const ownerYellow = await yellowNotPressable(page);
 check(ownerYellow.length === 0, `ιδιοκτήτης: κίτρινο μόνο σε ό,τι πατιέται${ownerYellow.length ? ` ✘ ${ownerYellow.join(' | ')}` : ''}`);
-const netCash = page.locator('div', { has: page.getByText('Καθαρό Ταμείο (Τσέπη)', { exact: true }) }).last();
+const netCash = page.locator('div', { has: page.getByText('Καθαρό Κέρδος', { exact: true }) }).last();
 check(
   (await netCash.evaluate((el) => getComputedStyle(el).backgroundColor)) !== 'rgb(250, 204, 21)',
-  `«Καθαρό Ταμείο» όχι κίτρινο (${await netCash.evaluate((el) => getComputedStyle(el).backgroundColor)})`,
+  `«Καθαρό Κέρδος» όχι κίτρινο (${await netCash.evaluate((el) => getComputedStyle(el).backgroundColor)})`,
 );
 const colors = await page.evaluate(() => {
   const bg = (el) => getComputedStyle(el).backgroundColor;

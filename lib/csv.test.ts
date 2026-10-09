@@ -37,7 +37,8 @@ describe('buildShiftsCsv', () => {
   it('επικεφαλίδες με ";" (ελληνικό Excel)', () => {
     expect(lines[0].split(';')[0]).toBe('Έτος');
     expect(lines[0]).toContain('ΦΠΑ 13% (€)');
-    expect(lines[0]).toContain('Καθαρό Ταμείο Βάρδιας (€)');
+    expect(lines[0]).toContain('Ταμείο (€)');
+    expect(lines[0]).toContain('Καθαρό Κέρδος Βάρδιας (€)');
     expect(lines[0]).not.toContain('Επισκευές');
   });
 
@@ -76,14 +77,16 @@ describe('buildShiftsCsv', () => {
     expect(withExpenses).toContain('ΕΞΟΔΑ ΟΧΗΜΑΤΟΣ (εκτός βάρδιας)');
     expect(withExpenses).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Επισκευές / Συντήρηση;"Φρένα; δίσκοι";800,00;154,84;');
     expect(withExpenses).toContain('ΣΥΝΟΛΟ ΕΞΟΔΩΝ ΟΧΗΜΑΤΟΣ;;;;800,00;154,84;');
-    // Η γραμμή της βάρδιας δεν αλλάζει: ταμείο βάρδιας 136,23 €.
-    expect(withExpenses).toContain(';50,00;9,68;11,16;136,23;');
+    // Η γραμμή της βάρδιας δεν αλλάζει: κέρδος βάρδιας 186,23 − 11,16 − 50,00 = 125,07 €.
+    expect(withExpenses).toContain(';50,00;9,68;11,16;125,07;');
     // Σύνοψη: 50 € καύσιμα + 800 € οχήματος· ΦΠΑ 20,84 − (9,68 + 154,84) = 143,68 € πιστωτικό.
     expect(withExpenses).toContain('Καύσιμα (€);50,00');
     expect(withExpenses).toContain('Έξοδα Οχήματος (€);800,00');
     expect(withExpenses).toContain('Σύνολο Εξόδων (€);850,00');
     expect(withExpenses).toContain('Προς Απόδοση ΦΠΑ (€);143,68;Πιστωτικό');
-    expect(withExpenses).toContain('Καθαρό Ταμείο (€);-663,77');
+    // Κέρδος: ταμείο 186,23 − ΦΠΑ (−143,68, πιστωτικό) − έξοδα 850,00 = −520,09 €.
+    expect(withExpenses).toContain('Ταμείο (Τζίρος) (€);186,23');
+    expect(withExpenses).toContain('Καθαρό Κέρδος (€);-520,09');
     expect(withExpenses).not.toContain('μόνο ΦΠΑ');
 
     // «Άλλα έξοδα»: στη λίστα με «(μόνο ΦΠΑ)» και χωριστά στη σύνοψη· όχι στο σύνολο εξόδων ούτε στο ταμείο.
@@ -98,7 +101,7 @@ describe('buildShiftsCsv', () => {
     expect(withOther).toContain('Έξοδα Οχήματος (€);800,00');
     expect(withOther).toContain('Άλλα Έξοδα — μόνο ΦΠΑ (€);10,00');
     expect(withOther).toContain('Σύνολο Εξόδων (€);850,00');
-    expect(withOther).toContain('Καθαρό Ταμείο (€);-663,77');
+    expect(withOther).toContain('Καθαρό Κέρδος (€);-518,15');
     // ΦΠΑ εξόδων 9,68 + 154,84 + 1,94 = 166,46 € → 20,84 − 166,46 = 145,62 € πιστωτικό.
     expect(withOther).toContain('ΦΠΑ Εξόδων 24% (€);166,46');
     expect(withOther).toContain('Προς Απόδοση ΦΠΑ (€);145,62;Πιστωτικό');

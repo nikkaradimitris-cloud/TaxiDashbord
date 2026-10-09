@@ -5,18 +5,19 @@
  * του πίνακα `shifts` στη βάση (supabase/migrations/*_taxi_fleet.sql):
  *
  *   ΦΠΑ εσόδων 13%       = round(καθαρά έσοδα × 0.129933, 2)
- *   Μικτή είσπραξη       = καθαρά έσοδα + ΦΠΑ 13% + φιλοδωρήματα
+ *   Ταμείο (τζίρος)      = καθαρά έσοδα + ΦΠΑ 13% + φιλοδωρήματα   (ό,τι εισπράχθηκε, χωρίς αφαιρέσεις)
  *   Σύνολο εξόδων        = καύσιμα + άλλες δαπάνες + επισκευές
  *   ΦΠΑ εξόδων 24%       = round(σύνολο εξόδων / 1.24 × 0.24, 2)   (εμπεριεχόμενος)
- *   Προς απόδοση ΦΠΑ     = ΦΠΑ 13% − ΦΠΑ εξόδων 24%
- *   Καθαρό ταμείο        = (καθαρά έσοδα + ΦΠΑ 13% + φιλοδωρήματα) − σύνολο εξόδων
+ *   Προς απόδοση ΦΠΑ     = ΦΠΑ 13% − ΦΠΑ εξόδων 24%   (μετά τον συμψηφισμό)
+ *   Καθαρό κέρδος        = ταμείο − προς απόδοση ΦΠΑ − σύνολο εξόδων
+ *   (ταμείο μετά τα έξοδα = ταμείο − σύνολο εξόδων: η στήλη `net_cash` της βάσης)
  *
  * Έξοδα οχήματος εκτός βάρδιας καταχωρούνται χωριστά ανά μήνα και αυτοκίνητο
  * (πίνακας `vehicle_expenses`), πάντα με ΦΠΑ 24% μέσα:
- *   «Επισκευές / Συντήρηση» → στα έξοδα, στον ΦΠΑ εξόδων και στο ταμείο της περιόδου·
- *   «Άλλα έξοδα»            → μόνο ο ΦΠΑ τους (συμψηφίζεται)· το ποσό δεν αφαιρείται από το ταμείο.
+ *   «Επισκευές / Συντήρηση» → στα έξοδα, στον ΦΠΑ εξόδων και στο κέρδος της περιόδου·
+ *   «Άλλα έξοδα»            → μόνο ο ΦΠΑ τους (συμψηφίζεται)· το ποσό δεν αφαιρείται από το κέρδος.
  * Οι κρατήσεις των εφαρμογών (Uber / FreeNow / Bolt, πίνακας `platform_statements`)
- * μπαίνουν στα έξοδα και στο ταμείο· ΦΠΑ έχουν όσες τιμολογούνται με ΦΠΑ.
+ * μπαίνουν στα έξοδα και στο κέρδος· ΦΠΑ έχουν όσες τιμολογούνται με ΦΠΑ.
  *
  * Η βάση είναι η πηγή της αλήθειας για τις αποθηκευμένες βάρδιες· οι ίδιες
  * συναρτήσεις χρησιμοποιούνται στη φόρμα για ζωντανή προεπισκόπηση πριν την
@@ -94,7 +95,10 @@ export interface ShiftFigures {
   totalExpensesCents: number;
   expensesVatCents: number;
   vatBalanceCents: number;
+  /** Ταμείο μετά τα έξοδα (ο ΦΠΑ μέσα): ταμείο − σύνολο εξόδων. */
   netCashCents: number;
+  /** Καθαρό κέρδος: ταμείο − προς απόδοση ΦΠΑ (μετά τον συμψηφισμό) − σύνολο εξόδων. */
+  profitCents: number;
 }
 
 /** Στρογγυλοποίηση ποσού/χλμ σε 2 δεκαδικά, όπως θα αποθηκευτεί στη βάση (numeric(…, 2)). */
@@ -133,6 +137,7 @@ export function computeShift(input: ShiftInput): ShiftFigures {
     expensesVatCents,
     vatBalanceCents: vatCents - expensesVatCents,
     netCashCents: grossReceiptsCents - totalExpensesCents,
+    profitCents: grossReceiptsCents - (vatCents - expensesVatCents) - totalExpensesCents,
   };
 }
 
@@ -184,6 +189,7 @@ export function figuresFromStored(row: StoredShiftAmounts): ShiftFigures {
     expensesVatCents,
     vatBalanceCents: vatCents - expensesVatCents,
     netCashCents: grossReceiptsCents - totalExpensesCents,
+    profitCents: grossReceiptsCents - (vatCents - expensesVatCents) - totalExpensesCents,
   };
 }
 
@@ -194,7 +200,7 @@ export interface ExpenseFigures {
   vatCents: number;
   /**
    * «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ (συμψηφίζεται)· το ποσό δεν μπαίνει στα έξοδα ούτε αφαιρείται από το
-   * ταμείο. «Επισκευές / Συντήρηση»: και τα δύο.
+   * κέρδος. «Επισκευές / Συντήρηση»: και τα δύο.
    */
   vatOnly: boolean;
 }
@@ -245,7 +251,7 @@ export interface PlatformFigures {
 export interface Totals extends ShiftFigures {
   shifts: number;
   /**
-   * Έξοδα οχήματος της περιόδου που μετράνε στα έξοδα και στο ταμείο: «Επισκευές / Συντήρηση» (και τυχόν
+   * Έξοδα οχήματος της περιόδου που μετράνε στα έξοδα και στο κέρδος: «Επισκευές / Συντήρηση» (και τυχόν
    * παλιά «Άλλες δαπάνες» / «Επισκευές» μέσα σε βάρδιες). Καύσιμα + έξοδα οχήματος + κρατήσεις εφαρμογών
    * = σύνολο εξόδων.
    */
@@ -311,7 +317,7 @@ export function summarize(
     sum.netCashCents += s.netCashCents;
   }
 
-  // Έξοδα οχήματος: ο ΦΠΑ τους πάντα στον ΦΠΑ εξόδων (συμψηφισμός). Το ποσό στα έξοδα και στο ταμείο
+  // Έξοδα οχήματος: ο ΦΠΑ τους πάντα στον ΦΠΑ εξόδων (συμψηφισμός). Το ποσό στα έξοδα και στο κέρδος
   // μόνο για «Επισκευές / Συντήρηση»· τα «Άλλα έξοδα» μετράνε μόνο για τον ΦΠΑ.
   let vehicleCents = 0;
   let vatOnlyCents = 0;
@@ -329,7 +335,7 @@ export function summarize(
     sum.netCashCents -= e.amountCents;
   }
 
-  // Κρατήσεις εφαρμογών: στα έξοδα, στον ΦΠΑ εξόδων (μόνο FreeNow) και στο ταμείο.
+  // Κρατήσεις εφαρμογών: στα έξοδα, στον ΦΠΑ εξόδων (όσες έχουν ΦΠΑ) και στο κέρδος.
   const app = { trips: 0, turnoverCents: 0, commissionCents: 0, commissionVatCents: 0 };
   for (const p of platforms) {
     app.trips += p.trips;
@@ -347,6 +353,8 @@ export function summarize(
 
   return {
     ...sum,
+    // Καθαρό κέρδος: ταμείο − προς απόδοση ΦΠΑ (μετά τον συμψηφισμό με όλα τα έξοδα) − σύνολο εξόδων.
+    profitCents: sum.grossReceiptsCents - sum.vatBalanceCents - sum.totalExpensesCents,
     shifts: items.length,
     vehicleExpensesCents: vehicleCents + sum.otherExpensesCents + sum.repairsCents,
     vatOnlyExpensesCents: vatOnlyCents,

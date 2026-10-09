@@ -39,7 +39,7 @@ export function ExpenseList({
     isAdmin || (row.created_by === userId && Date.parse(row.created_at) > fetchedAt - DAY_MS);
   const totalCents = items.reduce((sum, item) => sum + item.figures.amountCents, 0);
   const vatCents = items.reduce((sum, item) => sum + item.figures.vatCents, 0);
-  // «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ τους· οι επισκευές μετράνε και στα έξοδα και στο ταμείο.
+  // «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ τους· οι επισκευές μετράνε και στα έξοδα και στο κέρδος.
   const vatOnlyCents = items.reduce((sum, item) => sum + (item.figures.vatOnly ? item.figures.amountCents : 0), 0);
   const countedCents = totalCents - vatOnlyCents;
 
@@ -176,7 +176,7 @@ export function ExpenseList({
 
           <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 border-t-2 border-line pt-2 text-sm font-semibold tabular-nums">
             <dt>
-              Στα έξοδα και στο ταμείο
+              Στα έξοδα (αφαιρούνται από το κέρδος)
               <span className="block text-xs font-normal text-muted">Επισκευές / Συντήρηση</span>
             </dt>
             <dd className="text-right">{formatEuro(countedCents)}</dd>
@@ -184,7 +184,7 @@ export function ExpenseList({
               <>
                 <dt>
                   Άλλα έξοδα
-                  <span className="block text-xs font-normal text-muted">μετράει μόνο ο ΦΠΑ, όχι στο ταμείο</span>
+                  <span className="block text-xs font-normal text-muted">μετράει μόνο ο ΦΠΑ, όχι στο κέρδος</span>
                 </dt>
                 <dd className="text-right">{formatEuro(vatOnlyCents)}</dd>
               </>

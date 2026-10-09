@@ -80,16 +80,17 @@ export function StatsPanel({
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-        <Stat label="Μικτή Είσπραξη (Τζίρος)" value={formatEuro(totals.grossReceiptsCents)} />
+        <Stat label="Ταμείο (Τζίρος)" value={formatEuro(totals.grossReceiptsCents)} sub="Ό,τι εισπράχθηκε, με ΦΠΑ" />
         <Stat
           label="Συνολικά Έξοδα"
           value={formatEuro(totals.totalExpensesCents)}
           sub={expenseParts.filter(Boolean).join(' · ')}
         />
         <Stat
-          label="Καθαρό Ταμείο (Τσέπη)"
-          value={formatEuro(totals.netCashCents)}
-          tone={totals.netCashCents > 0 ? 'good' : totals.netCashCents < 0 ? 'bad' : undefined}
+          label="Καθαρό Κέρδος"
+          value={formatEuro(totals.profitCents)}
+          sub="Ταμείο − ΦΠΑ προς απόδοση − έξοδα"
+          tone={totals.profitCents > 0 ? 'good' : totals.profitCents < 0 ? 'bad' : undefined}
           className="col-span-2 xl:col-span-1"
         />
       </div>
@@ -154,7 +155,7 @@ export function StatsPanel({
           {totals.vatOnlyExpensesCents > 0 && (
             <p className="mt-2 text-xs" data-testid="vat-only-note">
               Μέσα και ο ΦΠΑ των «Άλλων εξόδων»: {formatEuro(totals.vatOnlyExpensesVatCents)} από{' '}
-              {formatEuro(totals.vatOnlyExpensesCents)}. Από αυτά μετράει μόνο ο ΦΠΑ· δεν αφαιρούνται από το ταμείο.
+              {formatEuro(totals.vatOnlyExpensesCents)}. Από αυτά μετράει μόνο ο ΦΠΑ· δεν αφαιρούνται από το κέρδος.
             </p>
           )}
           {noVatCents > 0 && (
@@ -283,7 +284,7 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
         </Notice>
       )}
       <p className="mt-2 text-xs text-muted">
-        Τζίρος δρόμου = μικτή είσπραξη των Ζ − έσοδα εφαρμογών. «Προσωρινή» κράτηση: από τις εβδομάδες, μέχρι να
+        Τζίρος δρόμου = ταμείο των Ζ − έσοδα εφαρμογών. «Προσωρινή» κράτηση: από τις εβδομάδες, μέχρι να
         καταχωρηθεί το τιμολόγιο του μήνα.
       </p>
     </div>
@@ -485,7 +486,7 @@ function PerDriver({
       id="per-driver"
       headingLevel={3}
       title="Ανά οδηγό"
-      summary={`${rows.length === 1 ? '1 οδηγός' : `${rows.length} οδηγοί`} · καθαρά, ΦΠΑ, ταμείο`}
+      summary={`${rows.length === 1 ? '1 οδηγός' : `${rows.length} οδηγοί`} · καθαρά, ΦΠΑ, κέρδος`}
     >
       <div className="-mx-4 overflow-x-auto px-4 sm:-mx-5 sm:px-5">
         <table className="w-full min-w-[34rem] text-sm tabular-nums">
@@ -495,7 +496,7 @@ function PerDriver({
               <th className="py-1 pr-2 text-right font-medium">Βάρδιες</th>
               <th className="py-1 pr-2 text-right font-medium">Καθαρά</th>
               <th className="py-1 pr-2 text-right font-medium">Υπόλοιπο ΦΠΑ</th>
-              <th className="py-1 text-right font-medium">Καθαρό Ταμείο</th>
+              <th className="py-1 text-right font-medium">Καθαρό Κέρδος</th>
             </tr>
           </thead>
           <tbody>
@@ -515,7 +516,7 @@ function PerDriver({
                   <td className={cx('py-2 pr-2 text-right', status === 'debit' && 'text-bad', status === 'credit' && 'text-good')}>
                     {formatEuro(Math.abs(totals.vatBalanceCents))} {status === 'debit' ? 'Χ' : status === 'credit' ? 'Π' : ''}
                   </td>
-                  <td className="py-2 text-right font-semibold">{formatEuro(totals.netCashCents)}</td>
+                  <td className="py-2 text-right font-semibold">{formatEuro(totals.profitCents)}</td>
                 </tr>
               );
             })}

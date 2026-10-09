@@ -285,3 +285,23 @@ describe('toCents', () => {
     expect(toCents(160.39)).toBe(16039);
   });
 });
+
+describe('καθαρό κέρδος', () => {
+  it('ταμείο (με ΦΠΑ) − ΦΠΑ προς απόδοση (συμψηφισμένος) − καύσιμα: Ζ 912', () => {
+    // 181,29 + 23,56 = 204,85 ταμείο · ΦΠΑ 23,56 − 4,65 (καύσιμα 24) = 18,91 · 204,85 − 18,91 − 24,00 = 161,94.
+    const shift = computeShift({ trips: 15, paidKm: 128, emptyKm: 46, netRevenue: 181.29, tips: 0, fuel: 24, otherExpenses: 0, repairs: 0 });
+    expect(shift.grossReceiptsCents).toBe(20485);
+    expect(shift.vatBalanceCents).toBe(1891);
+    expect(shift.profitCents).toBe(16194);
+    // Το ίδιο: καθαρά − καύσιμα χωρίς τον ΦΠΑ τους.
+    expect(shift.profitCents).toBe(18129 - (2400 - 465));
+  });
+
+  it('μήνας: ταμείο − ΦΠΑ μετά τον συμψηφισμό με όλα τα έξοδα − σύνολο εξόδων', () => {
+    const shift = computeShift({ trips: 1, paidKm: 0, emptyKm: 0, netRevenue: 160.39, tips: 5, fuel: 0, otherExpenses: 0, repairs: 0 });
+    const totals = summarize([shift], [computeExpense(124), computeExpense(10, 'other')]);
+    // ταμείο 186,23 · ΦΠΑ 20,84 − 24,00 − 1,94 = −5,10 · έξοδα 124 → 186,23 + 5,10 − 124,00 = 67,33
+    expect(totals.profitCents).toBe(18623 + 510 - 12400);
+    expect(totals.profitCents).toBe(totals.grossReceiptsCents - totals.vatBalanceCents - totals.totalExpensesCents);
+  });
+});

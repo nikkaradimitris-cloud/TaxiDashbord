@@ -199,7 +199,7 @@ export function ShiftForm({
             </Field>
             <Field
               label="Φιλοδωρήματα / Άλλα Έσοδα (€)"
-              hint="Χωρίς ΦΠΑ — προστίθενται στη μικτή είσπραξη."
+              hint="Χωρίς ΦΠΑ — προστίθενται στο ταμείο."
               error={errors.tips}
               className="col-span-2"
             >
@@ -219,7 +219,7 @@ export function ShiftForm({
         </Group>
 
         <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-1 rounded-xl bg-bg p-3 text-sm tabular-nums">
-          <dt className="text-muted">Μικτή είσπραξη</dt>
+          <dt className="text-muted">Ταμείο (με ΦΠΑ)</dt>
           <dd className="text-right">{formatEuro(preview.grossReceiptsCents)}</dd>
           <dt className="text-muted">Καύσιμα</dt>
           <dd className="text-right">{formatEuro(preview.totalExpensesCents)}</dd>
@@ -231,8 +231,8 @@ export function ShiftForm({
           </dd>
           <dt className="text-muted">Συνολικά χλμ</dt>
           <dd className="text-right">{formatKm(preview.totalKm)}</dd>
-          <dt className="font-semibold">Καθαρό ταμείο</dt>
-          <dd className="text-right font-semibold">{formatEuro(preview.netCashCents)}</dd>
+          <dt className="font-semibold">Καθαρό κέρδος</dt>
+          <dd className="text-right font-semibold">{formatEuro(preview.profitCents)}</dd>
         </dl>
 
         {message && <Notice tone={message.tone}>{message.text}</Notice>}
