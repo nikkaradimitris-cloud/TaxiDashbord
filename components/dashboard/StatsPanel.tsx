@@ -89,7 +89,7 @@ export function StatsPanel({
         <Stat
           label="Καθαρό Κέρδος"
           value={formatEuro(totals.profitCents)}
-          sub="Ταμείο − ΦΠΑ προς απόδοση − έξοδα"
+          sub={`Ταμείο − ΦΠΑ 13% − έξοδα χωρίς ΦΠΑ${totals.vatOnlyExpensesVatCents > 0 ? ' + ΦΠΑ «Άλλων εξόδων»' : ''}`}
           tone={totals.profitCents > 0 ? 'good' : totals.profitCents < 0 ? 'bad' : undefined}
           className="col-span-2 xl:col-span-1"
         />
