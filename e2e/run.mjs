@@ -496,6 +496,8 @@ check(
 );
 await addDriver({ name: 'Μαρία Κωνσταντίνου', plate: 'ΙΚΒ-5678', phone: '6987654321', email: '' });
 check(await fleet.getByText('ΤΑΕ-1234').isVisible(), 'η πινακίδα αποθηκεύτηκε με κεφαλαία');
+// Το «προστέθηκε» βγαίνει πριν ξαναφορτώσει η λίστα: πρώτα να φανεί και το αυτοκίνητο της Μαρίας.
+await fleet.locator('ul > li').filter({ hasText: 'ΙΚΒ-5678' }).first().waitFor();
 const fuelsInList = await fleet.locator('ul > li').evaluateAll((items) =>
   items.map((li) => (li.innerText.match(/Καύσιμο: ([^\n]+)/) ?? [])[1]),
 );
@@ -985,7 +987,7 @@ const afterEdit = await page.locator('main').innerText();
 check(afterEdit.includes('148,23'), 'το ιστορικό δείχνει το νέο ταμείο της βάρδιας (148,23)');
 const shiftHead = (await page.locator('#shifts thead').innerText()).replace(/\s+/g, ' ');
 check(
-  shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. − Καύσιμα = Ταμείο'),
+  shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. = Μικτή − Καύσιμα = Ταμείο'),
   `υπολογιστής: οι στήλες του ιστορικού δείχνουν την πράξη του ταμείου (${shiftHead})`,
 );
 await page.getByRole('button', { name: 'Επεξεργασία βάρδιας Ζ 55' }).click();
@@ -1107,12 +1109,16 @@ check(
     (await mpage.getByRole('button', { name: 'Λήψη εικόνας' }).count()) === 0,
   `κινητό: «Αποστολή WhatsApp» → κοινοποίηση με την εικόνα ΦΠΑ (fpa-2026-09.png) και σύντομο μήνυμα μόνο με τον ΦΠΑ (${mVat})`,
 );
-// Ιστορικό στο κινητό: η πράξη του ταμείου γραμμή-γραμμή (Ζ 101 μετά τη διόρθωση του 4β).
+// Ιστορικό στο κινητό: η πράξη του ταμείου γραμμή-γραμμή (Ζ 101 μετά τη διόρθωση του 4β). Τα καύσιμα (40 €)
+// είναι περισσότερα από ΦΠΑ + φιλοδωρήματα (27,84 €): το ταμείο βγαίνει κάτω από τα καθαρά, η μικτή πάνω.
 await openPanel(mpage, 'shifts');
 const mShiftCard = mpage.locator('#shifts li').filter({ hasText: 'Ζ 101' });
 const mCash = nbsp0(await mShiftCard.getByTestId('shift-cash').innerText()).replace(/\s+/g, ' ');
 check(
-  mCash.startsWith('Καθαρά (χωρίς ΦΠΑ) 160,39 € + ΦΠΑ 13% 20,84 € + Φιλοδωρήματα 7,00 € − Καύσιμα 40,00 € = Ταμείο 148,23 €') &&
+  mCash.startsWith(
+    'Καθαρά (χωρίς ΦΠΑ) 160,39 € + ΦΠΑ 13% 20,84 € + Φιλοδωρήματα 7,00 € = Είσπραξη με ΦΠΑ 188,23 € ' +
+      '− Καύσιμα 40,00 € = Ταμείο 148,23 €',
+  ) &&
     nbsp0(await mShiftCard.locator('p').filter({ hasText: /^Ταμείο/ }).innerText()).replace(/\s+/g, ' ') === 'Ταμείο 148,23 €',
   `κινητό: η βάρδια δείχνει «Ταμείο» και την πράξη του (${mCash})`,
 );
