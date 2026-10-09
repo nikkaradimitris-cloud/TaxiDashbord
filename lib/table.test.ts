@@ -6,6 +6,7 @@ import {
   buildShiftTable,
   monthRowsFromShifts,
   monthRowsFromSummary,
+  sortShifts,
   sumFigures,
   sumRows,
 } from './table';
@@ -81,6 +82,36 @@ describe('buildShiftTable', () => {
       'Αύγουστος · ΒΑΣΙΛΗΣ',
       'Σεπτέμβριος · ΑΛΕΞΗΣ',
     ]);
+  });
+});
+
+describe('sortShifts', () => {
+  const label = (items: ChartShift[]) => items.map((item) => `${item.row.month}:${item.row.driver_id}:${item.row.z_number}`);
+
+  it('με τη σειρά των Ζ, όχι με τη σειρά καταχώρησης (το 912 γράφτηκε πριν από το 911)', () => {
+    const items = [shift('a', '910', {}), shift('a', '912', {}), shift('a', '911', {}), shift('a', '1000', {})];
+    expect(sortShifts(items, [A]).map((item) => item.row.z_number)).toEqual(['910', '911', '912', '1000']);
+    expect(sortShifts(items, [A], 'desc').map((item) => item.row.z_number)).toEqual(['1000', '912', '911', '910']);
+    expect(items.map((item) => item.row.z_number)).toEqual(['910', '912', '911', '1000']);
+  });
+
+  it('νεότερα πρώτα: ο νεότερος μήνας πάνω, οι οδηγοί με τη σειρά του στόλου, το μεγαλύτερο Ζ πρώτο', () => {
+    const items = [
+      shift('b', '7', {}, 9),
+      shift('a', '99', {}, 8),
+      shift('a', '100', {}, 9),
+      shift('b', '6', {}, 9),
+      shift('a', '101', {}, 9),
+    ];
+    expect(label(sortShifts(items, [B, A], 'desc'))).toEqual(['9:a:101', '9:a:100', '9:b:7', '9:b:6', '8:a:99']);
+    expect(label(sortShifts(items, [B, A]))).toEqual(['8:a:99', '9:a:100', '9:a:101', '9:b:6', '9:b:7']);
+  });
+
+  it('ίδιο Ζ: με τη σειρά καταχώρησης', () => {
+    const first = shift('a', '5', { netRevenue: 1 });
+    const second = shift('a', '5', { netRevenue: 2 });
+    expect(sortShifts([second, first], [A])).toEqual([first, second]);
+    expect(sortShifts([first, second], [A], 'desc')).toEqual([second, first]);
   });
 });
 

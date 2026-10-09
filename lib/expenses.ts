@@ -1,7 +1,8 @@
 /**
  * Έξοδα οχήματος εκτός βάρδιας: «Επισκευές / Συντήρηση» ή «Άλλα έξοδα».
  * Καταχωρούνται ανά Έτος/Μήνα για το συγκεκριμένο αυτοκίνητο, με τελικό
- * ποσό (ΦΠΑ 24% μέσα), και μπαίνουν στα σύνολα της περιόδου.
+ * ποσό (ΦΠΑ 24% μέσα). Οι επισκευές μετράνε στα έξοδα, στον ΦΠΑ και στο
+ * ταμείο της περιόδου· από τα «Άλλα έξοδα» μετράει μόνο ο ΦΠΑ (lib/accounting.ts).
  */
 import { computeExpense, round2, type ExpenseFigures } from './accounting';
 import { parseDecimal } from './numbers';
@@ -60,7 +61,7 @@ export function parseExpenseForm(values: ExpenseFormValues): ParsedExpenseForm {
   return {
     amount: valid ? round2(amount!) : null,
     errors,
-    preview: computeExpense(amount !== null && amount > 0 && amount < MAX_AMOUNT ? amount : 0),
+    preview: computeExpense(amount !== null && amount > 0 && amount < MAX_AMOUNT ? amount : 0, values.category),
   };
 }
 

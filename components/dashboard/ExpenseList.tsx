@@ -1,7 +1,7 @@
 'use client';
 
 import { Panel } from '@/components/Panel';
-import { Button, cx } from '@/components/ui';
+import { Badge, Button, cx } from '@/components/ui';
 import type { ExpenseFigures } from '@/lib/accounting';
 import { categoryLabel } from '@/lib/expenses';
 import { formatDateTime, formatEuro } from '@/lib/format';
@@ -39,6 +39,9 @@ export function ExpenseList({
     isAdmin || (row.created_by === userId && Date.parse(row.created_at) > fetchedAt - DAY_MS);
   const totalCents = items.reduce((sum, item) => sum + item.figures.amountCents, 0);
   const vatCents = items.reduce((sum, item) => sum + item.figures.vatCents, 0);
+  // «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ τους· οι επισκευές μετράνε και στα έξοδα και στο ταμείο.
+  const vatOnlyCents = items.reduce((sum, item) => sum + (item.figures.vatOnly ? item.figures.amountCents : 0), 0);
+  const countedCents = totalCents - vatOnlyCents;
 
   const vehicle = (row: ExpenseRow) => {
     const driver = driversById.get(row.driver_id);
@@ -75,7 +78,9 @@ export function ExpenseList({
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold">{categoryLabel(row.category)}</p>
+                      <p className="font-semibold">
+                        {categoryLabel(row.category)} {figures.vatOnly && <Badge>μόνο ΦΠΑ</Badge>}
+                      </p>
                       {row.description && <p className="text-sm break-words">{row.description}</p>}
                       <p className="text-xs text-muted">
                         {monthName(row.month)} {row.year} · {plate ? `${plate} · ` : ''}
@@ -130,7 +135,10 @@ export function ExpenseList({
                         {plate ?? name}
                         {plate && <span className="block text-xs text-muted">{name}</span>}
                       </td>
-                      <td className="py-2 pr-3">{categoryLabel(row.category)}</td>
+                      <td className="py-2 pr-3">
+                        {categoryLabel(row.category)}
+                        {figures.vatOnly && <span className="block text-xs text-muted">μόνο ΦΠΑ</span>}
+                      </td>
                       <td className="max-w-64 py-2 pr-3 break-words">{row.description || '—'}</td>
                       <td className="py-2 pr-3 text-right font-semibold whitespace-nowrap">
                         {formatEuro(figures.amountCents)}
@@ -167,9 +175,21 @@ export function ExpenseList({
           </div>
 
           <dl className="mt-3 grid grid-cols-[1fr_auto] gap-x-3 border-t-2 border-line pt-2 text-sm font-semibold tabular-nums">
-            <dt>Σύνολο εξόδων οχήματος</dt>
-            <dd className="text-right">{formatEuro(totalCents)}</dd>
-            <dt className="font-normal text-muted">ΦΠΑ 24% (συμψηφίζεται)</dt>
+            <dt>
+              Στα έξοδα και στο ταμείο
+              <span className="block text-xs font-normal text-muted">Επισκευές / Συντήρηση</span>
+            </dt>
+            <dd className="text-right">{formatEuro(countedCents)}</dd>
+            {vatOnlyCents > 0 && (
+              <>
+                <dt>
+                  Άλλα έξοδα
+                  <span className="block text-xs font-normal text-muted">μετράει μόνο ο ΦΠΑ, όχι στο ταμείο</span>
+                </dt>
+                <dd className="text-right">{formatEuro(vatOnlyCents)}</dd>
+              </>
+            )}
+            <dt className="font-normal text-muted">ΦΠΑ 24% (συμψηφίζεται, όλα)</dt>
             <dd className="text-right font-normal text-muted">{formatEuro(vatCents)}</dd>
           </dl>
         </>

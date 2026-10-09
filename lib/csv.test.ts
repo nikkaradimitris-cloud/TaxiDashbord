@@ -84,6 +84,24 @@ describe('buildShiftsCsv', () => {
     expect(withExpenses).toContain('Σύνολο Εξόδων (€);850,00');
     expect(withExpenses).toContain('Προς Απόδοση ΦΠΑ (€);143,68;Πιστωτικό');
     expect(withExpenses).toContain('Καθαρό Ταμείο (€);-663,77');
+    expect(withExpenses).not.toContain('μόνο ΦΠΑ');
+
+    // «Άλλα έξοδα»: στη λίστα με «(μόνο ΦΠΑ)» και χωριστά στη σύνοψη· όχι στο σύνολο εξόδων ούτε στο ταμείο.
+    const accountant = computeExpense(10, 'other');
+    const withOther = buildShiftsCsv(
+      [row],
+      summarize([figures], [repair, accountant]),
+      { period: 'Σεπτ.', driverLabel: 'Γ' },
+      [expense, { ...expense, category: 'Άλλα έξοδα', description: 'Λογιστής', figures: accountant }],
+    );
+    expect(withOther).toContain('2026;Σεπτέμβριος;Γιώργος;ΤΑΕ-1234;Άλλα έξοδα (μόνο ΦΠΑ);Λογιστής;10,00;1,94;');
+    expect(withOther).toContain('Έξοδα Οχήματος (€);800,00');
+    expect(withOther).toContain('Άλλα Έξοδα — μόνο ΦΠΑ (€);10,00');
+    expect(withOther).toContain('Σύνολο Εξόδων (€);850,00');
+    expect(withOther).toContain('Καθαρό Ταμείο (€);-663,77');
+    // ΦΠΑ εξόδων 9,68 + 154,84 + 1,94 = 166,46 € → 20,84 − 166,46 = 145,62 € πιστωτικό.
+    expect(withOther).toContain('ΦΠΑ Εξόδων 24% (€);166,46');
+    expect(withOther).toContain('Προς Απόδοση ΦΠΑ (€);145,62;Πιστωτικό');
   });
 
   it('εφαρμογές: δική τους ενότητα, κρατήσεις στα έξοδα, διαδρομές δρόμου στη σύνοψη', () => {

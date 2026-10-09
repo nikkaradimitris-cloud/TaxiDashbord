@@ -129,9 +129,7 @@ export function ExpenseForm({
     >
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
         {switcher}
-        <p className="text-sm text-muted">
-          Έξοδα του αυτοκινήτου εκτός βάρδιας. Μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο του μήνα.
-        </p>
+        <p className="text-sm text-muted">Έξοδα του αυτοκινήτου εκτός βάρδιας, με το ποσό του τιμολογίου (ΦΠΑ μέσα).</p>
         <EntryTargetFields
           target={target}
           prefs={prefs}
@@ -150,6 +148,11 @@ export function ExpenseForm({
           onChange={(category) => update({ category })}
           error={errors.category}
         />
+        <p className="-mt-2 text-sm text-muted" data-testid="expense-category-note">
+          {values.category === 'other'
+            ? 'Άλλα έξοδα: μετράει μόνο ο ΦΠΑ τους (συμψηφίζεται). Το ποσό δεν αφαιρείται από το ταμείο.'
+            : 'Επισκευές / Συντήρηση: μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο του μήνα.'}
+        </p>
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Ποσό με ΦΠΑ (€) *" error={errors.amount}>

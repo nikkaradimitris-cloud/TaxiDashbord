@@ -168,12 +168,20 @@ describe('summarize', () => {
 
 describe('έξοδα οχήματος (εκτός βάρδιας)', () => {
   it('ΦΠΑ 24% μέσα στο ποσό: συνεργείο 800 € → 154,84 €', () => {
-    expect(computeExpense(800)).toEqual({ amountCents: 80000, vatCents: 15484 });
-    expect(expenseFromStored({ amount: 800, vat: 154.84 })).toEqual({ amountCents: 80000, vatCents: 15484 });
-    expect(expenseFromStored({ amount: 12.4, vat: null })).toEqual({ amountCents: 1240, vatCents: 240 });
+    expect(computeExpense(800)).toEqual({ amountCents: 80000, vatCents: 15484, vatOnly: false });
+    expect(expenseFromStored({ amount: 800, vat: 154.84, category: 'repairs' })).toEqual({
+      amountCents: 80000,
+      vatCents: 15484,
+      vatOnly: false,
+    });
+    expect(expenseFromStored({ amount: 12.4, vat: null, category: 'other' })).toEqual({
+      amountCents: 1240,
+      vatCents: 240,
+      vatOnly: true,
+    });
   });
 
-  it('μπαίνουν στα έξοδα, στον ΦΠΑ εξόδων και στο ταμείο της περιόδου — όχι στη βάρδια', () => {
+  it('επισκευές: στα έξοδα, στον ΦΠΑ εξόδων και στο ταμείο της περιόδου — όχι στη βάρδια', () => {
     // Βάρδια: 160,39 € καθαρά (ΦΠΑ 20,84), 5 € φιλοδωρήματα, 40 € καύσιμα (ΦΠΑ 7,74).
     const shift = computeShift({ ...emptyShift, netRevenue: 160.39, tips: 5, fuel: 40 });
     const totals = summarize([shift], [computeExpense(800), computeExpense(10)]);
@@ -186,6 +194,29 @@ describe('έξοδα οχήματος (εκτός βάρδιας)', () => {
     expect(totals.netCashCents).toBe(18623 - 85000);
     // Η βάρδια μένει καθαρή: ταμείο 146,23 €.
     expect(shift.netCashCents).toBe(14623);
+  });
+
+  it('«Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ τους — όχι στα έξοδα, όχι στο ταμείο', () => {
+    const shift = computeShift({ ...emptyShift, netRevenue: 160.39, tips: 5, fuel: 40 });
+    // Επισκευή 124 € (ΦΠΑ 24,00) + «Άλλα έξοδα» 10 € (ΦΠΑ 1,94).
+    const totals = summarize([shift], [computeExpense(124), computeExpense(10, 'other')]);
+    expect(totals.vehicleExpensesCents).toBe(12400);
+    expect(totals.vatOnlyExpensesCents).toBe(1000);
+    expect(totals.vatOnlyExpensesVatCents).toBe(194);
+    expect(totals.expenseCount).toBe(2);
+    expect(totals.totalExpensesCents).toBe(4000 + 12400);
+    expect(totals.expensesVatCents).toBe(774 + 2400 + 194);
+    expect(totals.vatBalanceCents).toBe(2084 - (774 + 2400 + 194));
+    expect(totals.netCashCents).toBe(18623 - 4000 - 12400);
+    expect(totals.netCashCents).toBe(totals.grossReceiptsCents - totals.totalExpensesCents);
+  });
+
+  it('μόνο «Άλλα έξοδα» στον μήνα: πιστωτικός ΦΠΑ, ταμείο ανέγγιχτο', () => {
+    const totals = summarize([], [computeExpense(180, 'other'), computeExpense(20, 'other')]);
+    expect(totals.totalExpensesCents).toBe(0);
+    expect(totals.netCashCents).toBe(0);
+    expect(totals.expensesVatCents).toBe(3484 + 387);
+    expect(totals.vatBalanceCents).toBe(-(3484 + 387));
   });
 
   it('χωρίς βάρδιες: μόνο τα έξοδα του μήνα', () => {

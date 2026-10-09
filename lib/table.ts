@@ -60,6 +60,29 @@ export type ShiftTableEntry =
 const zCollator = new Intl.Collator('el', { numeric: true, sensitivity: 'base' });
 
 /**
+ * Η σειρά των βαρδιών σε πίνακες και λίστες: μήνας, οδηγός (σειρά στόλου) και αριθμός Ζ (ως αριθμός), και
+ * για ίδιο Ζ η σειρά καταχώρησης. Έτσι το Ζ 911 είναι πάντα δίπλα στο 912, όποτε κι αν γράφτηκε.
+ * `desc`: τα νεότερα πρώτα (μήνας και Ζ από το μεγαλύτερο), οι οδηγοί πάλι με τη σειρά του στόλου.
+ */
+export function sortShifts<T extends { row: ChartShift['row'] }>(
+  items: readonly T[],
+  drivers: readonly ChartDriver[],
+  order: 'asc' | 'desc' = 'asc',
+): T[] {
+  const ranks = driverRanks(drivers, new Set(items.map((item) => item.row.driver_id)));
+  const sign = order === 'asc' ? 1 : -1;
+  return [...items].sort(
+    (a, b) =>
+      sign * (a.row.month - b.row.month) ||
+      ranks.get(a.row.driver_id)! - ranks.get(b.row.driver_id)! ||
+      sign *
+        (zCollator.compare(a.row.z_number, b.row.z_number) ||
+          a.row.created_at.localeCompare(b.row.created_at) ||
+          a.row.id.localeCompare(b.row.id)),
+  );
+}
+
+/**
  * Μία γραμμή ανά βάρδια: κατά μήνα, οδηγό (σειρά στόλου) και αριθμό Ζ.
  * Με «Όλοι οι μήνες» ή πολλούς οδηγούς οι βάρδιες χωρίζονται με επικεφαλίδες
  * (π.χ. «Σεπτέμβριος · Γιώργος»), ώστε κάθε γραμμή να δείχνει μόνο τον αριθμό Ζ.
@@ -69,19 +92,11 @@ export function buildShiftTable(
   options: { month: MonthFilter; drivers: readonly ChartDriver[] },
 ): { entries: ShiftTableEntry[]; total: TableTotals } {
   const driverIds = new Set(items.map((item) => item.row.driver_id));
-  const ranks = driverRanks(options.drivers, driverIds);
   const names = new Map(options.drivers.map((driver) => [driver.id, driver.name]));
   const byMonth = options.month === 'all';
   const byDriver = driverIds.size > 1;
 
-  const sorted = [...items].sort(
-    (a, b) =>
-      a.row.month - b.row.month ||
-      ranks.get(a.row.driver_id)! - ranks.get(b.row.driver_id)! ||
-      zCollator.compare(a.row.z_number, b.row.z_number) ||
-      a.row.created_at.localeCompare(b.row.created_at) ||
-      a.row.id.localeCompare(b.row.id),
-  );
+  const sorted = sortShifts(items, options.drivers);
 
   const entries: ShiftTableEntry[] = [];
   let group = undefined as Extract<ShiftTableEntry, { kind: 'group' }> | undefined;

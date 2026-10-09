@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Panel } from '@/components/Panel';
 import { Badge, Button, cx, Notice } from '@/components/ui';
 import type { ShiftFigures } from '@/lib/accounting';
 import { formatDateTime, formatEuro, formatKm } from '@/lib/format';
 import { monthName } from '@/lib/period';
+import { sortShifts } from '@/lib/table';
 import type { DriverRow, ShiftRow } from '@/lib/types';
 import { jumpText, missingZText, zGapBadge, type DriverZGaps } from '@/lib/zgaps';
 
@@ -39,7 +40,13 @@ export function ShiftList({
   zGaps?: DriverZGaps[];
 }) {
   const [limit, setLimit] = useState(PAGE);
-  const visible = items.slice(0, limit);
+  // Με τη σειρά των Ζ (ανά μήνα και οδηγό), όχι με τη σειρά που γράφτηκαν: το νεότερο πάνω, 912 → 911 → 910.
+  const sorted = useMemo(() => sortShifts(items, [...driversById.values()], 'desc'), [items, driversById]);
+  const visible = sorted.slice(0, limit);
+  // Στις βάρδιες γράφονται μόνο καύσιμα· «Έξοδα βάρδιας» μόνο αν υπάρχουν παλιές βάρδιες με άλλες δαπάνες.
+  const expensesLabel = items.some((item) => item.figures.otherExpensesCents + item.figures.repairsCents > 0)
+    ? 'Έξοδα βάρδιας'
+    : 'Καύσιμα';
   const grossCents = items.reduce((sum, item) => sum + item.figures.grossReceiptsCents, 0);
   const zBadge = loading ? null : zGapBadge(zGaps);
 
@@ -105,19 +112,26 @@ export function ShiftList({
                         {driver?.plate ? ` · ${driver.plate}` : ''} · {formatDateTime(row.created_at)}
                       </p>
                     </div>
-                    <p className="text-right font-bold tabular-nums">{formatEuro(figures.netCashCents)}</p>
+                    <p className="shrink-0 text-right font-bold tabular-nums">
+                      <span className="block text-xs font-normal text-muted">Ταμείο</span>
+                      {formatEuro(figures.netCashCents)}
+                    </p>
                   </div>
-                  <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-0.5 text-sm tabular-nums">
-                    <dt className="text-muted">Καθαρά</dt>
+                  {/* Η πράξη του ταμείου, γραμμή-γραμμή: καθαρά + ΦΠΑ + φιλοδωρήματα − καύσιμα. */}
+                  <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-sm tabular-nums" data-testid="shift-cash">
+                    <dt className="text-muted">Καθαρά (χωρίς ΦΠΑ)</dt>
                     <dd className="text-right">{formatEuro(figures.netRevenueCents)}</dd>
-                    <dt className="text-muted">ΦΠΑ 13%</dt>
+                    <dt className="text-muted">+ ΦΠΑ 13%</dt>
                     <dd className="text-right">{formatEuro(figures.vatCents)}</dd>
-                    <dt className="text-muted">Φιλοδωρήματα</dt>
+                    <dt className="text-muted">+ Φιλοδωρήματα</dt>
                     <dd className="text-right">{formatEuro(figures.tipsCents)}</dd>
-                    <dt className="text-muted">Έξοδα</dt>
+                    <dt className="text-muted">− {expensesLabel}</dt>
                     <dd className="text-right">{formatEuro(figures.totalExpensesCents)}</dd>
-                    <dt className="text-muted">Χλμ (μισθ./σύν.)</dt>
-                    <dd className="text-right">
+                    {/* Η γραμμή πάνω από το αποτέλεσμα συνεχίζει και στο κενό ανάμεσα στις στήλες (-mr-3 pr-3). */}
+                    <dt className="-mr-3 border-t border-line pt-0.5 pr-3 font-semibold">= Ταμείο</dt>
+                    <dd className="border-t border-line pt-0.5 text-right font-semibold">{formatEuro(figures.netCashCents)}</dd>
+                    <dt className="mt-1 text-muted">Χλμ (μισθ./σύν.)</dt>
+                    <dd className="mt-1 text-right">
                       {formatKm(figures.paidKm)} / {formatKm(figures.totalKm)}
                     </dd>
                     <dt className="text-muted">Διαδρομές</dt>
@@ -149,10 +163,10 @@ export function ShiftList({
                   <th className="py-2 pr-3 text-right font-medium">Διαδρ.</th>
                   <th className="py-2 pr-3 text-right font-medium">Χλμ μισθ./σύν.</th>
                   <th className="py-2 pr-3 text-right font-medium">Καθαρά</th>
-                  <th className="py-2 pr-3 text-right font-medium">ΦΠΑ 13%</th>
-                  <th className="py-2 pr-3 text-right font-medium">Φιλοδ.</th>
-                  <th className="py-2 pr-3 text-right font-medium">Έξοδα</th>
-                  <th className="py-2 pr-3 text-right font-medium">Ταμείο</th>
+                  <th className="py-2 pr-3 text-right font-medium">+ ΦΠΑ 13%</th>
+                  <th className="py-2 pr-3 text-right font-medium">+ Φιλοδ.</th>
+                  <th className="py-2 pr-3 text-right font-medium">− {expensesLabel}</th>
+                  <th className="py-2 pr-3 text-right font-medium">= Ταμείο</th>
                   <th className="py-2 pr-3 font-medium">Καταχώρηση</th>
                   <th className="py-2" />
                 </tr>

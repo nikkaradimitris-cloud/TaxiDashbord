@@ -397,6 +397,7 @@ export type Database = {
           utilization_pct: number | null;
           vat: number | null;
           vat_balance: number | null;
+          vat_only_expenses: number | null;
           vat_status: string | null;
           vehicle_expenses: number | null;
           year: number | null;

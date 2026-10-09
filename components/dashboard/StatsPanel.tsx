@@ -151,6 +151,12 @@ export function StatsPanel({
             <dt>ΦΠΑ εξόδων 24% (εμπεριεχόμενος)</dt>
             <dd className="text-right">− {formatEuro(totals.expensesVatCents)}</dd>
           </dl>
+          {totals.vatOnlyExpensesCents > 0 && (
+            <p className="mt-2 text-xs" data-testid="vat-only-note">
+              Μέσα και ο ΦΠΑ των «Άλλων εξόδων»: {formatEuro(totals.vatOnlyExpensesVatCents)} από{' '}
+              {formatEuro(totals.vatOnlyExpensesCents)}. Από αυτά μετράει μόνο ο ΦΠΑ· δεν αφαιρούνται από το ταμείο.
+            </p>
+          )}
           {noVatCents > 0 && (
             <p className="mt-2 text-xs">
               Οι κρατήσεις {noVatPlatforms.map((platform) => platformLabel(platform.platform)).join(', ')} (

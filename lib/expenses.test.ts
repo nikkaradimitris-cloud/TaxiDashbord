@@ -12,7 +12,9 @@ describe('parseExpenseForm', () => {
     const { amount, errors, preview } = parseExpenseForm({ ...EMPTY_EXPENSE_FORM, amount: '800' });
     expect(errors).toEqual({});
     expect(amount).toBe(800);
-    expect(preview).toEqual({ amountCents: 80000, vatCents: 15484 });
+    expect(preview).toEqual({ amountCents: 80000, vatCents: 15484, vatOnly: false });
+    // «Άλλα έξοδα»: ίδιος ΦΠΑ, αλλά μετράει μόνο ο ΦΠΑ.
+    expect(parseExpenseForm({ ...EMPTY_EXPENSE_FORM, category: 'other', amount: '800' }).preview.vatOnly).toBe(true);
   });
 
   it('δέχεται ελληνικό κόμμα και χιλιάδες', () => {

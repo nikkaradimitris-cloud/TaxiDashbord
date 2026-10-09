@@ -176,7 +176,8 @@ export function buildShiftsCsv(
         textCell(monthName(expense.month)),
         textCell(expense.driverName),
         textCell(expense.plate ?? ''),
-        textCell(expense.category),
+        // «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ τους (όχι στα έξοδα / στο ταμείο).
+        textCell(expense.figures.vatOnly ? `${expense.category} (μόνο ΦΠΑ)` : expense.category),
         textCell(expense.description),
         formatCentsPlain(expense.figures.amountCents),
         formatCentsPlain(expense.figures.vatCents),
@@ -238,6 +239,9 @@ export function buildShiftsCsv(
   lines.push([textCell('Έσοδα Εφαρμογών (€)'), formatCentsPlain(totals.appTurnoverCents)]);
   lines.push([textCell('Καύσιμα (€)'), formatCentsPlain(totals.fuelCents)]);
   lines.push([textCell('Έξοδα Οχήματος (€)'), formatCentsPlain(totals.vehicleExpensesCents)]);
+  if (totals.vatOnlyExpensesCents > 0) {
+    lines.push([textCell('Άλλα Έξοδα — μόνο ΦΠΑ (€)'), formatCentsPlain(totals.vatOnlyExpensesCents)]);
+  }
   lines.push([textCell('Κρατήσεις Εφαρμογών (€)'), formatCentsPlain(totals.appCommissionCents)]);
   lines.push([textCell('Σύνολο Εξόδων (€)'), formatCentsPlain(totals.totalExpensesCents)]);
   lines.push([textCell('ΦΠΑ Εσόδων 13% (€)'), formatCentsPlain(totals.vatCents)]);

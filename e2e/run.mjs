@@ -591,8 +591,17 @@ check(
     (await xform.getByText(/Πλύσιμο|Διόδια|Parking|Ελαστικά|Service/).count()) === 0,
   'μόνο δύο είδη εξόδου: «Επισκευές / Συντήρηση» (προεπιλογή) και «Άλλα έξοδα»',
 );
+const categoryNote = () => xform.getByTestId('expense-category-note').innerText();
+check(
+  (await categoryNote()) === 'Επισκευές / Συντήρηση: μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο του μήνα.',
+  'σημείωση «Επισκευές / Συντήρηση»: μετράνε στα έξοδα, στον ΦΠΑ και στο ταμείο',
+);
 await xform.getByText('Άλλα έξοδα', { exact: true }).click();
 check(await xform.getByLabel('Άλλα έξοδα').isChecked(), 'επιλογή «Άλλα έξοδα»');
+check(
+  (await categoryNote()) === 'Άλλα έξοδα: μετράει μόνο ο ΦΠΑ τους (συμψηφίζεται). Το ποσό δεν αφαιρείται από το ταμείο.',
+  'σημείωση «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ, το ποσό δεν αφαιρείται από το ταμείο',
+);
 await xform.getByLabel('Ποσό με ΦΠΑ').fill('10');
 await xform.getByLabel('Περιγραφή').fill('Λογιστής');
 check((await xform.locator('output').innerText()).includes('1,94'), 'ζωντανός ΦΠΑ 24% εξόδου: 10 € → 1,94 €');
@@ -617,7 +626,16 @@ check(
 await openPanel(page, 'expenses');
 const expCard = nbsp0(await page.locator('#expenses').innerText());
 check(expCard.includes('Άλλα έξοδα') && expCard.includes('Λογιστής') && expCard.includes('Επισκευές / Συντήρηση') && expCard.includes('Φρένα'), 'λίστα «Έξοδα Οχήματος» με τα 2 έξοδα');
-check(expCard.includes('Σύνολο εξόδων οχήματος') && expCard.includes('134,00'), 'σύνολο εξόδων οχήματος 134,00 €');
+check(
+  /Άλλα έξοδα\s+μόνο ΦΠΑ/.test(expCard) && !/Συντήρηση\s+μόνο ΦΠΑ/.test(expCard),
+  'λίστα: σήμανση «μόνο ΦΠΑ» στα «Άλλα έξοδα», όχι στις επισκευές',
+);
+check(
+  /Στα έξοδα και στο ταμείο\s+Επισκευές \/ Συντήρηση\s+124,00 €/.test(expCard) &&
+    /Άλλα έξοδα\s+μετράει μόνο ο ΦΠΑ, όχι στο ταμείο\s+10,00 €/.test(expCard) &&
+    /ΦΠΑ 24% \(συμψηφίζεται, όλα\)\s+25,94 €/.test(expCard),
+  'σύνολα λίστας: στο ταμείο 124,00 € (επισκευή) · «Άλλα έξοδα» 10,00 € μόνο για τον ΦΠΑ · ΦΠΑ όλων 25,94 €',
+);
 await page.getByRole('button', { name: 'Βάρδια', exact: true }).click();
 await form.waitFor();
 
@@ -655,7 +673,17 @@ const body = nbsp0(await page.locator('main').innerText());
 check(body.includes('260,39'), 'σύνολο καθαρών εσόδων 260,39 €');
 check(body.includes('33,83'), 'ΦΠΑ εσόδων 13%: 20,84 + 12,99 = 33,83 €');
 check(body.includes('33,68'), 'ΦΠΑ εξόδων 24%: καύσιμα 7,74 + άλλα έξοδα 1,94 + επισκευή 24,00 = 33,68 €');
-check(body.includes('Καύσιμα 40,00 € · Έξοδα οχήματος 134,00 €'), 'Συνολικά Έξοδα: καύσιμα 40 € + έξοδα οχήματος 134 €');
+const flatBody = body.replace(/\s+/g, ' ');
+check(
+  flatBody.includes('Συνολικά Έξοδα 164,00 € Καύσιμα 40,00 € · Έξοδα οχήματος 124,00 €'),
+  'Συνολικά Έξοδα 164 €: καύσιμα 40 € + επισκευή 124 € (τα «Άλλα έξοδα» 10 € όχι)',
+);
+check(flatBody.includes('Καθαρό Ταμείο (Τσέπη) 135,22 €'), 'Καθαρό Ταμείο: 299,22 − 164,00 = 135,22 € (τα «Άλλα έξοδα» δεν αφαιρούνται)');
+const vatOnlyNote = nbsp0(await page.getByTestId('vat-only-note').innerText());
+check(
+  vatOnlyNote === 'Μέσα και ο ΦΠΑ των «Άλλων εξόδων»: 1,94 € από 10,00 €. Από αυτά μετράει μόνο ο ΦΠΑ· δεν αφαιρούνται από το ταμείο.',
+  `Ανάλυση ΦΠΑ: σημείωση για τα «Άλλα έξοδα» (${vatOnlyNote})`,
+);
 check(body.includes('0,15') && body.includes('Χρεωστικό — προς πληρωμή'), 'προς απόδοση ΦΠΑ 0,15 € χρεωστικό');
 check(body.includes('Ανά οδηγό'), 'πίνακας ανά οδηγό για τον admin');
 await page.screenshot({ path: `${OUT}/05-admin-desktop.png`, fullPage: true });
@@ -925,7 +953,14 @@ check(csv.charCodeAt(0) === 0xfeff, 'CSV με UTF-8 BOM');
 check(csv.includes('Γιώργος Παπαδόπουλος;ΤΑΕ-1234;101;14;80,5;40;120,5;160,39;20,84'), 'γραμμή CSV με ελληνικά και υποδιαστολή');
 check(csv.includes('Προς Απόδοση ΦΠΑ (€);0,15;Χρεωστικό'), 'σύνοψη ΦΠΑ στο CSV');
 check(csv.includes('ΕΞΟΔΑ ΟΧΗΜΑΤΟΣ (εκτός βάρδιας)') && csv.includes('Επισκευές / Συντήρηση;Φρένα;124,00;24,00;'), 'CSV: ενότητα «Έξοδα Οχήματος»');
-check(csv.includes('Έξοδα Οχήματος (€);134,00') && csv.includes('Σύνολο Εξόδων (€);174,00'), 'CSV: σύνοψη με καύσιμα + έξοδα οχήματος');
+check(csv.includes('Άλλα έξοδα (μόνο ΦΠΑ);Λογιστής;10,00;1,94;'), 'CSV: τα «Άλλα έξοδα» με σήμανση «μόνο ΦΠΑ»');
+check(
+  csv.includes('Έξοδα Οχήματος (€);124,00') &&
+    csv.includes('Άλλα Έξοδα — μόνο ΦΠΑ (€);10,00') &&
+    csv.includes('Σύνολο Εξόδων (€);164,00') &&
+    csv.includes('Καθαρό Ταμείο (€);135,22'),
+  'CSV: σύνοψη με καύσιμα + επισκευή· τα «Άλλα έξοδα» χωριστά, μόνο για τον ΦΠΑ',
+);
 
 // ---------------------------------------------------------------------
 console.log('4β. Διόρθωση βάρδιας (Admin) — παράθυρο, χωρίς μετακίνηση της σελίδας');
@@ -948,6 +983,11 @@ const yAfter = await page.evaluate(() => window.scrollY);
 check(Math.abs(yAfter - yBefore) < 5, `η σελίδα έμεινε στην ίδια θέση (${yBefore} → ${yAfter})`);
 const afterEdit = await page.locator('main').innerText();
 check(afterEdit.includes('148,23'), 'το ιστορικό δείχνει το νέο ταμείο της βάρδιας (148,23)');
+const shiftHead = (await page.locator('#shifts thead').innerText()).replace(/\s+/g, ' ');
+check(
+  shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. − Καύσιμα = Ταμείο'),
+  `υπολογιστής: οι στήλες του ιστορικού δείχνουν την πράξη του ταμείου (${shiftHead})`,
+);
 await page.getByRole('button', { name: 'Επεξεργασία βάρδιας Ζ 55' }).click();
 await edit.getByText('Επεξεργασία Βάρδιας · Ζ 55').waitFor();
 await edit.getByRole('button', { name: 'Ακύρωση' }).click();
@@ -970,7 +1010,11 @@ await xedit.getByRole('button', { name: 'Αποθήκευση διορθώσεω
 await page.getByText(/✓ Αποθηκεύτηκαν οι διορθώσεις στο έξοδο «Άλλα έξοδα 20,00.€»/).waitFor();
 check((await page.locator('#expense-edit-form').count()) === 0, 'το παράθυρο κλείνει μετά την αποθήκευση');
 const afterExpenseEdit = nbsp0(await page.locator('main').innerText());
-check(afterExpenseEdit.includes('Έξοδα οχήματος 144,00 €'), 'έξοδα οχήματος 144,00 € μετά τη διόρθωση');
+check(
+  afterExpenseEdit.includes('Έξοδα οχήματος 124,00 €') &&
+    nbsp0(await page.getByTestId('vat-only-note').innerText()).includes('3,87 € από 20,00 €'),
+  '«Άλλα έξοδα» 20 € μετά τη διόρθωση: αλλάζει μόνο ο ΦΠΑ (3,87 €), τα έξοδα οχήματος μένουν 124,00 €',
+);
 check(afterExpenseEdit.includes('1,78') && afterExpenseEdit.includes('Πιστωτικό υπόλοιπο'), 'ο ΦΠΑ ξαναϋπολογίστηκε: 33,83 − (7,74 + 3,87 + 24,00) = 1,78 € πιστωτικό');
 
 // ---------------------------------------------------------------------
@@ -1063,6 +1107,16 @@ check(
     (await mpage.getByRole('button', { name: 'Λήψη εικόνας' }).count()) === 0,
   `κινητό: «Αποστολή WhatsApp» → κοινοποίηση με την εικόνα ΦΠΑ (fpa-2026-09.png) και σύντομο μήνυμα μόνο με τον ΦΠΑ (${mVat})`,
 );
+// Ιστορικό στο κινητό: η πράξη του ταμείου γραμμή-γραμμή (Ζ 101 μετά τη διόρθωση του 4β).
+await openPanel(mpage, 'shifts');
+const mShiftCard = mpage.locator('#shifts li').filter({ hasText: 'Ζ 101' });
+const mCash = nbsp0(await mShiftCard.getByTestId('shift-cash').innerText()).replace(/\s+/g, ' ');
+check(
+  mCash.startsWith('Καθαρά (χωρίς ΦΠΑ) 160,39 € + ΦΠΑ 13% 20,84 € + Φιλοδωρήματα 7,00 € − Καύσιμα 40,00 € = Ταμείο 148,23 €') &&
+    nbsp0(await mShiftCard.locator('p').filter({ hasText: /^Ταμείο/ }).innerText()).replace(/\s+/g, ' ') === 'Ταμείο 148,23 €',
+  `κινητό: η βάρδια δείχνει «Ταμείο» και την πράξη του (${mCash})`,
+);
+await shotBelowHeader(mShiftCard, `${OUT}/06e-shift-cash-mobile.png`);
 await ownerMobile.close();
 
 // ---------------------------------------------------------------------
@@ -2071,11 +2125,21 @@ check(
 );
 await expandTarget(form);
 await form.getByLabel('Οδηγός').selectOption({ label: 'Μαρία Κωνσταντίνου · ΙΚΒ-5678' });
-for (const z of ['57', '570']) {
+// Πρώτα το 570 και μετά το 57: το ιστορικό τα δείχνει με τη σειρά των Ζ, όχι με τη σειρά που γράφτηκαν.
+for (const z of ['570', '57']) {
   await fillShift(form, { 'Αριθμός Ζ': z, 'Αποφορολογημένα Έσοδα': '10' });
   await form.getByRole('button', { name: /^Καταχώρηση/ }).click();
   await form.getByText(`✓ Καταχωρήθηκε: Ζ ${z}`).waitFor();
 }
+const mariaRows = () =>
+  page.locator('#shifts tbody tr').evaluateAll((rows) =>
+    rows.filter((row) => row.cells[1]?.innerText.includes('Μαρία')).map((row) => row.cells[2].innerText.trim()),
+  );
+await page.waitForFunction(
+  () => [...document.querySelectorAll('#shifts tbody tr')].filter((row) => row.cells[1]?.innerText.includes('Μαρία')).length === 3,
+);
+const mariaZ = await mariaRows();
+check(mariaZ.join(',') === '570,57,55', `ιστορικό με τη σειρά των Ζ (το νεότερο πάνω), όχι της καταχώρησης: ${mariaZ.join(', ')}`);
 await zNotice.getByText(/Μαρία/).waitFor();
 const zText = nbsp0(await zNotice.innerText());
 check(

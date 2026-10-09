@@ -11,11 +11,12 @@
  *   Προς απόδοση ΦΠΑ     = ΦΠΑ 13% − ΦΠΑ εξόδων 24%
  *   Καθαρό ταμείο        = (καθαρά έσοδα + ΦΠΑ 13% + φιλοδωρήματα) − σύνολο εξόδων
  *
- * Έξοδα οχήματος εκτός βάρδιας (επισκευές / συντήρηση, άλλα έξοδα)
- * καταχωρούνται χωριστά ανά μήνα και αυτοκίνητο (πίνακας `vehicle_expenses`),
- * πάντα με ΦΠΑ 24% μέσα· μπαίνουν στα σύνολα της περιόδου (έξοδα, ΦΠΑ εξόδων,
- * ταμείο). Το ίδιο και οι κρατήσεις των εφαρμογών (Uber / FreeNow, πίνακας
- * `platform_statements`)· ΦΠΑ έχει μόνο η κράτηση της FreeNow.
+ * Έξοδα οχήματος εκτός βάρδιας καταχωρούνται χωριστά ανά μήνα και αυτοκίνητο
+ * (πίνακας `vehicle_expenses`), πάντα με ΦΠΑ 24% μέσα:
+ *   «Επισκευές / Συντήρηση» → στα έξοδα, στον ΦΠΑ εξόδων και στο ταμείο της περιόδου·
+ *   «Άλλα έξοδα»            → μόνο ο ΦΠΑ τους (συμψηφίζεται)· το ποσό δεν αφαιρείται από το ταμείο.
+ * Οι κρατήσεις των εφαρμογών (Uber / FreeNow / Bolt, πίνακας `platform_statements`)
+ * μπαίνουν στα έξοδα και στο ταμείο· ΦΠΑ έχουν όσες τιμολογούνται με ΦΠΑ.
  *
  * Η βάση είναι η πηγή της αλήθειας για τις αποθηκευμένες βάρδιες· οι ίδιες
  * συναρτήσεις χρησιμοποιούνται στη φόρμα για ζωντανή προεπισκόπηση πριν την
@@ -191,17 +192,28 @@ export interface ExpenseFigures {
   amountCents: number;
   /** Εμπεριεχόμενος ΦΠΑ 24%: round(ποσό / 1.24 × 0.24, 2). */
   vatCents: number;
+  /**
+   * «Άλλα έξοδα»: μετράει μόνο ο ΦΠΑ (συμψηφίζεται)· το ποσό δεν μπαίνει στα έξοδα ούτε αφαιρείται από το
+   * ταμείο. «Επισκευές / Συντήρηση»: και τα δύο.
+   */
+  vatOnly: boolean;
 }
 
-export function computeExpense(amount: number): ExpenseFigures {
+/** Η κατηγορία «Άλλα έξοδα» (`other`, lib/expenses.ts): μετράει μόνο ο ΦΠΑ της. */
+export function isVatOnlyExpense(category: string | null | undefined): boolean {
+  return category === 'other';
+}
+
+export function computeExpense(amount: number, category = 'repairs'): ExpenseFigures {
   const amountCents = toCents(amount);
-  return { amountCents, vatCents: includedExpenseVatCents(amountCents) };
+  return { amountCents, vatCents: includedExpenseVatCents(amountCents), vatOnly: isVatOnlyExpense(category) };
 }
 
 /** Γραμμή του πίνακα `vehicle_expenses` όπως έρχεται από τη βάση. */
 export interface StoredVehicleExpense {
   amount: number;
   vat: number | null;
+  category: string;
 }
 
 /** Αποθηκευμένο έξοδο → ποσά, με τον ΦΠΑ όπως τον υπολόγισε η βάση. */
@@ -210,6 +222,7 @@ export function expenseFromStored(row: StoredVehicleExpense): ExpenseFigures {
   return {
     amountCents,
     vatCents: row.vat == null ? includedExpenseVatCents(amountCents) : toCents(Number(row.vat)),
+    vatOnly: isVatOnlyExpense(row.category),
   };
 }
 
@@ -232,12 +245,16 @@ export interface PlatformFigures {
 export interface Totals extends ShiftFigures {
   shifts: number;
   /**
-   * Έξοδα οχήματος εκτός βάρδιας της περιόδου (και τυχόν παλιά «Άλλες δαπάνες» /
-   * «Επισκευές» μέσα σε βάρδιες). Καύσιμα + έξοδα οχήματος + κρατήσεις
-   * εφαρμογών = σύνολο εξόδων.
+   * Έξοδα οχήματος της περιόδου που μετράνε στα έξοδα και στο ταμείο: «Επισκευές / Συντήρηση» (και τυχόν
+   * παλιά «Άλλες δαπάνες» / «Επισκευές» μέσα σε βάρδιες). Καύσιμα + έξοδα οχήματος + κρατήσεις εφαρμογών
+   * = σύνολο εξόδων.
    */
   vehicleExpensesCents: number;
-  /** Πλήθος καταχωρήσεων εξόδων οχήματος. */
+  /** «Άλλα έξοδα» της περιόδου: μετράει μόνο ο ΦΠΑ τους (μέσα στον ΦΠΑ εξόδων), όχι το ποσό. */
+  vatOnlyExpensesCents: number;
+  /** Ο ΦΠΑ 24% των «Άλλων εξόδων» (μέρος του ΦΠΑ εξόδων). */
+  vatOnlyExpensesVatCents: number;
+  /** Πλήθος καταχωρήσεων εξόδων οχήματος (όλων των ειδών). */
   expenseCount: number;
   /** Διαδρομές των εφαρμογών (μέσα στις διαδρομές των Ζ). */
   appTrips: number;
@@ -294,13 +311,21 @@ export function summarize(
     sum.netCashCents += s.netCashCents;
   }
 
-  // Έξοδα οχήματος: στα έξοδα, στον ΦΠΑ εξόδων (συμψηφισμός) και στο ταμείο.
+  // Έξοδα οχήματος: ο ΦΠΑ τους πάντα στον ΦΠΑ εξόδων (συμψηφισμός). Το ποσό στα έξοδα και στο ταμείο
+  // μόνο για «Επισκευές / Συντήρηση»· τα «Άλλα έξοδα» μετράνε μόνο για τον ΦΠΑ.
   let vehicleCents = 0;
+  let vatOnlyCents = 0;
+  let vatOnlyVatCents = 0;
   for (const e of expenses) {
-    vehicleCents += e.amountCents;
-    sum.totalExpensesCents += e.amountCents;
     sum.expensesVatCents += e.vatCents;
     sum.vatBalanceCents -= e.vatCents;
+    if (e.vatOnly) {
+      vatOnlyCents += e.amountCents;
+      vatOnlyVatCents += e.vatCents;
+      continue;
+    }
+    vehicleCents += e.amountCents;
+    sum.totalExpensesCents += e.amountCents;
     sum.netCashCents -= e.amountCents;
   }
 
@@ -324,6 +349,8 @@ export function summarize(
     ...sum,
     shifts: items.length,
     vehicleExpensesCents: vehicleCents + sum.otherExpensesCents + sum.repairsCents,
+    vatOnlyExpensesCents: vatOnlyCents,
+    vatOnlyExpensesVatCents: vatOnlyVatCents,
     expenseCount: expenses.length,
     appTrips: app.trips,
     streetTrips: sum.trips - app.trips,
