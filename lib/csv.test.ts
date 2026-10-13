@@ -47,6 +47,14 @@ describe('buildShiftsCsv', () => {
     expect(lines[1]).toContain(';80,5;40;120,5;');
   });
 
+  it('ανά χιλιόμετρο: απόδοση 160,39 / 120,5 = 1,33 € και καύσιμα 50 / 120,5 = 0,41 € (41,49 € τα 100 χλμ)', () => {
+    expect(lines[0]).toContain('Καθαρό Κέρδος Βάρδιας (€);Απόδοση ανά Χλμ (€);Καύσιμα ανά Χλμ (€);Καταχώρηση');
+    expect(lines[1]).toContain(';11,16;125,07;1,33;0,41;');
+    expect(csv).toContain('Απόδοση ανά χλμ (€);1,33');
+    expect(csv).toContain('Καύσιμα ανά χλμ (€);0,41');
+    expect(csv).toContain('Καύσιμα ανά 100 χλμ (€);41,49');
+  });
+
   it('προστατεύει από formulas και ";" μέσα σε κείμενο', () => {
     expect(lines[1]).toContain(`"'=HYPERLINK(""x"")"`);
     expect(lines[1]).toContain('"Παπαδόπουλος; Γιώργος"');

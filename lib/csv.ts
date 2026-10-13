@@ -1,4 +1,4 @@
-import { summarize, VAT_STATUS_LABEL, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from './accounting';
+import { perKm, summarize, VAT_STATUS_LABEL, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from './accounting';
 import { formatCentsPlain, formatDateTime, formatDecimalPlain } from './format';
 import { monthName } from './period';
 
@@ -82,6 +82,8 @@ const HEADERS = [
   'ΦΠΑ Καυσίμων 24% (€)',
   'Υπόλοιπο ΦΠΑ Βάρδιας (€)',
   'Καθαρό Κέρδος Βάρδιας (€)',
+  'Απόδοση ανά Χλμ (€)',
+  'Καύσιμα ανά Χλμ (€)',
   'Καταχώρηση',
 ];
 
@@ -135,7 +137,15 @@ function figureCells(f: ShiftFigures): string[] {
     formatCentsPlain(f.expensesVatCents),
     formatCentsPlain(f.vatBalanceCents),
     formatCentsPlain(f.profitCents),
+    perKmCell(f.netRevenueCents, f.totalKm),
+    perKmCell(f.fuelCents, f.totalKm),
   ];
+}
+
+/** Ευρώ ανά χλμ με 2 δεκαδικά (κενό χωρίς χιλιόμετρα). */
+function perKmCell(cents: number, km: number): string {
+  const value = perKm(cents, km);
+  return value === null ? '' : formatDecimalPlain(value, 2);
 }
 
 export function buildShiftsCsv(
@@ -253,7 +263,9 @@ export function buildShiftsCsv(
   ]);
   lines.push([textCell('Καθαρό Κέρδος (€)'), formatCentsPlain(totals.profitCents)]);
   lines.push([textCell('Αξιοποίηση %'), formatDecimalPlain(totals.utilizationPct, 1)]);
-  lines.push([textCell('Έσοδο ανά χλμ (€)'), formatDecimalPlain(totals.revenuePerKm, 2)]);
+  lines.push([textCell('Απόδοση ανά χλμ (€)'), formatDecimalPlain(totals.revenuePerKm, 2)]);
+  lines.push([textCell('Καύσιμα ανά χλμ (€)'), formatDecimalPlain(totals.fuelPerKm, 2)]);
+  lines.push([textCell('Καύσιμα ανά 100 χλμ (€)'), formatDecimalPlain(totals.fuelPerKm * 100, 2)]);
 
   return CSV_BOM + lines.map((cells) => cells.join(SEPARATOR)).join(NEWLINE) + NEWLINE;
 }

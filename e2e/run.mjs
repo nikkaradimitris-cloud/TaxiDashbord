@@ -255,7 +255,7 @@ for (const [i, title] of slideTitles.entries()) {
     const legend = await ip.locator('.intro-km-legend').innerText();
     check(
       legend.includes('80,5 χλμ') && legend.includes('40,0 χλμ') && legend.includes('1,33 €'),
-      'κάρτα χιλιομέτρων: αξιοποίηση 66,8% (80,5 μισθωμένα από 120,5), έσοδο ανά χλμ 1,33 €',
+      'κάρτα χιλιομέτρων: αξιοποίηση 66,8% (80,5 μισθωμένα από 120,5), απόδοση ανά χλμ 1,33 €',
     );
   }
   await ip.waitForTimeout(2800); // τέλος της κίνησης της κάρτας
@@ -694,6 +694,13 @@ check(
   `Ανάλυση ΦΠΑ: σημείωση για τα «Άλλα έξοδα» (${vatOnlyNote})`,
 );
 check(body.includes('0,15') && body.includes('Χρεωστικό — προς πληρωμή'), 'προς απόδοση ΦΠΑ 0,15 € χρεωστικό');
+// Ανά χιλιόμετρο: καθαρά 260,39 / 200,5 χλμ = 1,30 € · καύσιμα 40 / 200,5 = 0,20 € (19,95 € τα 100 χλμ).
+const perKmText = nbsp0(await page.getByTestId('per-km').innerText()).replace(/\s+/g, ' ');
+check(
+  perKmText ===
+    'Απόδοση ανά χλμ 1,30 €/χλμ Καθαρά έσοδα ÷ συνολικά χλμ Καύσιμα ανά χλμ 0,20 €/χλμ Μέσο κόστος· 19,95 € τα 100 χλμ',
+  `κάρτες «ανά χλμ»: απόδοση 1,30 € και καύσιμα 0,20 € (19,95 € τα 100 χλμ) (${perKmText})`,
+);
 check(body.includes('Ανά οδηγό'), 'πίνακας ανά οδηγό για τον admin');
 await page.screenshot({ path: `${OUT}/05-admin-desktop.png`, fullPage: true });
 
@@ -727,8 +734,8 @@ check(amountsTop.y < utilBox.y && utilBox.y < vatBox.y, 'ο μετρητής ε�
 let g = await gauge();
 check(
   g.pct === '70,1%' && nbsp0(g.legend).includes('Μισθωμένα 140,5 χλμ') && nbsp0(g.legend).includes('Ελεύθερα 60 χλμ') &&
-    nbsp0(g.legend).includes('Έσοδο ανά χλμ 1,30 €'),
-  `όλος ο στόλος: 70,1% (140,5 μισθωμένα, 60 ελεύθερα), έσοδο ανά χλμ 1,30 € (${nbsp0(g.legend)})`,
+    nbsp0(g.legend).includes('Απόδοση ανά χλμ 1,30 €'),
+  `όλος ο στόλος: 70,1% (140,5 μισθωμένα, 60 ελεύθερα), απόδοση ανά χλμ 1,30 € (${nbsp0(g.legend)})`,
 );
 check(
   JSON.stringify(g.scale) === JSON.stringify(['κάτω από 59%', '59% – 64%', '64% και πάνω']) &&
@@ -971,6 +978,13 @@ check(
     csv.includes('Καθαρό Κέρδος (€);135,07'),
   'CSV: σύνοψη με καύσιμα + επισκευή· τα «Άλλα έξοδα» χωριστά, μόνο για τον ΦΠΑ',
 );
+check(
+  csv.includes('Απόδοση ανά χλμ (€);1,3\r\n') &&
+    csv.includes('Καύσιμα ανά χλμ (€);0,2\r\n') &&
+    csv.includes('Καύσιμα ανά 100 χλμ (€);19,95\r\n') &&
+    /;101;.*;1,33;0,33;/.test(csv),
+  'CSV: απόδοση και καύσιμα ανά χλμ, στη σύνοψη και σε κάθε βάρδια (Ζ 101: 1,33 € · 0,33 €)',
+);
 
 // ---------------------------------------------------------------------
 console.log('4β. Διόρθωση βάρδιας (Admin) — παράθυρο, χωρίς μετακίνηση της σελίδας');
@@ -1000,6 +1014,11 @@ const shiftHead = (await page.locator('#shifts thead').innerText()).replace(/\s+
 check(
   shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. = Ταμείο − ΦΠΑ 13% − Καύσιμα χ. ΦΠΑ = Κέρδος ΦΠΑ απόδ.'),
   `υπολογιστής: οι στήλες του ιστορικού δείχνουν την πράξη του ταμείου (${shiftHead})`,
+);
+const z101Row = nbsp0(await page.locator('#shifts tbody tr').filter({ hasText: '101' }).first().innerText()).replace(/\s+/g, ' ');
+check(
+  shiftHead.includes('Χλμ μισθ./σύν. Ανά χλμ απόδ. · καύσ.') && z101Row.includes('80,5 / 120,5 1,33 € · 0,33 €'),
+  `υπολογιστής: στήλη «ανά χλμ» (Ζ 101: απόδοση 1,33 € · καύσιμα 0,33 €) (${z101Row})`,
 );
 await page.getByRole('button', { name: 'Επεξεργασία βάρδιας Ζ 55' }).click();
 await edit.getByText('Επεξεργασία Βάρδιας · Ζ 55').waitFor();
@@ -1133,6 +1152,10 @@ check(
   ) &&
     nbsp0(await mShiftCard.locator('p').filter({ hasText: /^Ταμείο/ }).innerText()).replace(/\s+/g, ' ') === 'Ταμείο 188,23 €',
   `κινητό: η βάρδια δείχνει «Ταμείο» και την πράξη ως το καθαρό κέρδος (${mCash})`,
+);
+check(
+  mCash.endsWith('Διαδρομές 14 Απόδοση ανά χλμ 1,33 € Καύσιμα ανά χλμ 0,33 €'),
+  `κινητό: η βάρδια δείχνει απόδοση και καύσιμα ανά χλμ (160,39 / 120,5 = 1,33 € · 40 / 120,5 = 0,33 €)`,
 );
 await shotBelowHeader(mShiftCard, `${OUT}/06e-shift-cash-mobile.png`);
 await ownerMobile.close();

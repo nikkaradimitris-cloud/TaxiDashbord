@@ -46,7 +46,7 @@ function CountUp({
 // Η βάρδια του παραδείγματος (Ζ 1024): 80,5 μισθωμένα και 40 ελεύθερα χλμ, καθαρά 160,39 €.
 const KM_PAID = 80.5;
 const KM_EMPTY = 40;
-const KM_PCT = (KM_PAID / (KM_PAID + KM_EMPTY)) * 100; // 66,8%· έσοδο ανά χλμ 160,39 / 120,5 = 1,33 €
+const KM_PCT = (KM_PAID / (KM_PAID + KM_EMPTY)) * 100; // 66,8%· απόδοση ανά χλμ 160,39 / 120,5 = 1,33 €
 
 function DriverArt({ active }: { active: boolean }) {
   return (
@@ -116,7 +116,7 @@ function KmArt({ active }: { active: boolean }) {
           Ελεύθερα <b>{decimal1.format(KM_EMPTY)} χλμ</b>
         </span>
         <span style={order(2)}>
-          Έσοδο ανά χλμ <b>1,33 €</b>
+          Απόδοση ανά χλμ <b>1,33 €</b>
         </span>
       </div>
     </div>

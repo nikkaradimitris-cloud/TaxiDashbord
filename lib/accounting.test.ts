@@ -7,6 +7,7 @@ import {
   summarize,
   computeExpense,
   expenseFromStored,
+  perKm,
   toCents,
   vatStatus,
   type ShiftInput,
@@ -283,6 +284,31 @@ describe('toCents', () => {
     expect(toCents(0.1 + 0.2)).toBe(30);
     expect(toCents(1.005)).toBe(101);
     expect(toCents(160.39)).toBe(16039);
+  });
+});
+
+describe('ανά χιλιόμετρο', () => {
+  const shift = (netRevenue: number, paidKm: number, emptyKm: number, fuel: number) =>
+    computeShift({ trips: 1, paidKm, emptyKm, netRevenue, tips: 0, fuel, otherExpenses: 0, repairs: 0 });
+
+  it('απόδοση = καθαρά ÷ συνολικά χλμ· καύσιμα = καύσιμα ÷ συνολικά χλμ (όλες οι βάρδιες μαζί)', () => {
+    const totals = summarize([shift(160.39, 80.5, 40, 40), shift(100, 60, 20, 0)]);
+    expect(totals.totalKm).toBe(200.5);
+    expect(totals.revenuePerKm).toBeCloseTo(260.39 / 200.5, 10);
+    expect(totals.fuelPerKm).toBeCloseTo(40 / 200.5, 10);
+    expect(Math.round(totals.fuelPerKm * 10000)).toBe(1995); // 19,95 € τα 100 χλμ
+  });
+
+  it('χωρίς χιλιόμετρα: 0 στα σύνολα, null ανά βάρδια', () => {
+    const totals = summarize([shift(50, 0, 0, 10)]);
+    expect(totals.revenuePerKm).toBe(0);
+    expect(totals.fuelPerKm).toBe(0);
+    expect(perKm(5000, 0)).toBeNull();
+  });
+
+  it('perKm: ποσό σε λεπτά ÷ χλμ → ευρώ ανά χλμ', () => {
+    expect(perKm(16039, 120.5)).toBeCloseTo(1.331, 3);
+    expect(perKm(4000, 120.5)).toBeCloseTo(0.332, 3);
   });
 });
 

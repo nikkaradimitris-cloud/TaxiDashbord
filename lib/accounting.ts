@@ -9,6 +9,8 @@
  *   Σύνολο εξόδων        = καύσιμα + άλλες δαπάνες + επισκευές
  *   ΦΠΑ εξόδων 24%       = round(σύνολο εξόδων / 1.24 × 0.24, 2)   (εμπεριεχόμενος)
  *   Προς απόδοση ΦΠΑ     = ΦΠΑ 13% − ΦΠΑ εξόδων 24%   (μετά τον συμψηφισμό)
+ *   Απόδοση ανά χλμ      = καθαρά έσοδα / συνολικά χλμ
+ *   Καύσιμα ανά χλμ      = καύσιμα / συνολικά χλμ   (μέσο κόστος καυσίμου, σε €)
  *   Καθαρό κέρδος        = ταμείο − ΦΠΑ 13% − καθαρή αξία εξόδων (χωρίς ΦΠΑ)
  *                        (= ταμείο − προς απόδοση ΦΠΑ − σύνολο εξόδων)
  *   (ταμείο μετά τα έξοδα = ταμείο − σύνολο εξόδων: η στήλη `net_cash` της βάσης)
@@ -275,8 +277,10 @@ export interface Totals extends ShiftFigures {
   appCommissionVatCents: number;
   /** Αξιοποίηση % = μισθωμένα χλμ / συνολικά χλμ × 100 (0 αν δεν υπάρχουν χλμ). */
   utilizationPct: number;
-  /** Έσοδο ανά χλμ = καθαρά έσοδα / συνολικά χλμ, σε ευρώ (0 αν δεν υπάρχουν χλμ). */
+  /** Απόδοση ανά χλμ = καθαρά έσοδα / συνολικά χλμ, σε ευρώ (0 αν δεν υπάρχουν χλμ). */
   revenuePerKm: number;
+  /** Μέσο κόστος καυσίμων ανά χλμ = καύσιμα των βαρδιών / συνολικά χλμ, σε ευρώ (0 αν δεν υπάρχουν χλμ). */
+  fuelPerKm: number;
 }
 
 export function summarize(
@@ -371,7 +375,17 @@ export function summarize(
     totalKm,
     utilizationPct: totalKmHundredths > 0 ? (paidKmHundredths / totalKmHundredths) * 100 : 0,
     revenuePerKm: totalKmHundredths > 0 ? sum.netRevenueCents / totalKmHundredths : 0,
+    fuelPerKm: totalKmHundredths > 0 ? sum.fuelCents / totalKmHundredths : 0,
   };
+}
+
+/**
+ * Ευρώ ανά χιλιόμετρο για ένα ποσό (σε λεπτά) και τα χιλιόμετρά του, π.χ. τα καθαρά ή τα καύσιμα μιας
+ * βάρδιας· null χωρίς χιλιόμετρα.
+ */
+export function perKm(cents: number, km: number): number | null {
+  const kmHundredths = Math.round(times100(km));
+  return kmHundredths > 0 ? cents / kmHundredths : null;
 }
 
 export type VatStatus = 'debit' | 'credit' | 'zero';

@@ -147,7 +147,7 @@ export function UtilizationCard({
               <dd>{formatKm(totals.emptyKm)} χλμ</dd>
             </div>
             <div>
-              <dt>Έσοδο ανά χλμ</dt>
+              <dt>Απόδοση ανά χλμ</dt>
               <dd>{formatEuro(Math.round(totals.revenuePerKm * 100))}</dd>
             </div>
           </dl>

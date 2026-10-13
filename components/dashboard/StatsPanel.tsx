@@ -6,7 +6,7 @@ import { Badge, cx, Notice } from '@/components/ui';
 import { summarize, VAT_STATUS_TEXT, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
 import { DISCLAIMER_SHORT } from '@/lib/disclaimer';
 import { saveFile } from '@/lib/download';
-import { formatEuro, formatInteger, formatKm, formatPercent } from '@/lib/format';
+import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
 import { platformLabel, totalsByPlatform, type PlatformMonth } from '@/lib/platforms';
 import type { DriverRow, ExpenseRow, ShiftRow } from '@/lib/types';
@@ -96,6 +96,20 @@ export function StatsPanel({
       </div>
 
       <UtilizationCard totals={totals} cars={cars} isAdmin={isAdmin} onSetFuel={onSetFuel} />
+
+      {/* Ανά χιλιόμετρο: απόδοση (καθαρά έσοδα ÷ συνολικά χλμ) και μέσο κόστος καυσίμων. */}
+      <div className="grid grid-cols-2 gap-3" data-testid="per-km">
+        <Stat
+          label="Απόδοση ανά χλμ"
+          value={totals.totalKm > 0 ? formatEuroPerKm(totals.revenuePerKm) : '—'}
+          sub="Καθαρά έσοδα ÷ συνολικά χλμ"
+        />
+        <Stat
+          label="Καύσιμα ανά χλμ"
+          value={totals.totalKm > 0 ? formatEuroPerKm(totals.fuelPerKm) : '—'}
+          sub={totals.totalKm > 0 ? `Μέσο κόστος· ${formatEuro(Math.round(totals.fuelPerKm * 10000))} τα 100 χλμ` : 'Μέσο κόστος'}
+        />
+      </div>
 
       <div
         className={cx(
