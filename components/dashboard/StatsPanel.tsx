@@ -26,6 +26,7 @@ export function StatsPanel({
   platformMonths,
   driversById,
   onSetFuel,
+  drivers,
   analysis,
 }: {
   totals: Totals;
@@ -40,6 +41,8 @@ export function StatsPanel({
   driversById: Map<string, DriverRow>;
   /** Ο ιδιοκτήτης δηλώνει το καύσιμο ενός αυτοκινήτου (όρια του μετρητή αξιοποίησης). */
   onSetFuel: (driverId: string, fuel: Fuel) => Promise<void>;
+  /** Κέρδος ανά οδηγό σε μπαλονάκια (ιδιοκτήτης, όλος ο στόλος), κάτω από τα μπαλονάκια της περιόδου. */
+  drivers?: ReactNode;
   /** Η κάρτα «Αναλυτικά» (πίνακας/γράφημα και ανά οδηγό), κάτω από τις κάρτες απόδοσης. */
   analysis: ReactNode;
 }) {
@@ -90,6 +93,7 @@ export function StatsPanel({
       </div>
 
       <StatChips totals={totals} />
+      {drivers}
 
       <UtilizationCard totals={totals} cars={cars} isAdmin={isAdmin} onSetFuel={onSetFuel} />
 
@@ -389,39 +393,87 @@ function WhatsAppIcon() {
   );
 }
 
-/** Σύνοψη ανά οδηγό (admin, όταν βλέπει όλο τον στόλο), μέσα στα «Αναλυτικά». */
-export function PerDriverTable({
-  items,
-  expenseItems,
-  platformMonths,
+export interface DriverTotals {
+  driverId: string;
+  totals: Totals;
+}
+
+/**
+ * Σύνολα ανά οδηγό: οι βάρδιές του, τα έξοδα οχήματος και οι εφαρμογές του αυτοκινήτου του, ο καθένας
+ * χωριστά (κάθε οδηγός έχει δικά του φορολογικά στοιχεία). Πρώτος όποιος έχει τα περισσότερα καθαρά.
+ */
+export function perDriverTotals(
+  items: { row: ShiftRow; figures: ShiftFigures }[],
+  expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[],
+  platformMonths: PlatformMonth[],
+): DriverTotals[] {
+  const groups = new Map<string, { shifts: ShiftFigures[]; expenses: ExpenseFigures[]; platforms: PlatformMonth[] }>();
+  const group = (driverId: string) => {
+    let entry = groups.get(driverId);
+    if (!entry) {
+      entry = { shifts: [], expenses: [], platforms: [] };
+      groups.set(driverId, entry);
+    }
+    return entry;
+  };
+  for (const { row, figures } of items) group(row.driver_id).shifts.push(figures);
+  for (const { row, figures } of expenseItems) group(row.driver_id).expenses.push(figures);
+  for (const platform of platformMonths) group(platform.driverId).platforms.push(platform);
+  return [...groups.entries()]
+    .map(([driverId, list]) => ({ driverId, totals: summarize(list.shifts, list.expenses, list.platforms) }))
+    .sort((a, b) => b.totals.netRevenueCents - a.totals.netRevenueCents);
+}
+
+/**
+ * Κέρδος ανά οδηγό σε μπαλονάκια (ιδιοκτήτης, όλος ο στόλος), έξω από τα πάνελ· πάτημα → μόνο αυτός ο
+ * οδηγός. Βάρδιες, καθαρά και ΦΠΑ του καθενός: στον πίνακα «Ανά οδηγό» των «Αναλυτικών».
+ */
+export function DriverChips({
+  rows,
   driversById,
   onSelectDriver,
 }: {
-  items: { row: ShiftRow; figures: ShiftFigures }[];
-  expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[];
-  platformMonths: PlatformMonth[];
+  rows: DriverTotals[];
   driversById: Map<string, DriverRow>;
   onSelectDriver: (driverId: string) => void;
 }) {
-  const rows = useMemo(() => {
-    // Κάθε οδηγός/αυτοκίνητο: οι βάρδιές του, τα έξοδα οχήματος και οι εφαρμογές του αυτοκινήτου του.
-    const groups = new Map<string, { shifts: ShiftFigures[]; expenses: ExpenseFigures[]; platforms: PlatformMonth[] }>();
-    const group = (driverId: string) => {
-      let entry = groups.get(driverId);
-      if (!entry) {
-        entry = { shifts: [], expenses: [], platforms: [] };
-        groups.set(driverId, entry);
-      }
-      return entry;
-    };
-    for (const { row, figures } of items) group(row.driver_id).shifts.push(figures);
-    for (const { row, figures } of expenseItems) group(row.driver_id).expenses.push(figures);
-    for (const platform of platformMonths) group(platform.driverId).platforms.push(platform);
-    return [...groups.entries()]
-      .map(([driverId, list]) => ({ driverId, totals: summarize(list.shifts, list.expenses, list.platforms) }))
-      .sort((a, b) => b.totals.netRevenueCents - a.totals.netRevenueCents);
-  }, [items, expenseItems, platformMonths]);
+  if (rows.length === 0) return null;
+  return (
+    <ul className="flex flex-wrap items-center gap-1.5" aria-label="Κέρδος ανά οδηγό" data-testid="driver-chips">
+      <li className="pr-0.5 text-sm text-muted">Κέρδος ανά οδηγό:</li>
+      {rows.map(({ driverId, totals }) => (
+        <li key={driverId} className="max-w-full">
+          <button
+            type="button"
+            onClick={() => onSelectDriver(driverId)}
+            title="Μόνο αυτός ο οδηγός"
+            className={cx(
+              'inline-flex min-h-9 max-w-full items-center gap-1 rounded-full border border-line bg-card py-1 pr-1.5 pl-2.5 text-sm shadow-sm hover:bg-bg',
+              'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent-strong',
+            )}
+          >
+            <span className="min-w-0 truncate">{driversById.get(driverId)?.name ?? '—'}</span>
+            <b className={cx('tabular-nums', totals.profitCents < 0 && 'text-bad')}>{formatEuro(totals.profitCents)}</b>
+            <svg viewBox="0 0 20 20" aria-hidden="true" className="h-4 w-4 shrink-0 text-muted">
+              <path d="M7.5 5 12.5 10 7.5 15" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
 
+/** Σύνοψη ανά οδηγό (admin, όταν βλέπει όλο τον στόλο), μέσα στα «Αναλυτικά». */
+export function PerDriverTable({
+  rows,
+  driversById,
+  onSelectDriver,
+}: {
+  rows: DriverTotals[];
+  driversById: Map<string, DriverRow>;
+  onSelectDriver: (driverId: string) => void;
+}) {
   if (rows.length === 0) return null;
 
   return (

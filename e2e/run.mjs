@@ -752,7 +752,32 @@ check(
   body.includes('Ανά οδηγό') && (await perDriver.isVisible()) && (await page.locator('section#per-driver').count()) === 0,
   'πίνακας ανά οδηγό για τον admin, μέσα στα «Αναλυτικά» (όχι χωριστό πάνελ)',
 );
+// Μπαλονάκια «Κέρδος ανά οδηγό» έξω από τα πάνελ, ίδια με τον πίνακα: Γιώργος 186,23 − 20,84 − 32,26 + 1,94 =
+// 135,07 € · Μαρία 112,99 − 12,99 − 100,00 (φρένα χωρίς ΦΠΑ) = 0,00 €.
+const driverChips = page.getByTestId('driver-chips');
+const driverChipTexts = (await driverChips.getByRole('button').allInnerTexts()).map((t) => nbsp0(t).replace(/\s+/g, ' ').trim());
+const perDriverRows = await perDriver.locator('tbody tr').evaluateAll((rows) =>
+  rows.map((row) => `${row.cells[0].querySelector('button').innerText.trim()} ${row.cells[row.cells.length - 1].innerText.trim()}`),
+);
+check(
+  driverChipTexts.join(' | ') === 'Γιώργος Παπαδόπουλος 135,07 € | Μαρία Κωνσταντίνου 0,00 €' &&
+    driverChipTexts.join(' | ') === perDriverRows.map(nbsp0).join(' | ') &&
+    (await driverChips.isVisible()),
+  `μπαλονάκια «Κέρδος ανά οδηγό» έξω από τα πάνελ, όπως ο πίνακας (${driverChipTexts.join(' | ')})`,
+);
 await page.screenshot({ path: `${OUT}/05-admin-desktop.png`, fullPage: true });
+await driverChips.getByRole('button', { name: /^Μαρία Κωνσταντίνου/ }).click();
+await idle(page);
+const filterLabel = () => page.locator('#filters').getByLabel('Οδηγός').evaluate((el) => el.selectedOptions[0]?.textContent ?? '');
+check(
+  (await filterLabel()) === 'Μαρία Κωνσταντίνου · ΙΚΒ-5678' &&
+    (await driverChips.count()) === 0 &&
+    nbsp0(await page.getByTestId('stat-chips').innerText()).replace(/\s+/g, ' ').startsWith('Βάρδιες 1 '),
+  'πάτημα στο μπαλονάκι της Μαρίας → μόνο η Μαρία (φίλτρο «Οδηγός», 1 βάρδια, χωρίς μπαλονάκια ανά οδηγό)',
+);
+await page.locator('#filters').getByLabel('Οδηγός').selectOption('all');
+await idle(page);
+await driverChips.waitFor();
 
 // ---------------------------------------------------------------------
 console.log('3δ. Αξιοποίηση χιλιομέτρων: μετρητής με χρώμα ανά επίπεδο, όρια ανάλογα με το καύσιμο');
@@ -1143,6 +1168,13 @@ check(
   (await mChips.isVisible()) && chipBoxes.length === 7 && chipBoxes.every(([left, right]) => left >= 0 && right <= 390),
   `κινητό: τα ${chipBoxes.length} μπαλονάκια (μέσοι όροι κ.λπ.) φαίνονται έξω από τα πάνελ και χωράνε`,
 );
+const driverChipBoxes = await mpage.getByTestId('driver-chips').getByRole('button').evaluateAll((els) =>
+  els.map((el) => [el.getBoundingClientRect().left, el.getBoundingClientRect().right, el.getBoundingClientRect().height]),
+);
+check(
+  driverChipBoxes.length === 2 && driverChipBoxes.every(([left, right, height]) => left >= 0 && right <= 390 && height >= 36),
+  'κινητό: τα μπαλονάκια «Κέρδος ανά οδηγό» χωράνε και πατιούνται εύκολα (ύψος ≥ 36px)',
+);
 await shotBelowHeader(mChips, `${OUT}/06c-stat-chips-mobile.png`);
 // «Καταχωρήσεις» στο κινητό: οι 3 καρτέλες χωράνε και πατιούνται εύκολα.
 await openPanel(mpage, 'shifts');
@@ -1275,6 +1307,10 @@ const dtext = await dpage.locator('body').innerText();
 check(dtext.includes('Γιώργος Παπαδόπουλος · ΤΑΕ-1234'), 'μετά την «Αποδοχή» ο οδηγός συνδέθηκε με την εγγραφή του στόλου');
 check(!dtext.includes('Μαρία'), 'ο οδηγός ΔΕΝ βλέπει άλλους οδηγούς');
 check(!dtext.includes('Υποδομή Στόλου'), 'ο οδηγός ΔΕΝ βλέπει την Υποδομή Στόλου');
+check(
+  (await dpage.getByTestId('driver-chips').count()) === 0 && !dtext.includes('Κέρδος ανά οδηγό'),
+  'ο οδηγός δεν έχει μπαλονάκια «Κέρδος ανά οδηγό» (μόνο ο ιδιοκτήτης)',
+);
 check(!dtext.includes('Αποστολή WhatsApp'), 'ο οδηγός δεν έχει κουμπί WhatsApp');
 check(!dtext.includes('Στείλτε την εφαρμογή σε φίλο'), 'ο οδηγός δεν έχει «Στείλτε την εφαρμογή σε φίλο» (μόνο ο ιδιοκτήτης)');
 check(

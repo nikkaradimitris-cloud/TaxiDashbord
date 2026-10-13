@@ -73,7 +73,7 @@ import { PlatformForm, type WeekPreset } from './PlatformForm';
 import { PlatformList } from './PlatformList';
 import { ShiftForm } from './ShiftForm';
 import { ShiftList } from './ShiftList';
-import { PerDriverTable, StatsPanel, StreetAndApps } from './StatsPanel';
+import { DriverChips, PerDriverTable, perDriverTotals, StatsPanel, StreetAndApps } from './StatsPanel';
 
 type Message = { tone: 'success' | 'error' | 'info'; text: string };
 
@@ -391,6 +391,11 @@ export function Dashboard({ session }: { session: SessionInfo }) {
       platformMonths,
     ),
     [items, expenseItems, platformMonths],
+  );
+  // Ανά οδηγό (ιδιοκτήτης, όλος ο στόλος): μπαλονάκια με το κέρδος και πίνακας στα «Αναλυτικά».
+  const perDriver = useMemo(
+    () => (isAdmin && driverFilter === 'all' ? perDriverTotals(items, expenseItems, platformMonths) : []),
+    [isAdmin, driverFilter, items, expenseItems, platformMonths],
   );
 
   // ------------------------------------------------------------------
@@ -855,6 +860,13 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                     await updateDriver(supabase, driverId, { fuel });
                     setDriversVersion((v) => v + 1);
                   }}
+                  drivers={
+                    <DriverChips
+                      rows={perDriver}
+                      driversById={driversById}
+                      onSelectDriver={(id) => setPrefs({ driverFilter: id })}
+                    />
+                  }
                   analysis={
                     <AnalysisCard
                       items={items}
@@ -872,11 +884,9 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                       yearSummary={yearSummary}
                       onSelectMonth={(month) => setPrefs({ month, tableGroup: 'shifts' })}
                       footer={
-                        isAdmin && driverFilter === 'all' ? (
+                        perDriver.length > 0 ? (
                           <PerDriverTable
-                            items={items}
-                            expenseItems={expenseItems}
-                            platformMonths={platformMonths}
+                            rows={perDriver}
                             driversById={driversById}
                             onSelectDriver={(id) => setPrefs({ driverFilter: id })}
                           />
