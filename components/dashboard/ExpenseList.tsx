@@ -1,6 +1,5 @@
 'use client';
 
-import { Panel } from '@/components/Panel';
 import { Badge, Button, cx } from '@/components/ui';
 import type { ExpenseFigures } from '@/lib/accounting';
 import { categoryLabel } from '@/lib/expenses';
@@ -18,7 +17,6 @@ export function ExpenseList({
   isAdmin,
   userId,
   fetchedAt,
-  periodText,
   editingId,
   onEdit,
   onDelete,
@@ -29,7 +27,6 @@ export function ExpenseList({
   isAdmin: boolean;
   userId: string;
   fetchedAt: number;
-  periodText: string;
   editingId: string | null;
   onEdit: (row: ExpenseRow) => void;
   onDelete: (row: ExpenseRow) => void;
@@ -48,19 +45,9 @@ export function ExpenseList({
     return { plate: driver?.plate ?? null, name: driver?.name ?? '—' };
   };
 
+  // Το περιεχόμενο της καρτέλας «Έξοδα» στις «Καταχωρήσεις».
   return (
-    <Panel
-      id="expenses"
-      title={`Έξοδα Οχήματος · ${periodText}`}
-      summary={
-        loading
-          ? 'Φόρτωση…'
-          : items.length === 0
-            ? 'Κανένα έξοδο'
-            : `${items.length === 1 ? '1 έξοδο' : `${items.length} έξοδα`} · ${formatEuro(totalCents)}`
-      }
-      className={cx(loading && 'opacity-60')}
-    >
+    <div className={cx(loading && 'opacity-60')}>
       {items.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted">
           {loading ? 'Φόρτωση…' : 'Δεν υπάρχουν έξοδα οχήματος για αυτή την περίοδο.'}
@@ -194,6 +181,6 @@ export function ExpenseList({
           </dl>
         </>
       )}
-    </Panel>
+    </div>
   );
 }

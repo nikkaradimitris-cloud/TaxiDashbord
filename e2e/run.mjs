@@ -83,10 +83,28 @@ async function openAll(p) {
   );
   for (let i = 0; i < 20 && (await closed.count()) > 0; i++) await closed.first().click();
 }
-const panelButton = (p, id) => p.locator(`#${id} > :is(h2, h3) > button`);
-const panelOpen = async (p, id) => (await panelButton(p, id).getAttribute('aria-expanded')) === 'true';
+/**
+ * Βάρδιες, έξοδα και εφαρμογές είναι καρτέλες του πάνελ «Καταχωρήσεις» (#entries): τα id τους (#shifts,
+ * #expenses, #platforms) είναι το περιεχόμενο κάθε καρτέλας. «Ανοιχτό» = ανοιχτό πάνελ και αυτή η καρτέλα.
+ */
+const ENTRY_TABS = { shifts: 'Βάρδιες', expenses: 'Έξοδα', platforms: 'Εφαρμογές' };
+const panelButton = (p, id) => p.locator(`#${ENTRY_TABS[id] ? 'entries' : id} > :is(h2, h3) > button`);
+const entryTab = (p, id) => p.locator(`#entries [role="tab"]#${id}-tab`);
+const panelOpen = async (p, id) =>
+  (await panelButton(p, id).getAttribute('aria-expanded')) === 'true' &&
+  (!ENTRY_TABS[id] || (await entryTab(p, id).getAttribute('aria-selected')) === 'true');
 async function openPanel(p, id) {
-  if (!(await panelOpen(p, id))) await panelButton(p, id).click();
+  if ((await panelButton(p, id).getAttribute('aria-expanded')) !== 'true') await panelButton(p, id).click();
+  if (ENTRY_TABS[id] && (await entryTab(p, id).getAttribute('aria-selected')) !== 'true') await entryTab(p, id).click();
+}
+/** Το κείμενο και των τριών καρτελών των «Καταχωρήσεων» (φαίνεται μία κάθε φορά). */
+async function entriesText(p) {
+  let text = '';
+  for (const id of Object.keys(ENTRY_TABS)) {
+    await openPanel(p, id);
+    text += `\n${await p.locator(`#${id}`).innerText()}`;
+  }
+  return nbsp0(text);
 }
 /** «Για: Σεπτέμβριος 2026 · … — Αλλαγή»: εμφανίζει τα πεδία μήνα / οδηγού της φόρμας. */
 async function expandTarget(f) {
@@ -453,13 +471,20 @@ check(
   !(await panelOpen(page, 'fleet')),
   'νέος στόλος: η «Υποδομή Στόλου» κλειστή, με σύνοψη «1 οδηγός · 1 με λογαριασμό» (το αυτοκίνητο του ιδιοκτήτη)',
 );
-// Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι βάρδιες.
-const noShiftsSummary = await page
-  .locator('#shifts')
-  .getByText('Καμία βάρδια', { exact: true })
+// Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι καταχωρήσεις.
+const noEntriesSummary = await panelButton(page, 'entries')
+  .getByText('Βάρδιες 0 · Έξοδα 0 · Εφαρμογές 0', { exact: true })
   .waitFor({ timeout: 10000 })
   .then(() => true, () => false);
-check(!(await panelOpen(page, 'shifts')) && noShiftsSummary, 'κλειστό πάνελ «Ιστορικό βαρδιών» με σύνοψη «Καμία βάρδια»');
+check(
+  !(await panelOpen(page, 'entries')) && noEntriesSummary,
+  'κλειστό πάνελ «Καταχωρήσεις» με σύνοψη «Βάρδιες 0 · Έξοδα 0 · Εφαρμογές 0»',
+);
+const ownerPanels = await page.locator('main section:has(> :is(h2, h3) > button[aria-expanded])').evaluateAll((els) => els.map((el) => el.id));
+check(
+  ownerPanels.join(',') === 'analysis,entries,fleet,backup',
+  `ιδιοκτήτης: 4 πάνελ (Αναλυτικά, Καταχωρήσεις, Υποδομή Στόλου, Αντίγραφο ασφαλείας) αντί για 8 (${ownerPanels.join(', ')})`,
+);
 await page.locator('#backup').getByText('Δεν έχει γίνει ακόμα', { exact: true }).waitFor();
 check(
   (await page.getByTestId('backup-reminder').count()) === 0,
@@ -625,8 +650,12 @@ await xform.getByRole('button', { name: /^Καταχώρηση εξόδου/ }).
 check(await xform.getByText('Γράψτε το ποσό').isVisible(), 'το ποσό εξόδου είναι υποχρεωτικό');
 await page.screenshot({ path: `${OUT}/04b-expense-form.png` });
 check(
-  nbsp0(await page.locator('#expenses').innerText()).includes('2 έξοδα · 134,00 €'),
-  'κλειστό πάνελ «Έξοδα Οχήματος»: σύνοψη «2 έξοδα · 134,00 €»',
+  nbsp0(await panelButton(page, 'entries').innerText()).includes('Βάρδιες 2 · Έξοδα 2 · Εφαρμογές 0'),
+  'κλειστό πάνελ «Καταχωρήσεις»: σύνοψη «Βάρδιες 2 · Έξοδα 2 · Εφαρμογές 0»',
+);
+check(
+  (await entryTab(page, 'expenses').getAttribute('aria-selected')) === 'true',
+  'μετά την καταχώρηση εξόδου η καρτέλα «Έξοδα» είναι η επιλεγμένη',
 );
 await openPanel(page, 'expenses');
 const expCard = nbsp0(await page.locator('#expenses').innerText());
@@ -644,11 +673,20 @@ check(
 await page.getByRole('button', { name: 'Βάρδια', exact: true }).click();
 await form.waitFor();
 
-console.log('3γ. Πάνελ: σύνοψη όταν είναι κλειστά, άνοιγμα, μνήμη');
-const shiftsSummary = nbsp0(await page.locator('#shifts').innerText()).replace(/\s+/g, ' ');
-check(shiftsSummary.includes('2 βάρδιες · ταμείο 299,22 €'), `κλειστό πάνελ βαρδιών: «${shiftsSummary}»`);
-const detailsSummary = nbsp0(await page.locator('#stats-details').innerText()).replace(/\s+/g, ' ');
-check(detailsSummary.includes('καθαρά 260,39 € · 200,5 χλμ · 23 διαδρομές'), `κλειστό «Έσοδα, χιλιόμετρα & διαδρομές»: «${detailsSummary}»`);
+console.log('3γ. Πάνελ: καρτέλες «Καταχωρήσεις», σύνοψη όταν είναι κλειστά, άνοιγμα, μνήμη');
+const tabTexts = (await page.locator('#entries [role="tab"]').allInnerTexts()).map((t) => t.replace(/\s+/g, ' ').trim());
+check(tabTexts.join(' | ') === 'Βάρδιες 2 | Έξοδα 2 | Εφαρμογές 0', `καρτέλες με το πλήθος τους: ${tabTexts.join(' | ')}`);
+check(
+  (await page.locator('#expenses').isVisible()) && !(await page.locator('#shifts').isVisible()),
+  'φαίνεται μόνο η επιλεγμένη καρτέλα («Έξοδα»)',
+);
+await entryTab(page, 'shifts').click();
+check(
+  (await panelOpen(page, 'shifts')) &&
+    !(await page.locator('#expenses').isVisible()) &&
+    (await page.locator('#shifts').getByRole('button', { name: 'Επεξεργασία βάρδιας Ζ 101' }).isVisible()),
+  'πάτημα «Βάρδιες» → το ιστορικό βαρδιών (Ζ 101), τα έξοδα κρύβονται',
+);
 check(!(await page.getByText('ΦΠΑ εξόδων 24%').first().isVisible()), 'η «Ανάλυση ΦΠΑ» είναι κλειστή');
 await page.getByRole('button', { name: 'Ανάλυση ΦΠΑ' }).click();
 check(await page.getByText('ΦΠΑ εξόδων 24%').first().isVisible(), '«Ανάλυση ΦΠΑ» → φαίνεται ο ΦΠΑ εσόδων και εξόδων');
@@ -667,12 +705,14 @@ check(true, 'σύνδεσμος «#fleet» → η «Υποδομή Στόλου�
 await page.evaluate(() => history.replaceState(null, '', '/'));
 await openAll(page);
 check((await page.locator('main section > :is(h2, h3) > button[aria-expanded="false"]').count()) === 0, 'όλα τα πάνελ ανοίγουν');
+await entryTab(page, 'platforms').click();
 await page.reload();
 await form.waitFor();
 check(
-  (await panelOpen(page, 'shifts')) && (await panelOpen(page, 'analysis')) && (await page.locator('#vat-details').isVisible()),
-  'μετά από ανανέωση τα πάνελ και η φόρμα μένουν όπως τα άφησε ο χρήστης',
+  (await panelOpen(page, 'platforms')) && (await panelOpen(page, 'analysis')) && (await page.locator('#vat-details').isVisible()),
+  'μετά από ανανέωση τα πάνελ, η καρτέλα («Εφαρμογές») και η φόρμα μένουν όπως τα άφησε ο χρήστης',
 );
+await openPanel(page, 'shifts');
 
 const body = nbsp0(await page.locator('main').innerText());
 check(body.includes('260,39'), 'σύνολο καθαρών εσόδων 260,39 €');
@@ -680,12 +720,12 @@ check(body.includes('33,83'), 'ΦΠΑ εσόδων 13%: 20,84 + 12,99 = 33,83 �
 check(body.includes('33,68'), 'ΦΠΑ εξόδων 24%: καύσιμα 7,74 + άλλα έξοδα 1,94 + επισκευή 24,00 = 33,68 €');
 const flatBody = body.replace(/\s+/g, ' ');
 check(
-  flatBody.includes('Συνολικά Έξοδα 164,00 € Καύσιμα 40,00 € · Έξοδα οχήματος 124,00 €'),
+  flatBody.includes('Συνολικά Έξοδα 164,00 € Καύσιμα 40,00 € · Επισκευές 124,00 €'),
   'Συνολικά Έξοδα 164 €: καύσιμα 40 € + επισκευή 124 € (τα «Άλλα έξοδα» 10 € όχι)',
 );
-check(flatBody.includes('Ταμείο (Τζίρος) 299,22 € Ό,τι εισπράχθηκε, με ΦΠΑ'), 'Ταμείο (Τζίρος) 299,22 €: ό,τι εισπράχθηκε, με ΦΠΑ');
+check(flatBody.includes('Ταμείο (Τζίρος) 299,22 € με ΦΠΑ'), 'Ταμείο (Τζίρος) 299,22 €, με ΦΠΑ');
 check(
-  flatBody.includes('Καθαρό Κέρδος 135,07 € Ταμείο − ΦΠΑ 13% − έξοδα χωρίς ΦΠΑ + ΦΠΑ «Άλλων εξόδων»'),
+  flatBody.includes('Καθαρό Κέρδος 135,07 € μετά τον ΦΠΑ και τα έξοδα'),
   'Καθαρό Κέρδος: 299,22 − ΦΠΑ 13% 33,83 − έξοδα χωρίς ΦΠΑ 132,26 + ΦΠΑ «Άλλων εξόδων» 1,94 = 135,07 €',
 );
 const vatOnlyNote = nbsp0(await page.getByTestId('vat-only-note').innerText());
@@ -694,14 +734,24 @@ check(
   `Ανάλυση ΦΠΑ: σημείωση για τα «Άλλα έξοδα» (${vatOnlyNote})`,
 );
 check(body.includes('0,15') && body.includes('Χρεωστικό — προς πληρωμή'), 'προς απόδοση ΦΠΑ 0,15 € χρεωστικό');
-// Ανά χιλιόμετρο: καθαρά 260,39 / 200,5 χλμ = 1,30 € · καύσιμα 40 / 200,5 = 0,20 € (19,95 € τα 100 χλμ).
-const perKmText = nbsp0(await page.getByTestId('per-km').innerText()).replace(/\s+/g, ' ');
+// Μπαλονάκια έξω από τα πάνελ: ταμείο 299,22 ÷ 2 βάρδιες = 149,61 € (όπως ο «Μ.Ο. ανά βάρδια» των
+// «Αναλυτικών») · αξία διαδρομών (260,39 + 33,83) ÷ 23 = 12,79 € · φιλοδωρήματα 299,22 − 294,22 = 5,00 €.
+const chipsText = nbsp0(await page.getByTestId('stat-chips').innerText()).replace(/\s+/g, ' ');
 check(
-  perKmText ===
-    'Απόδοση ανά χλμ 1,30 €/χλμ Καθαρά έσοδα ÷ συνολικά χλμ Καύσιμα ανά χλμ 0,20 €/χλμ Μέσο κόστος· 19,95 € τα 100 χλμ',
-  `κάρτες «ανά χλμ»: απόδοση 1,30 € και καύσιμα 0,20 € (19,95 € τα 100 χλμ) (${perKmText})`,
+  chipsText ===
+    'Βάρδιες 2 Μ.Ο. βάρδιας 149,61 € Διαδρομές 23 Μ.Ο. διαδρομής 12,79 € Χλμ 200,5 Καθαρά χωρίς ΦΠΑ 260,39 € Φιλοδωρήματα 5,00 €',
+  `μπαλονάκια: βάρδιες, μέσος όρος βάρδιας, διαδρομές, μέσος όρος διαδρομής, χλμ, καθαρά, φιλοδωρήματα (${chipsText})`,
 );
-check(body.includes('Ανά οδηγό'), 'πίνακας ανά οδηγό για τον admin');
+// Τα «ανά χλμ» είναι μόνο στον μετρητή αξιοποίησης (3δ)· όχι χωριστές κάρτες ούτε πάνελ «Έσοδα, χιλιόμετρα & διαδρομές».
+check(
+  (await page.getByTestId('per-km').count()) === 0 && (await page.locator('#stats-details').count()) === 0,
+  'χωρίς τις κάρτες «ανά χλμ» και το πάνελ «Έσοδα, χιλιόμετρα & διαδρομές» (τα στοιχεία τους είναι στα μπαλονάκια και στον μετρητή)',
+);
+const perDriver = page.locator('#analysis #per-driver');
+check(
+  body.includes('Ανά οδηγό') && (await perDriver.isVisible()) && (await page.locator('section#per-driver').count()) === 0,
+  'πίνακας ανά οδηγό για τον admin, μέσα στα «Αναλυτικά» (όχι χωριστό πάνελ)',
+);
 await page.screenshot({ path: `${OUT}/05-admin-desktop.png`, fullPage: true });
 
 // ---------------------------------------------------------------------
@@ -812,11 +862,12 @@ check(utilYellow.length === 0, `μετρητής: χωρίς κίτρινο (κ�
 // ---------------------------------------------------------------------
 console.log('3β. Αναλυτικά: Πίνακας (προεπιλογή) · Ανά μήνα · Γράφημα');
 const chart = page.getByTestId('analysis-card');
+// Ο πίνακας των «Αναλυτικών» είναι ο πρώτος (`.first()`): στο τέλος της κάρτας είναι το «Ανά οδηγό».
 await chart.scrollIntoViewIfNeeded();
 const nbsp = (text) => text.replace(/\u00a0/g, ' ');
 check((await chart.getByRole('button', { name: 'Πίνακας' }).getAttribute('aria-pressed')) === 'true', 'προεπιλογή: Πίνακας');
 check((await chart.getByRole('button', { name: 'Ανά βάρδια' }).getAttribute('aria-pressed')) === 'true', 'προεπιλογή: Ανά βάρδια');
-const shiftTable = nbsp(await chart.locator('table').innerText());
+const shiftTable = nbsp(await chart.locator('table').first().innerText());
 check(['Τζίρος', 'Διαδρομές', 'Μέση αξία'].every((h) => shiftTable.includes(h)), 'στήλες Τζίρος, Διαδρομές, Μέση αξία μαζί');
 check(shiftTable.includes('Γιώργος Παπαδόπουλος · 1 βάρδια') && shiftTable.includes('Μαρία Κωνσταντίνου · 1 βάρδια'), 'επικεφαλίδα για κάθε οδηγό');
 check(/Ζ 101\s+186,23 €\s+14\s+12,95 €/.test(shiftTable), 'Ζ 101: 186,23 € · 14 διαδρομές · 12,95 € (χωρίς φιλοδωρήματα)');
@@ -832,7 +883,7 @@ await chart.screenshot({ path: `${OUT}/05b-table-shifts.png` });
 await chart.getByRole('button', { name: 'Ανά μήνα' }).click();
 await chart.getByRole('button', { name: 'Σεπτέμβριος' }).waitFor();
 await page.waitForFunction(() => !document.querySelector('[data-testid="analysis-card"] [aria-busy="true"]'));
-const monthTable = nbsp(await chart.locator('table').innerText());
+const monthTable = nbsp(await chart.locator('table').first().innerText());
 check(/Σεπτέμβριος\s+2 βάρδιες\s+299,22 €\s+23\s+12,79 €/.test(monthTable) && monthTable.includes('Έτος 2026'), 'Ανά μήνα: Σεπτέμβριος και σύνολο έτους');
 await chart.screenshot({ path: `${OUT}/05c-table-months.png` });
 await chart.getByRole('button', { name: 'Σεπτέμβριος' }).click();
@@ -1028,6 +1079,7 @@ check((await page.locator('#shift-edit-form').count()) === 0, 'το Esc κλεί
 check(await form.getByText('Καταχώρηση Βάρδιας').isVisible(), 'η φόρμα νέας καταχώρησης δεν επηρεάστηκε');
 
 console.log('4γ. Διόρθωση εξόδου οχήματος');
+await openPanel(page, 'expenses');
 await page.getByRole('button', { name: /Επεξεργασία εξόδου Άλλα έξοδα/ }).click();
 const xedit = page.locator('#expense-edit-form');
 await xedit.waitFor();
@@ -1040,7 +1092,7 @@ await page.getByText(/✓ Αποθηκεύτηκαν οι διορθώσεις �
 check((await page.locator('#expense-edit-form').count()) === 0, 'το παράθυρο κλείνει μετά την αποθήκευση');
 const afterExpenseEdit = nbsp0(await page.locator('main').innerText());
 check(
-  afterExpenseEdit.includes('Έξοδα οχήματος 124,00 €') &&
+  afterExpenseEdit.includes('Επισκευές 124,00 €') &&
     nbsp0(await page.getByTestId('vat-only-note').innerText()).includes('3,87 € από 20,00 €'),
   '«Άλλα έξοδα» 20 € μετά τη διόρθωση: αλλάζει μόνο ο ΦΠΑ (3,87 €), τα έξοδα οχήματος μένουν 124,00 €',
 );
@@ -1077,10 +1129,31 @@ const formBox = await mNewEntry.boundingBox();
 const statsBox = await mpage.getByText('Προς Απόδοση ΦΠΑ').first().boundingBox();
 check(formBox.y < statsBox.y, 'στο κινητό το «+ Νέα καταχώρηση» είναι πάνω από τα στατιστικά');
 const mScreens = await mpage.evaluate(() => document.documentElement.scrollHeight / window.innerHeight);
-check(mScreens < 4, `κινητό (ιδιοκτήτης): όλη η σελίδα ${mScreens.toFixed(1)} οθόνες με κλειστά πάνελ`);
+// Με 8 πάνελ ήταν 3,7 οθόνες· με 4 πάνελ και τα μπαλονάκια λιγότερο.
+check(mScreens < 3.5, `κινητό (ιδιοκτήτης): όλη η σελίδα ${mScreens.toFixed(1)} οθόνες με κλειστά πάνελ`);
 const width = await mpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(width[0] === 390 && width[1] === 390, `πλάτος σελίδας 390px στο κινητό, χωρίς zoom-out/κύλιση (${width})`);
 await mpage.screenshot({ path: `${OUT}/06-admin-mobile.png`, fullPage: true });
+// Μπαλονάκια: φαίνονται χωρίς να ανοίξει τίποτα και χωράνε στην οθόνη.
+const mChips = mpage.getByTestId('stat-chips');
+const chipBoxes = await mChips.locator('li').evaluateAll((els) =>
+  els.map((el) => [el.getBoundingClientRect().left, el.getBoundingClientRect().right]),
+);
+check(
+  (await mChips.isVisible()) && chipBoxes.length === 7 && chipBoxes.every(([left, right]) => left >= 0 && right <= 390),
+  `κινητό: τα ${chipBoxes.length} μπαλονάκια (μέσοι όροι κ.λπ.) φαίνονται έξω από τα πάνελ και χωράνε`,
+);
+await shotBelowHeader(mChips, `${OUT}/06c-stat-chips-mobile.png`);
+// «Καταχωρήσεις» στο κινητό: οι 3 καρτέλες χωράνε και πατιούνται εύκολα.
+await openPanel(mpage, 'shifts');
+const tabBoxes = await mpage.locator('#entries [role="tab"]').evaluateAll((els) =>
+  els.map((el) => [el.getBoundingClientRect().left, el.getBoundingClientRect().right, el.getBoundingClientRect().height]),
+);
+check(
+  tabBoxes.length === 3 && tabBoxes.every(([left, right, height]) => left >= 0 && right <= 390 && height >= 44),
+  'κινητό: οι 3 καρτέλες των «Καταχωρήσεων» χωράνε, ύψος ≥ 44px',
+);
+await shotBelowHeader(mpage.locator('#entries'), `${OUT}/06d-entries-mobile.png`);
 const mchart = mpage.getByTestId('analysis-card');
 await openPanel(mpage, 'analysis');
 await mchart.scrollIntoViewIfNeeded();
@@ -1185,13 +1258,17 @@ check(
     (await dpage.locator('#shift-form').getByRole('button', { name: 'Αλλαγή μήνα' }).count()) === 1,
   'οδηγός: «Για: Σεπτέμβριος 2026 / Γιώργος Παπαδόπουλος · ΤΑΕ-1234 — Αλλαγή» (μόνο ο μήνας αλλάζει)',
 );
-// Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι βάρδιες (λίγο μετά τη φόρμα).
-const dShiftsSummary = await dpage
-  .locator('#shifts')
-  .getByText(/^1 βάρδια · ταμείο/)
+// Η σύνοψη γράφει «Φόρτωση…» μέχρι να έρθουν οι καταχωρήσεις (λίγο μετά τη φόρμα).
+const dShiftsSummary = await panelButton(dpage, 'entries')
+  .getByText('Βάρδιες 1 · Έξοδα 1 · Εφαρμογές 0', { exact: true })
   .waitFor({ timeout: 10000 })
   .then(() => true, () => false);
-check(!(await panelOpen(dpage, 'shifts')) && dShiftsSummary, 'οδηγός: κλειστό ιστορικό βαρδιών με σύνοψη');
+check(
+  !(await panelOpen(dpage, 'entries')) && dShiftsSummary,
+  'οδηγός: κλειστές «Καταχωρήσεις» με σύνοψη «Βάρδιες 1 · Έξοδα 1 · Εφαρμογές 0» (μόνο του αυτοκινήτου του)',
+);
+const driverPanels = await dpage.locator('main section:has(> :is(h2, h3) > button[aria-expanded])').evaluateAll((els) => els.map((el) => el.id));
+check(driverPanels.join(',') === 'analysis,entries', `οδηγός: 2 πάνελ, «Αναλυτικά» και «Καταχωρήσεις» (${driverPanels.join(', ')})`);
 const dwidth = await dpage.evaluate(() => [window.innerWidth, document.documentElement.scrollWidth]);
 check(dwidth[0] === 390 && dwidth[1] === 390, `οδηγός: πλάτος 390px στο κινητό (${dwidth})`);
 const dtext = await dpage.locator('body').innerText();
@@ -1268,14 +1345,15 @@ await driverCtx.setOffline(false);
 await dpage.evaluate(() => window.dispatchEvent(new Event('online')));
 await dpage.getByText('Στάλθηκαν 1 βάρδιες').waitFor({ timeout: 15000 });
 check(!(await dpage.getByText('περιμένει αποστολή').isVisible()), 'η ουρά άδειασε μετά την επαναφορά σύνδεσης');
-await dpage.getByText('Ζ 103').first().waitFor();
+await openPanel(dpage, 'shifts');
+await dpage.locator('#shifts').getByText('Ζ 103').first().waitFor();
 check(true, 'η Ζ 103 εμφανίζεται στο ιστορικό');
 await dpage.screenshot({ path: `${OUT}/08-driver-mobile.png`, fullPage: true });
 const dchart = dpage.getByTestId('analysis-card');
 await openPanel(dpage, 'analysis');
 await dchart.scrollIntoViewIfNeeded();
 check((await dchart.getByRole('button', { name: 'Πίνακας' }).getAttribute('aria-pressed')) === 'true', 'οδηγός: ξεκινά με Πίνακα');
-const dtable = nbsp(await dchart.locator('table').innerText());
+const dtable = nbsp(await dchart.locator('table').first().innerText());
 check(['Ζ 101', 'Ζ 102', 'Ζ 103'].every((z) => dtable.includes(z)) && !dtable.includes('Μαρία') && !dtable.includes('Ζ 55'), 'οδηγός: ο πίνακας έχει μόνο τις δικές του βάρδιες');
 await dchart.screenshot({ path: `${OUT}/08b-driver-table.png` });
 await dchart.getByRole('button', { name: 'Γράφημα' }).click();
@@ -1329,7 +1407,7 @@ check(
 await mariaInvite.getByRole('button', { name: 'Αποδοχή' }).click();
 await mariaPage.locator('#shift-form').waitFor();
 await openAll(mariaPage);
-const mtext = await mariaPage.locator('body').innerText();
+const mtext = (await mariaPage.locator('body').innerText()) + (await entriesText(mariaPage));
 check(mtext.includes('Ζ 55') && !mtext.includes('Ζ 101'), 'η Μαρία βλέπει μόνο τη δική της βάρδια (Ζ 55)');
 check(mtext.includes('Φρένα') && !mtext.includes('Λογιστής') && !mtext.includes('Υγρό'), 'η Μαρία βλέπει μόνο το έξοδο του δικού της αυτοκινήτου');
 
@@ -1404,7 +1482,7 @@ check(
 await settled(fpage.getByTestId('utilization').locator('.util-fill'));
 await shotBelowHeader(fpage.getByTestId('utilization'), `${OUT}/09d-utilization-low.png`);
 await openAll(fpage);
-const ftext = nbsp0(await fpage.locator('body').innerText());
+const ftext = nbsp0(await fpage.locator('body').innerText()) + (await entriesText(fpage));
 check(
   ftext.includes('Ζ 7001') && !/Ζ 101|Ζ 55|160,39|Φρένα|Λογιστής/.test(ftext),
   'φίλος: βλέπει μόνο τη δική του βάρδια, καμία βάρδια ή έξοδο του άλλου στόλου',
@@ -1471,13 +1549,13 @@ await ychart.getByRole('button', { name: 'Πίνακας' }).click();
 await ychart.getByRole('button', { name: 'Ανά μήνα' }).click();
 await ychart.getByRole('button', { name: 'Αύγουστος' }).waitFor();
 await page.waitForFunction(() => !document.querySelector('[data-testid="analysis-card"] [aria-busy="true"]'));
-const ym = nbsp(await ychart.locator('table').innerText());
+const ym = nbsp(await ychart.locator('table').first().innerText());
 check(/Αύγουστος\s+1 βάρδια\s+103,69 €\s+7\s+14,53 €/.test(ym), 'Ανά μήνα: ο Αύγουστος (άλλος μήνας) έρχεται από τα σύνολα της βάσης: 103,69 € · 7 · 14,53 €');
 await ychart.getByRole('button', { name: 'Αύγουστος' }).click();
 await ychart.getByRole('button', { name: 'Ανά βάρδια', pressed: true }).waitFor();
 await page.waitForFunction(() => !document.querySelector('section[aria-busy="true"]'));
 check((await page.locator('#filters').getByLabel('Μήνας').inputValue()) === '8', 'πατώντας «Αύγουστος» αλλάζει ο μήνας σε όλη τη σελίδα');
-check((await ychart.locator('table').innerText()).includes('Ζ 99'), 'και ο πίνακας δείχνει τις βάρδιές του (Ζ 99)');
+check((await ychart.locator('table').first().innerText()).includes('Ζ 99'), 'και ο πίνακας δείχνει τις βάρδιές του (Ζ 99)');
 await page.locator('#filters').getByLabel('Μήνας').selectOption('all');
 await ychart.getByRole('button', { name: 'Γράφημα' }).click();
 await ychart.getByRole('heading', { name: 'Τζίρος ανά μήνα' }).waitFor();
@@ -1710,8 +1788,12 @@ await idle(page);
 
 const plist = page.locator('#platforms');
 await openPanel(page, 'platforms');
-const missingBadge = plist.getByText(/^λείπ(ει|ουν) \d+ εβδ\.$/);
-check(await missingBadge.isVisible(), `σήμανση στον τίτλο: «${await missingBadge.innerText()}»`);
+const missingBadge = panelButton(page, 'platforms').getByText(/^λείπ(ει|ουν) \d+ εβδ\.$/);
+check(
+  (await missingBadge.isVisible()) &&
+    (await entryTab(page, 'platforms').locator('.bg-warn').getAttribute('aria-label')) === (await missingBadge.innerText()),
+  `σήμανση στον τίτλο των «Καταχωρήσεων» και τελεία στην καρτέλα «Εφαρμογές»: «${await missingBadge.innerText()}»`,
+);
 const uberCard = plist.getByRole('region', { name: 'Uber: εβδομάδες και τιμολόγιο' });
 const uberText = nbsp0(await uberCard.innerText());
 check(
@@ -1788,7 +1870,7 @@ const choice = plist.getByTestId('platform-choice');
 const pressed = async () =>
   (await choice.locator('button[aria-pressed="true"]').allInnerTexts()).map((t) => t.replace('✓', '').trim()).join(', ');
 const badgeCount = async () => {
-  const badge = plist.getByText(/^λείπ(ει|ουν) \d+ εβδ\.$/);
+  const badge = panelButton(page, 'platforms').getByText(/^λείπ(ει|ουν) \d+ εβδ\.$/);
   return (await badge.count()) ? Number((await badge.innerText()).match(/\d+/)[0]) : 0;
 };
 check((await pressed()) === 'Uber, FreeNow, Bolt', `«Δουλεύει με»: Uber, FreeNow, Bolt (όσες έχουν ποσοστό) — ${await pressed()}`);
@@ -1830,19 +1912,13 @@ await page.locator('#filters').getByLabel('Οδηγός').selectOption({ label: 
 await idle(page);
 
 const stats = page.locator('section[aria-busy]');
-// «Δρόμος & Εφαρμογές» είναι μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές» (μία κάρτα αντί για δύο).
-const detailsCard = page.locator('#stats-details');
-if (await panelOpen(page, 'stats-details')) await panelButton(page, 'stats-details').click();
-const detailsClosed = nbsp0(await detailsCard.innerText()).replace(/\s+/g, ' ');
+// «Δρόμος & Εφαρμογές» είναι στο τέλος της καρτέλας «Εφαρμογές» των «Καταχωρήσεων».
+await openPanel(page, 'platforms');
+const streetCard = plist.locator('#street-apps');
 check(
-  !(await panelOpen(page, 'stats-details')) &&
-    /διαδρομές · δρόμος \d+ · κρατήσεις 38,20 €/.test(detailsClosed) &&
-    (await page.locator('section#street-apps').count()) === 0 &&
-    (await detailsCard.locator('#street-apps').count()) === 1,
-  `«Δρόμος & Εφαρμογές» μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές» — κλειστό: «${detailsClosed}»`,
+  (await streetCard.isVisible()) && (await page.locator('#street-apps').count()) === 1,
+  '«Δρόμος & Εφαρμογές» στο τέλος της καρτέλας «Εφαρμογές»',
 );
-await openPanel(page, 'stats-details');
-const streetCard = detailsCard.locator('#street-apps');
 const streetRows = await streetCard.locator('tbody tr').allInnerTexts();
 const firstNumber = (text) => Number((nbsp0(text).match(/-?\d+/) ?? ['NaN'])[0]);
 const street = streetRows.find((r) => r.startsWith('Δρόμος')) ?? '';
@@ -1860,15 +1936,14 @@ check(
 );
 const statsText = nbsp0(await stats.innerText());
 check(
-  statsText.includes('Κρατήσεις εφαρμογών 38,20 €'),
+  statsText.includes('Εφαρμογές 38,20 €'),
   'Συνολικά Έξοδα: + κρατήσεις εφαρμογών 38,20 € (Uber 12,20 + FreeNow 21,00 + Bolt 5,00)',
 );
 check(
   statsText.includes('Οι κρατήσεις Uber, Bolt (17,20 €) δεν έχουν ΦΠΑ και δεν συμψηφίζονται.'),
   'ΦΠΑ: οι κρατήσεις χωρίς ΦΠΑ (Uber, Bolt) δεν συμψηφίζονται',
 );
-check(statsText.includes(`δρόμος ${zTrips - appTrips}`), 'κάρτα «Διαδρομές»: πόσες από τον δρόμο');
-await shotBelowHeader(detailsCard, `${OUT}/11c-street-apps.png`);
+await shotBelowHeader(streetCard, `${OUT}/11c-street-apps.png`);
 
 await page.evaluate(() => {
   window.__opened = [];
@@ -2155,7 +2230,7 @@ await idle(page);
 // Η παλιά έκδοση έφερε το Ζ 900 του «Ιδιοκτήτη» στο ΤΑΕ-1234, το αυτοκίνητο του Γιώργου (Ζ 101–103):
 // άλλος οδηγός, άλλα φορολογικά στοιχεία, άλλη σειρά Ζ, οπότε δεν ενώνονται.
 check(
-  (await zNotice.count()) === 0 && !/λείπ|έλεγχος Ζ/.test(await panelButton(page, 'shifts').innerText()),
+  (await zNotice.count()) === 0 && !/λείπ(ει|ουν) \d+ Ζ|έλεγχος Ζ/.test(await panelButton(page, 'shifts').innerText()),
   'Ζ 101–103 του Γιώργου και Ζ 900 του «Ιδιοκτήτη» στο ίδιο αυτοκίνητο: δεν ενώνονται, καμία ειδοποίηση',
 );
 await expandTarget(form);
@@ -2179,18 +2254,21 @@ await zNotice.getByText(/Μαρία/).waitFor();
 const zText = nbsp0(await zNotice.innerText());
 check(
   zText.includes('Μαρία Κωνσταντίνου · ΙΚΒ-5678: λείπει το Ζ 56') &&
-    (await panelButton(page, 'shifts').innerText()).includes('λείπει 1 Ζ'),
-  'Ζ 55 και Ζ 57: «λείπει το Ζ 56» και σήμανση «λείπει 1 Ζ» στον τίτλο του ιστορικού',
+    (await panelButton(page, 'shifts').innerText()).includes('λείπει 1 Ζ') &&
+    (await entryTab(page, 'shifts').locator('.bg-warn').getAttribute('aria-label')) === 'λείπει 1 Ζ',
+  'Ζ 55 και Ζ 57: «λείπει το Ζ 56», σήμανση «λείπει 1 Ζ» στον τίτλο των «Καταχωρήσεων» και τελεία στην καρτέλα «Βάρδιες»',
 );
 check(
   zText.includes('από Ζ 57 σε Ζ 570: μήπως γράφτηκε λάθος ο αριθμός;'),
   'Ζ 570 μετά το Ζ 57: «μήπως γράφτηκε λάθος ο αριθμός;» (όχι 512 βάρδιες που λείπουν)',
 );
-await page.locator('#shifts').screenshot({ path: `${OUT}/14-missing-z.png` });
+await openPanel(page, 'shifts');
+await page.locator('#entries').screenshot({ path: `${OUT}/14-missing-z.png` });
 await dpage.reload();
-await dpage.locator('#shifts').waitFor();
+await dpage.locator('#entries').waitFor();
+await idle(dpage);
 check(
-  (await dpage.getByTestId('z-gaps').count()) === 0 && !(await dpage.locator('#shifts > h2').innerText()).includes('Ζ'),
+  (await dpage.getByTestId('z-gaps').count()) === 0 && !/Ζ/.test(await panelButton(dpage, 'shifts').innerText()),
   'ο οδηγός δεν βλέπει ειδοποίηση για Ζ (μόνο ο ιδιοκτήτης)',
 );
 for (const z of ['570', '57']) {

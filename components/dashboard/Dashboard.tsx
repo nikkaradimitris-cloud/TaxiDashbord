@@ -34,6 +34,7 @@ import { periodLabel } from '@/lib/period';
 import {
   formatWeek,
   groupStatements,
+  missingWeekCount,
   platformLabel,
   platformUse,
   statementRevenueCents,
@@ -55,10 +56,11 @@ import {
 import { createClient } from '@/lib/supabase/client';
 import type { MonthSummaryRow } from '@/lib/table';
 import type { DriverRow, ExpenseRow, PlatformRateRow, SessionInfo, ShiftRow, StatementRow } from '@/lib/types';
-import { findZGaps } from '@/lib/zgaps';
+import { findZGaps, zGapBadge } from '@/lib/zgaps';
 import { AnalysisCard } from './AnalysisCard';
 import { BackupPanel, BackupReminder, useBackup } from './Backup';
 import { EditShiftDialog } from './EditShiftDialog';
+import { EntriesPanel } from './EntriesPanel';
 import { EntryKindSwitch, NewEntryButton, type EntryKind } from './EntryFields';
 import { ExpenseForm } from './ExpenseForm';
 import { ExpenseList } from './ExpenseList';
@@ -71,7 +73,7 @@ import { PlatformForm, type WeekPreset } from './PlatformForm';
 import { PlatformList } from './PlatformList';
 import { ShiftForm } from './ShiftForm';
 import { ShiftList } from './ShiftList';
-import { StatsPanel } from './StatsPanel';
+import { PerDriverTable, StatsPanel, StreetAndApps } from './StatsPanel';
 
 type Message = { tone: 'success' | 'error' | 'info'; text: string };
 
@@ -372,6 +374,12 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   const items = useMemo(() => shifts.map((row) => ({ row, figures: figuresFromStored(row) })), [shifts]);
   // «Λείπει Ζ»: κενά στα Ζ κάθε οδηγού (μόνο για τον ιδιοκτήτη).
   const zGaps = useMemo(() => (isAdmin ? findZGaps(shifts, drivers) : []), [isAdmin, shifts, drivers]);
+  // Εβδομάδες εφαρμογών που λείπουν (ένα αυτοκίνητο, ένας μήνας): σήμανση στις «Καταχωρήσεις».
+  const missingWeeks =
+    statementsLoading || !today || year === undefined || month === undefined
+      ? 0
+      : missingWeekCount(rates, statements, platformCarId, year, month, today);
+  const missingWeeksText = missingWeeks === 0 ? null : missingWeeks === 1 ? 'λείπει 1 εβδ.' : `λείπουν ${missingWeeks} εβδ.`;
   const expenseItems = useMemo(
     () => expenses.map((row) => ({ row, figures: expenseFromStored(row) })),
     [expenses],
@@ -395,6 +403,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
     (driverFilter === 'all' || row.driver_id === driverFilter);
 
   function handleSaved(row: ShiftRow) {
+    setPrefs({ entriesTab: 'shifts' });
     setSummaryVersion((v) => v + 1);
     if (!matchesView(row)) return;
     setShiftsState((prev) =>
@@ -451,6 +460,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   }
 
   function handleExpenseSaved(row: ExpenseRow) {
+    setPrefs({ entriesTab: 'expenses' });
     if (!matchesView(row)) return;
     setExpensesState((prev) =>
       prev && prev.key === queryKey && !prev.rows.some((r) => r.id === row.id)
@@ -504,6 +514,7 @@ export function Dashboard({ session }: { session: SessionInfo }) {
   }
 
   function handleStatementSaved(row: StatementRow) {
+    setPrefs({ entriesTab: 'platforms' });
     if (!matchesView(row)) return;
     setStatementsState((prev) =>
       prev && prev.key === queryKey && !prev.rows.some((r) => r.id === row.id)
@@ -838,11 +849,8 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   month={prefs.month}
                   selectedDriver={selectedDriver}
                   items={items}
-                  expenseItems={expenseItems}
                   platformMonths={platformMonths}
                   driversById={driversById}
-                  showPerDriver={isAdmin && driverFilter === 'all'}
-                  onSelectDriver={(id) => setPrefs({ driverFilter: id })}
                   onSetFuel={async (driverId, fuel) => {
                     await updateDriver(supabase, driverId, { fuel });
                     setDriversVersion((v) => v + 1);
@@ -863,23 +871,97 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                       onChartMetricChange={(chartMetric) => setPrefs({ chartMetric })}
                       yearSummary={yearSummary}
                       onSelectMonth={(month) => setPrefs({ month, tableGroup: 'shifts' })}
+                      footer={
+                        isAdmin && driverFilter === 'all' ? (
+                          <PerDriverTable
+                            items={items}
+                            expenseItems={expenseItems}
+                            platformMonths={platformMonths}
+                            driversById={driversById}
+                            onSelectDriver={(id) => setPrefs({ driverFilter: id })}
+                          />
+                        ) : null
+                      }
                     />
                   }
                 />
               </div>
 
-              <ShiftList
-                items={items}
-                loading={shiftsLoading}
-                driversById={driversById}
-                isAdmin={isAdmin}
-                userId={userId}
-                fetchedAt={shiftsState?.fetchedAt ?? 0}
+              <EntriesPanel
                 periodText={periodLabel(prefs.year, prefs.month)}
-                editingId={editing?.id ?? null}
-                onEdit={startEdit}
-                onDelete={handleDelete}
-                zGaps={zGaps}
+                loading={shiftsLoading || expensesLoading || statementsLoading}
+                active={prefs.entriesTab}
+                onChange={(entriesTab) => setPrefs({ entriesTab })}
+                tabs={[
+                  {
+                    id: 'shifts',
+                    label: 'Βάρδιες',
+                    count: items.length,
+                    warning: shiftsLoading ? null : zGapBadge(zGaps),
+                    body: (
+                      <ShiftList
+                        items={items}
+                        loading={shiftsLoading}
+                        driversById={driversById}
+                        isAdmin={isAdmin}
+                        userId={userId}
+                        fetchedAt={shiftsState?.fetchedAt ?? 0}
+                        editingId={editing?.id ?? null}
+                        onEdit={startEdit}
+                        onDelete={handleDelete}
+                        zGaps={zGaps}
+                      />
+                    ),
+                  },
+                  {
+                    id: 'expenses',
+                    label: 'Έξοδα',
+                    count: expenseItems.length,
+                    body: (
+                      <ExpenseList
+                        items={expenseItems}
+                        loading={expensesLoading}
+                        driversById={driversById}
+                        isAdmin={isAdmin}
+                        userId={userId}
+                        fetchedAt={expensesState?.fetchedAt ?? 0}
+                        editingId={editingExpense?.id ?? null}
+                        onEdit={startExpenseEdit}
+                        onDelete={handleExpenseDelete}
+                      />
+                    ),
+                  },
+                  {
+                    id: 'platforms',
+                    label: 'Εφαρμογές',
+                    count: statements.length,
+                    warning: missingWeeksText,
+                    body: (
+                      <>
+                        <PlatformList
+                          statements={statements}
+                          months={platformMonths}
+                          rates={rates}
+                          loading={statementsLoading}
+                          driversById={driversById}
+                          isAdmin={isAdmin}
+                          userId={userId}
+                          fetchedAt={statementsState?.fetchedAt ?? 0}
+                          today={today}
+                          year={prefs.year}
+                          month={prefs.month}
+                          carId={platformCarId}
+                          editingId={editingStatement?.id ?? null}
+                          onEdit={startStatementEdit}
+                          onDelete={handleStatementDelete}
+                          onAddWeek={addStatementWeek}
+                          onTogglePlatform={togglePlatform}
+                        />
+                        {platformMonths.length > 0 && <StreetAndApps totals={totals} platformMonths={platformMonths} />}
+                      </>
+                    ),
+                  },
+                ]}
               />
 
               {editing && (
@@ -902,19 +984,6 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 </EditShiftDialog>
               )}
 
-              <ExpenseList
-                items={expenseItems}
-                loading={expensesLoading}
-                driversById={driversById}
-                isAdmin={isAdmin}
-                userId={userId}
-                fetchedAt={expensesState?.fetchedAt ?? 0}
-                periodText={periodLabel(prefs.year, prefs.month)}
-                editingId={editingExpense?.id ?? null}
-                onEdit={startExpenseEdit}
-                onDelete={handleExpenseDelete}
-              />
-
               {editingExpense && (
                 <EditShiftDialog onClose={closeExpenseEdit} label="Επεξεργασία εξόδου οχήματος">
                   <ExpenseForm
@@ -933,27 +1002,6 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                   />
                 </EditShiftDialog>
               )}
-
-              <PlatformList
-                statements={statements}
-                months={platformMonths}
-                rates={rates}
-                loading={statementsLoading}
-                driversById={driversById}
-                isAdmin={isAdmin}
-                userId={userId}
-                fetchedAt={statementsState?.fetchedAt ?? 0}
-                today={today}
-                year={prefs.year}
-                month={prefs.month}
-                carId={platformCarId}
-                periodText={periodLabel(prefs.year, prefs.month)}
-                editingId={editingStatement?.id ?? null}
-                onEdit={startStatementEdit}
-                onDelete={handleStatementDelete}
-                onAddWeek={addStatementWeek}
-                onTogglePlatform={togglePlatform}
-              />
 
               {editingStatement && (
                 <EditShiftDialog onClose={closeStatementEdit} label="Επεξεργασία καταχώρησης εφαρμογής">

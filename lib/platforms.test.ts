@@ -28,6 +28,7 @@ import {
   totalsByPlatform,
   weekCycles,
   weekState,
+  missingWeekCount,
   type StoredStatement,
 } from './platforms';
 
@@ -98,6 +99,18 @@ describe('προτεινόμενη εβδομάδα και κατάσταση', 
     expect(weekState(weeks[0], entered, '2026-09-22')).toBe('missing');
     expect(weekState(weeks[3], entered, '2026-09-22')).toBe('open'); // 21–27: σε εξέλιξη
     expect(weekState(weeks[4], entered, '2026-09-22')).toBe('open'); // 28–30: επόμενη
+  });
+
+  it('εβδομάδες που λείπουν: μόνο στις εφαρμογές που δουλεύει το αυτοκίνητο, για έναν μήνα', () => {
+    const rates = [
+      { driver_id: 'car', platform: 'uber', active: true },
+      { driver_id: 'car', platform: 'bolt', active: false },
+    ];
+    const statements = [{ driver_id: 'car', month: 9, platform: 'uber', kind: 'week', week_start: '2026-09-07' }];
+    // Uber: 1–6 και 14–20 λείπουν (το 21–27 τρέχει)· Bolt «εκτός»· FreeNow χωρίς ποσοστό και καταχωρήσεις.
+    expect(missingWeekCount(rates, statements, 'car', 2026, 9, '2026-09-22')).toBe(2);
+    expect(missingWeekCount(rates, statements, 'car', 2026, 'all', '2026-09-22')).toBe(0);
+    expect(missingWeekCount(rates, statements, null, 2026, 9, '2026-09-22')).toBe(0);
   });
 });
 

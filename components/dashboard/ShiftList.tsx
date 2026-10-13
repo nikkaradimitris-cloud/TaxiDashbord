@@ -1,8 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { Panel } from '@/components/Panel';
-import { Badge, Button, cx, Notice } from '@/components/ui';
+import { Button, cx, Notice } from '@/components/ui';
 import { vatStatus, type ShiftFigures } from '@/lib/accounting';
 import { formatDateTime, formatEuro, formatKm } from '@/lib/format';
 import { monthName } from '@/lib/period';
@@ -20,7 +19,6 @@ export function ShiftList({
   isAdmin,
   userId,
   fetchedAt,
-  periodText,
   editingId,
   onEdit,
   onDelete,
@@ -32,7 +30,6 @@ export function ShiftList({
   isAdmin: boolean;
   userId: string;
   fetchedAt: number;
-  periodText: string;
   editingId: string | null;
   onEdit: (row: ShiftRow) => void;
   onDelete: (row: ShiftRow) => void;
@@ -47,27 +44,15 @@ export function ShiftList({
   const expensesLabel = items.some((item) => item.figures.otherExpensesCents + item.figures.repairsCents > 0)
     ? 'Έξοδα βάρδιας'
     : 'Καύσιμα';
-  const grossCents = items.reduce((sum, item) => sum + item.figures.grossReceiptsCents, 0);
   const zBadge = loading ? null : zGapBadge(zGaps);
 
   // Ο οδηγός διορθώνει/διαγράφει δικές του καταχωρήσεις μόνο μέσα σε 24 ώρες (ο κανόνας ισχύει και στη βάση).
   const canModify = (row: ShiftRow) =>
     isAdmin || (row.created_by === userId && Date.parse(row.created_at) > fetchedAt - DAY_MS);
 
+  // Το περιεχόμενο της καρτέλας «Βάρδιες» στις «Καταχωρήσεις» (ο τίτλος και η σήμανση «λείπει Ζ» είναι εκεί).
   return (
-    <Panel
-      id="shifts"
-      title={`Ιστορικό Βαρδιών · ${periodText}`}
-      summary={
-        loading
-          ? 'Φόρτωση…'
-          : items.length === 0
-            ? 'Καμία βάρδια'
-            : `${items.length === 1 ? '1 βάρδια' : `${items.length} βάρδιες`} · ταμείο ${formatEuro(grossCents)}`
-      }
-      badge={zBadge ? <Badge tone="warn">{zBadge}</Badge> : null}
-      className={cx(loading && 'opacity-60')}
-    >
+    <div className={cx(loading && 'opacity-60')}>
       {zBadge && (
         <Notice tone="warning" className="mb-3">
           <p className="font-semibold">Λείπουν βάρδιες ανάμεσα στα Ζ:</p>
@@ -253,6 +238,6 @@ export function ShiftList({
           )}
         </>
       )}
-    </Panel>
+    </div>
   );
 }

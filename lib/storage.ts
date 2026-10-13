@@ -65,6 +65,9 @@ function cached<T>(key: string, compute: () => T): T {
 
 export type StatsView = 'table' | 'chart';
 export type TableGroup = 'shifts' | 'months';
+/** Καρτέλα του πάνελ «Καταχωρήσεις»: βάρδιες, έξοδα οχήματος ή εφαρμογές. */
+export type EntriesTab = 'shifts' | 'expenses' | 'platforms';
+const ENTRIES_TABS: readonly EntriesTab[] = ['shifts', 'expenses', 'platforms'];
 
 export interface Preferences {
   year: number;
@@ -77,6 +80,8 @@ export interface Preferences {
   tableGroup: TableGroup;
   /** Τι δείχνει το γράφημα (Τζίρος / Διαδρομές / Μέση αξία διαδρομής). */
   chartMetric: ChartMetric;
+  /** Η καρτέλα που είχε ανοιχτή ο χρήστης στις «Καταχωρήσεις». */
+  entriesTab: EntriesTab;
   /** Ο τρέχων μήνας τη στιγμή που άνοιξε η σελίδα (για προειδοποιήσεις). */
   today: { year: number; month: number };
 }
@@ -95,6 +100,7 @@ export function getPreferences(userId: string): Preferences {
       statsView: stored.statsView === 'chart' ? 'chart' : 'table',
       tableGroup: stored.tableGroup === 'months' ? 'months' : 'shifts',
       chartMetric: isChartMetric(stored.chartMetric) ? stored.chartMetric : 'gross',
+      entriesTab: ENTRIES_TABS.includes(stored.entriesTab as EntriesTab) ? (stored.entriesTab as EntriesTab) : 'shifts',
       today,
     };
   });
@@ -110,6 +116,7 @@ export function updatePreferences(userId: string, changes: Partial<Omit<Preferen
     statsView: next.statsView,
     tableGroup: next.tableGroup,
     chartMetric: next.chartMetric,
+    entriesTab: next.entriesTab,
   });
   notify();
 }

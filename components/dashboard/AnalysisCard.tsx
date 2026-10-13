@@ -48,6 +48,7 @@ export function AnalysisCard({
   onChartMetricChange,
   yearSummary,
   onSelectMonth,
+  footer,
 }: {
   items: { row: ShiftRow; figures: ShiftFigures }[];
   driversById: Map<string, DriverRow>;
@@ -64,6 +65,8 @@ export function AnalysisCard({
   /** Σύνολα όλων των μηνών του έτους (για «Ανά μήνα» όταν είναι ανοιχτός ένας μήνας). */
   yearSummary: YearSummary | null;
   onSelectMonth: (month: number) => void;
+  /** Στο τέλος της κάρτας, π.χ. ο πίνακας «Ανά οδηγό» (ιδιοκτήτης, όλος ο στόλος). */
+  footer?: ReactNode;
 }) {
   const who = selectedDriver?.name ?? (isAdmin ? 'Όλος ο στόλος' : ([...driversById.values()][0]?.name ?? ''));
   const period = view === 'table' && tableGroup === 'months' ? `Έτος ${year}` : periodLabel(year, month);
@@ -75,7 +78,7 @@ export function AnalysisCard({
       id="analysis"
       headingLevel={3}
       title="Αναλυτικά"
-      summary={`${subtitle} · πίνακας ή γράφημα`}
+      summary={`${subtitle} · πίνακας ή γράφημα${footer ? ' · ανά οδηγό' : ''}`}
       data-testid="analysis-card"
     >
       <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
@@ -111,6 +114,7 @@ export function AnalysisCard({
           onMetricChange={onChartMetricChange}
         />
       )}
+      {footer}
     </Panel>
   );
 }

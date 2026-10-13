@@ -1,12 +1,12 @@
 'use client';
 
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
-import { Chevron, Panel, usePanelOpen } from '@/components/Panel';
-import { Badge, cx, Notice } from '@/components/ui';
+import { Chevron, usePanelOpen } from '@/components/Panel';
+import { cx, Notice } from '@/components/ui';
 import { summarize, VAT_STATUS_TEXT, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from '@/lib/accounting';
 import { DISCLAIMER_SHORT } from '@/lib/disclaimer';
 import { saveFile } from '@/lib/download';
-import { formatEuro, formatEuroPerKm, formatInteger, formatKm, formatPercent } from '@/lib/format';
+import { formatEuro, formatInteger, formatKm, formatPercent } from '@/lib/format';
 import { periodLabel, type MonthFilter } from '@/lib/period';
 import { platformLabel, totalsByPlatform, type PlatformMonth } from '@/lib/platforms';
 import type { DriverRow, ExpenseRow, ShiftRow } from '@/lib/types';
@@ -23,11 +23,8 @@ export function StatsPanel({
   month,
   selectedDriver,
   items,
-  expenseItems,
   platformMonths,
   driversById,
-  showPerDriver,
-  onSelectDriver,
   onSetFuel,
   analysis,
 }: {
@@ -38,26 +35,23 @@ export function StatsPanel({
   month: MonthFilter;
   selectedDriver: DriverRow | null;
   items: { row: ShiftRow; figures: ShiftFigures }[];
-  /** Έξοδα οχήματος της περιόδου (εκτός βάρδιας). */
-  expenseItems: { row: ExpenseRow; figures: ExpenseFigures }[];
   /** Εφαρμογές ανά αυτοκίνητο, μήνα και εφαρμογή (κράτηση: τιμολόγιο ή εβδομάδες). */
   platformMonths: PlatformMonth[];
   driversById: Map<string, DriverRow>;
-  showPerDriver: boolean;
-  onSelectDriver: (driverId: string) => void;
   /** Ο ιδιοκτήτης δηλώνει το καύσιμο ενός αυτοκινήτου (όρια του μετρητή αξιοποίησης). */
   onSetFuel: (driverId: string, fuel: Fuel) => Promise<void>;
-  /** Η κάρτα «Αναλυτικά» (πίνακας/γράφημα), κάτω από τις κάρτες απόδοσης. */
+  /** Η κάρτα «Αναλυτικά» (πίνακας/γράφημα και ανά οδηγό), κάτω από τις κάρτες απόδοσης. */
   analysis: ReactNode;
 }) {
   const status = vatStatus(totals.vatBalanceCents);
   // Κρατήσεις χωρίς ΦΠΑ (ενδοκοινοτικά τιμολόγια, π.χ. Uber): στα έξοδα, αλλά όχι στον συμψηφισμό.
   const noVatPlatforms = totalsByPlatform(platformMonths).filter((platform) => platform.commissionNoVatCents > 0);
   const noVatCents = noVatPlatforms.reduce((sum, platform) => sum + platform.commissionNoVatCents, 0);
+  // Μόνο ό,τι υπάρχει, με σύντομα ονόματα (π.χ. όχι «Επισκευές 0,00 €»).
   const expenseParts = [
-    `Καύσιμα ${formatEuro(totals.fuelCents)}`,
-    `Έξοδα οχήματος ${formatEuro(totals.vehicleExpensesCents)}`,
-    totals.appCommissionCents > 0 ? `Κρατήσεις εφαρμογών ${formatEuro(totals.appCommissionCents)}` : null,
+    totals.fuelCents > 0 ? `Καύσιμα ${formatEuro(totals.fuelCents)}` : null,
+    totals.vehicleExpensesCents > 0 ? `Επισκευές ${formatEuro(totals.vehicleExpensesCents)}` : null,
+    totals.appCommissionCents > 0 ? `Εφαρμογές ${formatEuro(totals.appCommissionCents)}` : null,
   ];
   const [vatOpen, setVatOpen] = usePanelOpen('vat-details', false);
 
@@ -80,7 +74,7 @@ export function StatsPanel({
       </div>
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-3">
-        <Stat label="Ταμείο (Τζίρος)" value={formatEuro(totals.grossReceiptsCents)} sub="Ό,τι εισπράχθηκε, με ΦΠΑ" />
+        <Stat label="Ταμείο (Τζίρος)" value={formatEuro(totals.grossReceiptsCents)} sub="με ΦΠΑ" />
         <Stat
           label="Συνολικά Έξοδα"
           value={formatEuro(totals.totalExpensesCents)}
@@ -89,27 +83,15 @@ export function StatsPanel({
         <Stat
           label="Καθαρό Κέρδος"
           value={formatEuro(totals.profitCents)}
-          sub={`Ταμείο − ΦΠΑ 13% − έξοδα χωρίς ΦΠΑ${totals.vatOnlyExpensesVatCents > 0 ? ' + ΦΠΑ «Άλλων εξόδων»' : ''}`}
+          sub="μετά τον ΦΠΑ και τα έξοδα"
           tone={totals.profitCents > 0 ? 'good' : totals.profitCents < 0 ? 'bad' : undefined}
           className="col-span-2 xl:col-span-1"
         />
       </div>
 
-      <UtilizationCard totals={totals} cars={cars} isAdmin={isAdmin} onSetFuel={onSetFuel} />
+      <StatChips totals={totals} />
 
-      {/* Ανά χιλιόμετρο: απόδοση (καθαρά έσοδα ÷ συνολικά χλμ) και μέσο κόστος καυσίμων. */}
-      <div className="grid grid-cols-2 gap-3" data-testid="per-km">
-        <Stat
-          label="Απόδοση ανά χλμ"
-          value={totals.totalKm > 0 ? formatEuroPerKm(totals.revenuePerKm) : '—'}
-          sub="Καθαρά έσοδα ÷ συνολικά χλμ"
-        />
-        <Stat
-          label="Καύσιμα ανά χλμ"
-          value={totals.totalKm > 0 ? formatEuroPerKm(totals.fuelPerKm) : '—'}
-          sub={totals.totalKm > 0 ? `Μέσο κόστος· ${formatEuro(Math.round(totals.fuelPerKm * 10000))} τα 100 χλμ` : 'Μέσο κόστος'}
-        />
-      </div>
+      <UtilizationCard totals={totals} cars={cars} isAdmin={isAdmin} onSetFuel={onSetFuel} />
 
       <div
         className={cx(
@@ -181,56 +163,16 @@ export function StatsPanel({
         </div>
       </div>
 
-      {/* Έσοδα, χιλιόμετρα, διαδρομές και (αν υπάρχουν εφαρμογές) δρόμος & εφαρμογές, σε ένα πάνελ. */}
-      <Panel
-        id="stats-details"
-        headingLevel={3}
-        title="Έσοδα, χιλιόμετρα & διαδρομές"
-        summary={`καθαρά ${formatEuro(totals.netRevenueCents)} · ${formatKm(totals.totalKm)} χλμ · ${formatInteger(totals.trips)} διαδρομές${
-          platformMonths.length > 0
-            ? ` · δρόμος ${formatInteger(totals.streetTrips)} · κρατήσεις ${formatEuro(totals.appCommissionCents)}`
-            : ''
-        }`}
-        badge={platformMonths.length > 0 && totals.streetTrips < 0 ? <Badge tone="warn">έλεγχος</Badge> : null}
-      >
-        <dl className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-2 text-sm tabular-nums">
-          <Detail label="Καθαρά έσοδα" value={formatEuro(totals.netRevenueCents)} />
-          <Detail label="ΦΠΑ εσόδων 13%" value={formatEuro(totals.vatCents)} />
-          <Detail label="Φιλοδωρήματα / άλλα" sub="χωρίς ΦΠΑ" value={formatEuro(totals.tipsCents)} />
-          <Detail
-            label="Συνολικά χλμ"
-            sub={`μισθωμένα ${formatKm(totals.paidKm)} · ελεύθερα ${formatKm(totals.emptyKm)}`}
-            value={formatKm(totals.totalKm)}
-          />
-          <Detail
-            label="Διαδρομές"
-            sub={`${totals.shifts} βάρδιες${platformMonths.length > 0 ? ` · δρόμος ${formatInteger(totals.streetTrips)}` : ''}`}
-            value={formatInteger(totals.trips)}
-          />
-        </dl>
-        {platformMonths.length > 0 && <StreetAndApps totals={totals} platformMonths={platformMonths} />}
-      </Panel>
-
       {analysis}
-
-      {showPerDriver && (
-        <PerDriver
-          items={items}
-          expenseItems={expenseItems}
-          platformMonths={platformMonths}
-          driversById={driversById}
-          onSelectDriver={onSelectDriver}
-        />
-      )}
     </section>
   );
 }
 
 /**
- * Δρόμος & Εφαρμογές (μέσα στο «Έσοδα, χιλιόμετρα & διαδρομές»): οι κούρσες των εφαρμογών είναι
+ * Δρόμος & Εφαρμογές (στην καρτέλα «Εφαρμογές» των «Καταχωρήσεων»): οι κούρσες των εφαρμογών είναι
  * μέσα στα Ζ, οι υπόλοιπες είναι από τον δρόμο. Κράτηση ανά εφαρμογή (τιμολόγιο ή, προσωρινά, εβδομάδες).
  */
-function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMonths: PlatformMonth[] }) {
+export function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMonths: PlatformMonth[] }) {
   const platforms = totalsByPlatform(platformMonths);
   const share = (trips: number) => (totals.trips > 0 ? formatPercent((trips / totals.trips) * 100) : '—');
   const source = (invoiced: number, months: number) =>
@@ -302,19 +244,6 @@ function StreetAndApps({ totals, platformMonths }: { totals: Totals; platformMon
         καταχωρηθεί το τιμολόγιο του μήνα.
       </p>
     </div>
-  );
-}
-
-/** Μία γραμμή στις «λεπτομέρειες»: τίτλος (με εξήγηση) και τιμή. */
-function Detail({ label, sub, value }: { label: string; sub?: string; value: string }) {
-  return (
-    <>
-      <dt>
-        {label}
-        {sub && <span className="block text-xs text-muted">{sub}</span>}
-      </dt>
-      <dd className="text-right font-semibold">{value}</dd>
-    </>
   );
 }
 
@@ -460,8 +389,8 @@ function WhatsAppIcon() {
   );
 }
 
-/** Σύνοψη ανά οδηγό (admin, όταν βλέπει όλο τον στόλο). */
-function PerDriver({
+/** Σύνοψη ανά οδηγό (admin, όταν βλέπει όλο τον στόλο), μέσα στα «Αναλυτικά». */
+export function PerDriverTable({
   items,
   expenseItems,
   platformMonths,
@@ -496,13 +425,9 @@ function PerDriver({
   if (rows.length === 0) return null;
 
   return (
-    <Panel
-      id="per-driver"
-      headingLevel={3}
-      title="Ανά οδηγό"
-      summary={`${rows.length === 1 ? '1 οδηγός' : `${rows.length} οδηγοί`} · καθαρά, ΦΠΑ, κέρδος`}
-    >
-      <div className="-mx-4 overflow-x-auto px-4 sm:-mx-5 sm:px-5">
+    <div id="per-driver" className="mt-4 border-t border-line pt-3">
+      <h4 className="text-sm font-semibold">Ανά οδηγό</h4>
+      <div className="-mx-4 mt-2 overflow-x-auto px-4 sm:-mx-5 sm:px-5">
         <table className="w-full min-w-[34rem] text-sm tabular-nums">
           <thead className="text-left text-xs text-muted">
             <tr>
@@ -538,6 +463,37 @@ function PerDriver({
         </table>
       </div>
       <p className="mt-2 text-xs text-muted">Χ = Χρεωστικό, Π = Πιστωτικό. Πατήστε ένα όνομα για φιλτράρισμα.</p>
-    </Panel>
+    </div>
+  );
+}
+
+/**
+ * Μέσοι όροι και σύνολα της περιόδου σε «μπαλονάκια», έξω από πάνελ: φαίνονται με μια ματιά.
+ * Μ.Ο. βάρδιας = ταμείο ÷ βάρδιες· Μ.Ο. διαδρομής = (καθαρά + ΦΠΑ 13%) ÷ διαδρομές, χωρίς φιλοδωρήματα.
+ */
+function StatChips({ totals }: { totals: Totals }) {
+  const avgShift = totals.shifts > 0 ? formatEuro(Math.round(totals.grossReceiptsCents / totals.shifts)) : '—';
+  const avgTrip = totals.trips > 0 ? formatEuro(Math.round((totals.netRevenueCents + totals.vatCents) / totals.trips)) : '—';
+  const chips: [string, string][] = [
+    ['Βάρδιες', formatInteger(totals.shifts)],
+    ['Μ.Ο. βάρδιας', avgShift],
+    ['Διαδρομές', formatInteger(totals.trips)],
+    ['Μ.Ο. διαδρομής', avgTrip],
+    ['Χλμ', formatKm(totals.totalKm)],
+    ['Καθαρά χωρίς ΦΠΑ', formatEuro(totals.netRevenueCents)],
+  ];
+  if (totals.tipsCents > 0) chips.push(['Φιλοδωρήματα', formatEuro(totals.tipsCents)]);
+  return (
+    <ul className="flex flex-wrap gap-1.5" aria-label="Μέσοι όροι και σύνολα" data-testid="stat-chips">
+      {chips.map(([label, value]) => (
+        <li
+          key={label}
+          className="inline-flex items-baseline gap-1 rounded-full border border-line bg-card px-2.5 py-1 text-sm shadow-sm"
+        >
+          <span className="text-muted">{label}</span>
+          <b className="tabular-nums">{value}</b>
+        </li>
+      ))}
+    </ul>
   );
 }

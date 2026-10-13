@@ -280,6 +280,31 @@ export function weekState(week: WeekCycle, entered: ReadonlySet<string>, today: 
   return week.end < today ? 'missing' : 'open';
 }
 
+/**
+ * Πόσες εβδομάδες τελείωσαν χωρίς καταχώρηση, για ένα αυτοκίνητο και έναν μήνα, στις εφαρμογές που
+ * δουλεύει («Δουλεύει με»). Χωρίς αυτοκίνητο ή για όλο το έτος: 0.
+ */
+export function missingWeekCount(
+  rates: readonly Pick<PlatformRateRow, 'driver_id' | 'platform' | 'active'>[],
+  statements: readonly Pick<StatementRow, 'driver_id' | 'month' | 'platform' | 'kind' | 'week_start'>[],
+  carId: string | null,
+  year: number,
+  month: number | 'all',
+  today: string,
+): number {
+  if (month === 'all' || carId === null) return 0;
+  return workedPlatforms(rates, statements, carId, month).reduce((sum, id) => {
+    const entered = new Set(
+      statements.flatMap((row) =>
+        row.driver_id === carId && row.month === month && row.platform === id && row.kind === 'week' && row.week_start
+          ? [row.week_start]
+          : [],
+      ),
+    );
+    return sum + weekCycles(year, month).filter((week) => weekState(week, entered, today) === 'missing').length;
+  }, 0);
+}
+
 // ---------------------------------------------------------------------------
 // Φόρμα καταχώρησης
 // ---------------------------------------------------------------------------
