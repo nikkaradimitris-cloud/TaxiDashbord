@@ -734,8 +734,9 @@ check(amountsTop.y < utilBox.y && utilBox.y < vatBox.y, 'ο μετρητής ε�
 let g = await gauge();
 check(
   g.pct === '70,1%' && nbsp0(g.legend).includes('Μισθωμένα 140,5 χλμ') && nbsp0(g.legend).includes('Ελεύθερα 60 χλμ') &&
-    nbsp0(g.legend).includes('Απόδοση ανά χλμ 1,30 €'),
-  `όλος ο στόλος: 70,1% (140,5 μισθωμένα, 60 ελεύθερα), απόδοση ανά χλμ 1,30 € (${nbsp0(g.legend)})`,
+    nbsp0(g.legend).includes('Απόδοση ανά χλμ 1,30 €') &&
+    nbsp0(g.legend).includes('Καύσιμα ανά χλμ 0,20 €'),
+  `όλος ο στόλος: 70,1% (140,5 μισθωμένα, 60 ελεύθερα), απόδοση ανά χλμ 1,30 €, καύσιμα ανά χλμ 0,20 € (${nbsp0(g.legend)})`,
 );
 check(
   JSON.stringify(g.scale) === JSON.stringify(['κάτω από 59%', '59% – 64%', '64% και πάνω']) &&
@@ -982,8 +983,8 @@ check(
   csv.includes('Απόδοση ανά χλμ (€);1,3\r\n') &&
     csv.includes('Καύσιμα ανά χλμ (€);0,2\r\n') &&
     csv.includes('Καύσιμα ανά 100 χλμ (€);19,95\r\n') &&
-    /;101;.*;1,33;0,33;/.test(csv),
-  'CSV: απόδοση και καύσιμα ανά χλμ, στη σύνοψη και σε κάθε βάρδια (Ζ 101: 1,33 € · 0,33 €)',
+    !csv.split('\r\n')[0].includes('ανά'),
+  'CSV: απόδοση και καύσιμα ανά χλμ ως μέσος όρος στη σύνοψη (όχι στήλες ανά βάρδια)',
 );
 
 // ---------------------------------------------------------------------
@@ -1015,11 +1016,7 @@ check(
   shiftHead.includes('Καθαρά + ΦΠΑ 13% + Φιλοδ. = Ταμείο − ΦΠΑ 13% − Καύσιμα χ. ΦΠΑ = Κέρδος ΦΠΑ απόδ.'),
   `υπολογιστής: οι στήλες του ιστορικού δείχνουν την πράξη του ταμείου (${shiftHead})`,
 );
-const z101Row = nbsp0(await page.locator('#shifts tbody tr').filter({ hasText: '101' }).first().innerText()).replace(/\s+/g, ' ');
-check(
-  shiftHead.includes('Χλμ μισθ./σύν. Ανά χλμ απόδ. · καύσ.') && z101Row.includes('80,5 / 120,5 1,33 € · 0,33 €'),
-  `υπολογιστής: στήλη «ανά χλμ» (Ζ 101: απόδοση 1,33 € · καύσιμα 0,33 €) (${z101Row})`,
-);
+check(!shiftHead.includes('ανά χλμ'), 'υπολογιστής: το ιστορικό δεν έχει τιμές «ανά χλμ» (μόνο ο μέσος όρος στα στατιστικά)');
 await page.getByRole('button', { name: 'Επεξεργασία βάρδιας Ζ 55' }).click();
 await edit.getByText('Επεξεργασία Βάρδιας · Ζ 55').waitFor();
 await edit.getByRole('button', { name: 'Ακύρωση' }).click();
@@ -1153,10 +1150,7 @@ check(
     nbsp0(await mShiftCard.locator('p').filter({ hasText: /^Ταμείο/ }).innerText()).replace(/\s+/g, ' ') === 'Ταμείο 188,23 €',
   `κινητό: η βάρδια δείχνει «Ταμείο» και την πράξη ως το καθαρό κέρδος (${mCash})`,
 );
-check(
-  mCash.endsWith('Διαδρομές 14 Απόδοση ανά χλμ 1,33 € Καύσιμα ανά χλμ 0,33 €'),
-  `κινητό: η βάρδια δείχνει απόδοση και καύσιμα ανά χλμ (160,39 / 120,5 = 1,33 € · 40 / 120,5 = 0,33 €)`,
-);
+check(mCash.endsWith('Διαδρομές 14') && !mCash.includes('ανά χλμ'), 'κινητό: η κάρτα της βάρδιας δεν έχει τιμές «ανά χλμ» (μόνο ο μέσος όρος)');
 await shotBelowHeader(mShiftCard, `${OUT}/06e-shift-cash-mobile.png`);
 await ownerMobile.close();
 

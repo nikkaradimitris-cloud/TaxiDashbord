@@ -1,4 +1,4 @@
-import { perKm, summarize, VAT_STATUS_LABEL, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from './accounting';
+import { summarize, VAT_STATUS_LABEL, vatStatus, type ExpenseFigures, type ShiftFigures, type Totals } from './accounting';
 import { formatCentsPlain, formatDateTime, formatDecimalPlain } from './format';
 import { monthName } from './period';
 
@@ -82,8 +82,6 @@ const HEADERS = [
   'ΦΠΑ Καυσίμων 24% (€)',
   'Υπόλοιπο ΦΠΑ Βάρδιας (€)',
   'Καθαρό Κέρδος Βάρδιας (€)',
-  'Απόδοση ανά Χλμ (€)',
-  'Καύσιμα ανά Χλμ (€)',
   'Καταχώρηση',
 ];
 
@@ -137,15 +135,7 @@ function figureCells(f: ShiftFigures): string[] {
     formatCentsPlain(f.expensesVatCents),
     formatCentsPlain(f.vatBalanceCents),
     formatCentsPlain(f.profitCents),
-    perKmCell(f.netRevenueCents, f.totalKm),
-    perKmCell(f.fuelCents, f.totalKm),
   ];
-}
-
-/** Ευρώ ανά χλμ με 2 δεκαδικά (κενό χωρίς χιλιόμετρα). */
-function perKmCell(cents: number, km: number): string {
-  const value = perKm(cents, km);
-  return value === null ? '' : formatDecimalPlain(value, 2);
 }
 
 export function buildShiftsCsv(

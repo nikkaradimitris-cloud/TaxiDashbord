@@ -379,15 +379,6 @@ export function summarize(
   };
 }
 
-/**
- * Ευρώ ανά χιλιόμετρο για ένα ποσό (σε λεπτά) και τα χιλιόμετρά του, π.χ. τα καθαρά ή τα καύσιμα μιας
- * βάρδιας· null χωρίς χιλιόμετρα.
- */
-export function perKm(cents: number, km: number): number | null {
-  const kmHundredths = Math.round(times100(km));
-  return kmHundredths > 0 ? cents / kmHundredths : null;
-}
-
 export type VatStatus = 'debit' | 'credit' | 'zero';
 
 /** Θετικό υπόλοιπο = Χρεωστικό (πληρωμή), αρνητικό = Πιστωτικό. */

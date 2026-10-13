@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import { Panel } from '@/components/Panel';
 import { Badge, Button, cx, Notice } from '@/components/ui';
-import { perKm, vatStatus, type ShiftFigures } from '@/lib/accounting';
+import { vatStatus, type ShiftFigures } from '@/lib/accounting';
 import { formatDateTime, formatEuro, formatKm } from '@/lib/format';
 import { monthName } from '@/lib/period';
 import { sortShifts } from '@/lib/table';
@@ -11,12 +11,6 @@ import type { DriverRow, ShiftRow } from '@/lib/types';
 import { jumpText, missingZText, zGapBadge, type DriverZGaps } from '@/lib/zgaps';
 
 const PAGE = 50;
-
-/** Ευρώ ανά χιλιόμετρο μιας βάρδιας (απόδοση ή καύσιμα)· «—» χωρίς χιλιόμετρα. */
-function euroPerKm(cents: number, km: number): string {
-  const value = perKm(cents, km);
-  return value === null ? '—' : formatEuro(Math.round(value * 100));
-}
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export function ShiftList({
@@ -155,10 +149,6 @@ export function ShiftList({
                     </dd>
                     <dt className="text-muted">Διαδρομές</dt>
                     <dd className="text-right">{figures.trips}</dd>
-                    <dt className="text-muted">Απόδοση ανά χλμ</dt>
-                    <dd className="text-right">{euroPerKm(figures.netRevenueCents, figures.totalKm)}</dd>
-                    <dt className="text-muted">Καύσιμα ανά χλμ</dt>
-                    <dd className="text-right">{euroPerKm(figures.fuelCents, figures.totalKm)}</dd>
                   </dl>
                   {canModify(row) && (
                     <div className="mt-2 flex justify-end gap-2">
@@ -177,7 +167,7 @@ export function ShiftList({
 
           {/* Υπολογιστής/tablet: πίνακας */}
           <div className="-mx-5 hidden overflow-x-auto px-5 md:block">
-            <table className="w-full min-w-[72rem] text-sm tabular-nums">
+            <table className="w-full min-w-[66rem] text-sm tabular-nums">
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="py-2 pr-3 font-medium">Περίοδος</th>
@@ -185,7 +175,6 @@ export function ShiftList({
                   <th className="py-2 pr-3 font-medium">Ζ</th>
                   <th className="py-2 pr-3 text-right font-medium">Διαδρ.</th>
                   <th className="py-2 pr-3 text-right font-medium">Χλμ μισθ./σύν.</th>
-                  <th className="py-2 pr-3 text-right font-medium">Ανά χλμ απόδ. · καύσ.</th>
                   <th className="py-2 pr-3 text-right font-medium">Καθαρά</th>
                   <th className="py-2 pr-3 text-right font-medium">+ ΦΠΑ 13%</th>
                   <th className="py-2 pr-3 text-right font-medium">+ Φιλοδ.</th>
@@ -214,9 +203,6 @@ export function ShiftList({
                       <td className="py-2 pr-3 text-right">{figures.trips}</td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">
                         {formatKm(figures.paidKm)} / {formatKm(figures.totalKm)}
-                      </td>
-                      <td className="py-2 pr-3 text-right whitespace-nowrap">
-                        {euroPerKm(figures.netRevenueCents, figures.totalKm)} · {euroPerKm(figures.fuelCents, figures.totalKm)}
                       </td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.netRevenueCents)}</td>
                       <td className="py-2 pr-3 text-right whitespace-nowrap">{formatEuro(figures.vatCents)}</td>

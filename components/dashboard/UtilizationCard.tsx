@@ -146,9 +146,14 @@ export function UtilizationCard({
               </dt>
               <dd>{formatKm(totals.emptyKm)} χλμ</dd>
             </div>
+            {/* Μέσος όρος της περιόδου: καθαρά έσοδα ÷ συνολικά χλμ και καύσιμα ÷ συνολικά χλμ. */}
             <div>
               <dt>Απόδοση ανά χλμ</dt>
               <dd>{formatEuro(Math.round(totals.revenuePerKm * 100))}</dd>
+            </div>
+            <div>
+              <dt>Καύσιμα ανά χλμ</dt>
+              <dd>{formatEuro(Math.round(totals.fuelPerKm * 100))}</dd>
             </div>
           </dl>
         </div>
