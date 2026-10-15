@@ -482,8 +482,13 @@ check(
 );
 const ownerPanels = await page.locator('main section:has(> :is(h2, h3) > button[aria-expanded])').evaluateAll((els) => els.map((el) => el.id));
 check(
-  ownerPanels.join(',') === 'analysis,entries,fleet,backup',
-  `ιδιοκτήτης: 4 πάνελ (Αναλυτικά, Καταχωρήσεις, Υποδομή Στόλου, Αντίγραφο ασφαλείας) αντί για 8 (${ownerPanels.join(', ')})`,
+  ownerPanels.join(',') === 'analysis,entries,fleet,fixed-costs,backup',
+  `ιδιοκτήτης: 5 πάνελ (Αναλυτικά, Καταχωρήσεις, Υποδομή Στόλου, Πάγια έξοδα, Αντίγραφο ασφαλείας) αντί για 8 (${ownerPanels.join(', ')})`,
+);
+check(
+  !(await panelOpen(page, 'fixed-costs')) &&
+    nbsp0(await panelButton(page, 'fixed-costs').innerText()).includes('Δεν έχουν μπει ακόμη'),
+  'κλειστό πάνελ «Πάγια έξοδα» με σύνοψη «Δεν έχουν μπει ακόμη»',
 );
 await page.locator('#backup').getByText('Δεν έχει γίνει ακόμα', { exact: true }).waitFor();
 check(
@@ -778,6 +783,102 @@ check(
 await page.locator('#filters').getByLabel('Οδηγός').selectOption('all');
 await idle(page);
 await driverChips.waitFor();
+
+// ---------------------------------------------------------------------
+console.log('3ε. Πάγια έξοδα: μηνιαία ποσά ανά αυτοκίνητο, μόνο πληροφοριακά');
+const fixed = page.locator('#fixed-costs');
+await openPanel(page, 'fixed-costs');
+const fixedRow = (plate) => fixed.getByTestId('fixed-costs-row').filter({ hasText: plate });
+/** Το μήνυμα «αποθηκεύτηκαν» βγαίνει πριν ξαναφορτώσει η λίστα: πρώτα να φανεί το νέο σύνολο. */
+const waitFixedTotal = (plate, total) =>
+  page.waitForFunction(
+    ([plateText, totalText]) => {
+      const row = [...document.querySelectorAll('#fixed-costs [data-testid="fixed-costs-row"]')].find((li) =>
+        li.innerText.includes(plateText),
+      );
+      return !!row && row.innerText.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').includes(totalText);
+    },
+    [plate, `Σύνολο: ${total} τον μήνα`],
+  );
+check(
+  (await fixed.getByTestId('fixed-costs-row').count()) === 3 &&
+    (await fixed.getByText('Δεν έχουν μπει ακόμη.').count()) === 3 &&
+    (await fixed.getByRole('button', { name: 'Συμπλήρωση' }).count()) === 3,
+  'μία γραμμή για κάθε αυτοκίνητο, όλες χωρίς πάγια («Συμπλήρωση»)',
+);
+check(
+  nbsp0(await fixed.innerText()).includes('δεν αλλάζουν το Ταμείο, τα Συνολικά Έξοδα, το Καθαρό Κέρδος ούτε τον ΦΠΑ'),
+  'το πάνελ εξηγεί τι είναι τα πάγια και τι δεν αλλάζουν',
+);
+
+// Γιώργος: και τα δύο ποσά (ελληνικό κόμμα στο ένα).
+await fixedRow('ΤΑΕ-1234').getByRole('button', { name: 'Συμπλήρωση' }).click();
+check(
+  nbsp0(await fixedRow('ΤΑΕ-1234').innerText()).includes('Όσο σας κοστίζει η άδεια κάθε μήνα.'),
+  'η φόρμα εξηγεί κάτω από κάθε πεδίο τι μπαίνει',
+);
+await fixedRow('ΤΑΕ-1234').getByLabel(/Κόστος άδειας/).fill('150');
+await fixedRow('ΤΑΕ-1234').getByLabel(/Ταμείο \/ ΕΦΚΑ \/ ΙΚΑ/).fill('210,50');
+await fixed.screenshot({ path: `${OUT}/04c-fixed-costs-form.png` });
+await fixedRow('ΤΑΕ-1234').getByRole('button', { name: 'Αποθήκευση' }).click();
+await waitFixedTotal('ΤΑΕ-1234', '360,50 €');
+await idle(page);
+const giorgos = nbsp0(await fixedRow('ΤΑΕ-1234').innerText()).replace(/\s+/g, ' ');
+check(
+  giorgos.includes('Κόστος άδειας: 150,00 € τον μήνα') &&
+    giorgos.includes('Ταμείο / ΕΦΚΑ / ΙΚΑ: 210,50 € τον μήνα') &&
+    giorgos.includes('Σύνολο: 360,50 € τον μήνα'),
+  `Γιώργος: άδεια 150 + ΕΦΚΑ 210,50 = σύνολο 360,50 € τον μήνα (${giorgos})`,
+);
+
+// Μαρία: μόνο το ένα ποσό — το κενό πεδίο μένει «δεν δηλώθηκε» και δεν μπαίνει στο σύνολο.
+await fixedRow('ΙΚΒ-5678').getByRole('button', { name: 'Συμπλήρωση' }).click();
+await fixedRow('ΙΚΒ-5678').getByLabel(/Ταμείο \/ ΕΦΚΑ \/ ΙΚΑ/).fill('180');
+await fixedRow('ΙΚΒ-5678').getByRole('button', { name: 'Αποθήκευση' }).click();
+await waitFixedTotal('ΙΚΒ-5678', '180,00 €');
+await idle(page);
+const maria = nbsp0(await fixedRow('ΙΚΒ-5678').innerText()).replace(/\s+/g, ' ');
+check(
+  maria.includes('Κόστος άδειας: —') && maria.includes('Σύνολο: 180,00 € τον μήνα'),
+  `Μαρία: κενό κόστος άδειας («—»), σύνολο μόνο το ΕΦΚΑ 180,00 € (${maria})`,
+);
+
+// Λάθος αριθμός: μήνυμα, χωρίς αποθήκευση.
+await fixedRow('ΤΑΕ-1234').getByRole('button', { name: 'Αλλαγή' }).click();
+await fixedRow('ΤΑΕ-1234').getByLabel(/Κόστος άδειας/).fill('εκατόν πενήντα');
+await fixedRow('ΤΑΕ-1234').getByRole('button', { name: 'Αποθήκευση' }).click();
+check(
+  await fixedRow('ΤΑΕ-1234').getByText('Μη έγκυρος αριθμός (π.χ. 150 ή 210,50).').isVisible(),
+  'μη έγκυρος αριθμός: μήνυμα στο πεδίο, η φόρμα μένει ανοιχτή',
+);
+// Αλλαγή του ποσού (μπήκε μία φορά, αλλάζει όποτε θέλει ο χρήστης).
+await fixedRow('ΤΑΕ-1234').getByLabel(/Κόστος άδειας/).fill('160');
+await fixedRow('ΤΑΕ-1234').getByRole('button', { name: 'Αποθήκευση' }).click();
+await waitFixedTotal('ΤΑΕ-1234', '370,50 €');
+await idle(page);
+check(
+  nbsp0(await fixedRow('ΤΑΕ-1234').innerText()).replace(/\s+/g, ' ').includes('Σύνολο: 370,50 € τον μήνα'),
+  'αλλαγή της άδειας σε 160 € → νέο σύνολο 370,50 € τον μήνα',
+);
+await fixed.screenshot({ path: `${OUT}/04c-fixed-costs.png` });
+await panelButton(page, 'fixed-costs').click();
+check(
+  nbsp0(await panelButton(page, 'fixed-costs').innerText()).includes('Μπήκαν σε 2 από 3 αυτοκίνητα'),
+  'κλειστό πάνελ: «Μπήκαν σε 2 από 3 αυτοκίνητα»',
+);
+await openPanel(page, 'fixed-costs');
+
+// Το σημαντικό: τα πάγια ΔΕΝ αγγίζουν ταμείο, έξοδα, κέρδος, ΦΠΑ και μπαλονάκια.
+const afterFixed = nbsp0(await page.locator('main').innerText()).replace(/\s+/g, ' ');
+const chipsAfter = (await driverChips.getByRole('button').allInnerTexts()).map((t) => nbsp0(t).replace(/\s+/g, ' ').trim());
+check(
+  afterFixed.includes('Ταμείο (Τζίρος) 299,22 € με ΦΠΑ') &&
+    afterFixed.includes('Συνολικά Έξοδα 164,00 € Καύσιμα 40,00 € · Επισκευές 124,00 €') &&
+    afterFixed.includes('Καθαρό Κέρδος 135,07 € μετά τον ΦΠΑ και τα έξοδα') &&
+    afterFixed.includes('0,15') &&
+    chipsAfter.join(' | ') === 'Γιώργος Παπαδόπουλος 135,07 € | Μαρία Κωνσταντίνου 0,00 €',
+  'μετά τα πάγια: Ταμείο 299,22 €, Έξοδα 164,00 €, Κέρδος 135,07 €, ΦΠΑ 0,15 € και «Κέρδος ανά οδηγό» αμετάβλητα',
+);
 
 // ---------------------------------------------------------------------
 console.log('3δ. Αξιοποίηση χιλιομέτρων: μετρητής με χρώμα ανά επίπεδο, όρια ανάλογα με το καύσιμο');
@@ -2184,7 +2285,7 @@ check(
   'το Excel έχει τα πραγματικά στοιχεία (Μαρία, τιμολόγιο FN-0925, Φρένα) με ελληνικά ονόματα',
 );
 check(
-  sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Μορφή αρχείου' && row[1] === 'taxi-fleet-tracker · 3') &&
+  sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Μορφή αρχείου' && row[1] === 'taxi-fleet-tracker · 4') &&
     sheetOf('Πληροφορίες').rows.some((row) => row[0] === 'Στόλος' && row[1] === 'Νίκος (Ιδιοκτήτης)'),
   'καρτέλα «Πληροφορίες» με τον στόλο και τη μορφή του αρχείου',
 );
@@ -2197,6 +2298,12 @@ const mariaRow = driverSheet.rows.find((row) => row.includes('Μαρία Κων�
 check(
   mariaRow[headerOf(driverSheet, 'Καύσιμο')] === 'Ηλεκτρικό' && mariaRow[headerOf(driverSheet, 'fuel')] === 'electric',
   'καρτέλα «Οδηγοί»: το καύσιμο («Ηλεκτρικό») και η στήλη fuel για επαναφορά',
+);
+check(
+  Number(mariaRow[headerOf(driverSheet, 'Ταμείο / ΕΦΚΑ €/μήνα')]) === 180 &&
+    Number(mariaRow[headerOf(driverSheet, 'efka_cost')]) === 180 &&
+    (mariaRow[headerOf(driverSheet, 'Κόστος άδειας €/μήνα')] ?? null) === null,
+  'καρτέλα «Οδηγοί»: τα πάγια (ΕΦΚΑ 180 €, κόστος άδειας κενό) και οι στήλες για επαναφορά',
 );
 check(
   !/kostas@example\.com|Κώστας|ΚΩΣ-1111/.test(JSON.stringify(workbook)) &&

@@ -27,10 +27,12 @@ export type Database = {
         Row: {
           active: boolean;
           created_at: string;
+          efka_cost: number | null;
           email: string | null;
           fleet_id: string;
           fuel: string | null;
           id: string;
+          license_cost: number | null;
           name: string;
           phone: string | null;
           plate: string | null;
@@ -39,10 +41,12 @@ export type Database = {
         Insert: {
           active?: boolean;
           created_at?: string;
+          efka_cost?: number | null;
           email?: string | null;
           fleet_id?: string;
           fuel?: string | null;
           id?: string;
+          license_cost?: number | null;
           name: string;
           phone?: string | null;
           plate?: string | null;
@@ -51,10 +55,12 @@ export type Database = {
         Update: {
           active?: boolean;
           created_at?: string;
+          efka_cost?: number | null;
           email?: string | null;
           fleet_id?: string;
           fuel?: string | null;
           id?: string;
+          license_cost?: number | null;
           name?: string;
           phone?: string | null;
           plate?: string | null;

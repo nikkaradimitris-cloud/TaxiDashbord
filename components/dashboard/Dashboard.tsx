@@ -64,6 +64,7 @@ import { EntriesPanel } from './EntriesPanel';
 import { EntryKindSwitch, NewEntryButton, type EntryKind } from './EntryFields';
 import { ExpenseForm } from './ExpenseForm';
 import { ExpenseList } from './ExpenseList';
+import { FixedCostsPanel } from './FixedCostsPanel';
 import { FleetPanel } from './FleetPanel';
 import { ShareApp } from './ShareApp';
 import { LegacyImport } from './LegacyImport';
@@ -1041,6 +1042,15 @@ export function Dashboard({ session }: { session: SessionInfo }) {
                 <FleetPanel
                   supabase={supabase}
                   userId={userId}
+                  drivers={drivers}
+                  loaded={driversState !== null}
+                  onChanged={() => setDriversVersion((v) => v + 1)}
+                />
+              )}
+
+              {isAdmin && (
+                <FixedCostsPanel
+                  supabase={supabase}
                   drivers={drivers}
                   loaded={driversState !== null}
                   onChanged={() => setDriversVersion((v) => v + 1)}

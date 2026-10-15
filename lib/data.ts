@@ -4,6 +4,7 @@
  * αποφασίζει τι βλέπει ο καθένας (ιδιοκτήτης: όλο τον στόλο του, οδηγός: μόνο τα δικά του).
  */
 import type { BackupTable } from './backup';
+import type { FixedCosts } from './fixed-costs';
 import type { MonthFilter } from './period';
 import type { BrowserSupabase } from './supabase/client';
 import type { TablesUpdate } from './database.types';
@@ -297,6 +298,19 @@ export async function updateDriver(
   if (changes.fuel !== undefined) payload.fuel = changes.fuel || null;
   if (changes.active !== undefined) payload.active = changes.active;
 
+  const { data, error } = await supabase.from('drivers').update(payload).eq('id', id).select('*').single();
+  if (error) throw error;
+  return data;
+}
+
+/**
+ * Τα πάγια έξοδα ενός αυτοκινήτου: κόστος άδειας και Ταμείο / ΕΦΚΑ / ΙΚΑ,
+ * μηνιαία ποσά που μόνο αποθηκεύονται και φαίνονται (`lib/fixed-costs.ts`).
+ * `null` σε ένα πεδίο = δεν δηλώθηκε. Τα αλλάζει ο ιδιοκτήτης — το RLS
+ * «drivers_update_owner» κρατά τον περιορισμό.
+ */
+export async function updateFixedCosts(supabase: BrowserSupabase, id: string, costs: FixedCosts): Promise<DriverRow> {
+  const payload: TablesUpdate<'drivers'> = { license_cost: costs.license_cost, efka_cost: costs.efka_cost };
   const { data, error } = await supabase.from('drivers').update(payload).eq('id', id).select('*').single();
   if (error) throw error;
   return data;

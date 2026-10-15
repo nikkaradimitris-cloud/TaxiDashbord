@@ -84,7 +84,7 @@ export function isBackupDue(lastBackupAt: string | null, now: Date): boolean {
 // ---------------------------------------------------------------------
 
 /** Σημάδι της μορφής στην καρτέλα «Πληροφορίες» (για την επαναφορά). */
-export const BACKUP_SHEETS_FORMAT = 'taxi-fleet-tracker · 3';
+export const BACKUP_SHEETS_FORMAT = 'taxi-fleet-tracker · 4';
 
 type Column<Row> = SheetColumn & { value: (row: Row) => Cell };
 
@@ -282,6 +282,8 @@ export function backupSheets(file: BackupFile): Sheet[] {
         { header: 'Όνομα', width: 24, value: (r) => r.name },
         { header: 'Πινακίδα', width: 11, value: (r) => r.plate },
         { header: 'Καύσιμο', width: 11, value: (r) => (r.fuel ? fuelLabel(r.fuel) : '') },
+        { header: 'Κόστος άδειας €/μήνα', width: 20, money: true, value: (r) => num(r.license_cost) },
+        { header: 'Ταμείο / ΕΦΚΑ €/μήνα', width: 20, money: true, value: (r) => num(r.efka_cost) },
         { header: 'Κινητό', width: 13, value: (r) => r.phone },
         { header: 'Email', width: 28, value: (r) => r.email },
         { header: 'Ενεργός', width: 9, value: (r) => yesNo(r.active) },
@@ -291,6 +293,8 @@ export function backupSheets(file: BackupFile): Sheet[] {
         raw('fleet_id'),
         raw('user_id'),
         raw('fuel'),
+        raw('license_cost'),
+        raw('efka_cost'),
         raw('created_at'),
       ],
       [...drivers].sort((a, b) => byText(a.name, b.name)),

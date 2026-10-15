@@ -10,6 +10,8 @@ const driver = (id: string, name: string, plate: string | null): DriverRow => ({
   created_at: '2026-09-01T00:00:00Z',
   email: null,
   phone: null,
+  license_cost: null,
+  efka_cost: null,
   user_id: null,
   fleet_id: 'f1',
   fuel: null,
